@@ -439,3 +439,89 @@ describe('a row edited before its insert was ever acked', () => {
     expect(response.results[0]).toMatchObject({ status: 'merged', droppedFields: ['title'] });
   });
 });
+
+describe('the settings row', () => {
+  /**
+   * A singleton keyed by user_id, with no id column, no tombstone and a client
+   * that calls it 'me'. Every one of those is a place the generic push path
+   * would have raised, and it was not in sync_writable_tables() at all until
+   * 0007, so a settings change came back fatal and died in the deadletter.
+   */
+  const settings = (patch: Record<string, unknown>, mutationId: string, baseVersion = 0) => ({
+    mutationId,
+    table: 'user_settings',
+    entityId: 'me',
+    op: 'update',
+    patch,
+    baseVersion,
+  });
+
+  it('applies an update keyed by the user rather than by an id', async () => {
+    await asUser(USER);
+    const response = await push([
+      settings(
+        { timezone: 'America/New_York', digest_time: '06:30' },
+        'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1',
+      ),
+    ]);
+
+    expect(response.results[0]).toMatchObject({ status: 'applied' });
+
+    await asSuperuser();
+    const { rows } = await db.query<{ timezone: string; digest_time: string }>(
+      `select timezone, digest_time from user_settings where user_id = '${USER}'`,
+    );
+    expect(rows[0]).toEqual({ timezone: 'America/New_York', digest_time: '06:30:00' });
+  });
+
+  it('leaves the settings of the other account alone', async () => {
+    await asSuperuser();
+    const { rows } = await db.query<{ timezone: string }>(
+      `select timezone from user_settings where user_id = '${OTHER}'`,
+    );
+    expect(rows[0]!.timezone).toBe('UTC');
+  });
+
+  it('refuses an insert, because signup owns the row', async () => {
+    await asUser(USER);
+    await expect(
+      push([
+        {
+          mutationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
+          table: 'user_settings',
+          entityId: 'me',
+          op: 'insert',
+          patch: { timezone: 'Asia/Kolkata' },
+          baseVersion: 0,
+        },
+      ]),
+    ).rejects.toThrow(/created at signup/);
+  });
+
+  it('refuses a delete, because there is nothing to tombstone', async () => {
+    await asUser(USER);
+    await expect(
+      push([
+        {
+          mutationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3',
+          table: 'user_settings',
+          entityId: 'me',
+          op: 'delete',
+          patch: {},
+          baseVersion: 0,
+        },
+      ]),
+    ).rejects.toThrow(/no tombstone/);
+  });
+
+  it('sends it down the pull with the user column stripped', async () => {
+    await asUser(USER);
+    const page = await pull(0);
+    const row = page.rows.find((r) => r.table === 'user_settings')!.row;
+
+    expect(row.timezone).toBe('America/New_York');
+    expect(row).not.toHaveProperty('user_id');
+    // No id column at all, which is why the client keys it locally by a constant.
+    expect(row).not.toHaveProperty('id');
+  });
+});

@@ -7,6 +7,7 @@ import {
 import { getDb, LOCAL_USER_ID, type TendDb } from './client';
 import { deriveProject, deriveSeries, deriveTag, deriveTask, isClosed } from './derive';
 import { newBatchId, newId, newMutationId } from './ids';
+import { DEFAULT_PREFS, PREFS_ID } from './prefs';
 import { today } from './queries';
 import { rankAfter, rankBefore, rankBetween } from './rank';
 import { fromRule, toRule } from './series';
@@ -17,6 +18,7 @@ import {
   type EntityTable,
   type MutationOp,
   type OutboxRecord,
+  type Prefs,
   type Priority,
   type Project,
   type Tag,
@@ -648,6 +650,28 @@ export async function ensureProject(name: string, db: TendDb = getDb()): Promise
   const match = existing.find((p) => p.name.toLowerCase() === trimmed.toLowerCase());
   if (match) return match.id;
   return createProject({ name: trimmed }, db);
+}
+
+// ─── Settings ─────────────────────────────────────────────────────────────────
+
+/** Everything a person can change. The server owns the rest. */
+export type PrefsPatch = Partial<Omit<Prefs, 'id' | 'rowVersion' | 'updatedAt'>>;
+
+/**
+ * Changes settings, which is always an update.
+ *
+ * The row is created at signup, so the server refuses an insert for it. A device
+ * that has never pulled still has settings to show, from the defaults, and
+ * writing over those is what lets the settings page work before the first sync.
+ */
+export async function updatePrefs(patch: PrefsPatch, db: TendDb = getDb()): Promise<void> {
+  await db.transaction('rw', [db.prefs, db.outbox], async () => {
+    const current = (await db.prefs.get(PREFS_ID)) ?? DEFAULT_PREFS;
+    await db.prefs.put({ ...current, ...patch, updatedAt: nowIso() });
+    await db.outbox.add(
+      outboxRecord('prefs', PREFS_ID, 'update', { ...patch }, current.rowVersion),
+    );
+  });
 }
 
 // ─── Tags ─────────────────────────────────────────────────────────────────────

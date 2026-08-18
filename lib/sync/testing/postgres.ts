@@ -23,6 +23,7 @@ export const MIGRATIONS = [
   '0004_fix_push_insert',
   '0005_superseded_insert',
   '0006_base_version_zero',
+  '0007_settings_sync',
 ];
 
 export function migrationSql(name: string): string {

@@ -1,6 +1,7 @@
 import type { TendDb } from '@/lib/db/client';
 import { deriveProject, deriveSeries, deriveTag, deriveTask } from '@/lib/db/derive';
-import type { EntityTable, Project, Tag, Task, TaskSeries } from '@/lib/db/types';
+import { DEFAULT_PREFS, PREFS_ID } from '@/lib/db/prefs';
+import type { EntityTable, Prefs, Project, Tag, Task, TaskSeries } from '@/lib/db/types';
 import { LOCAL_TABLE, type PullRow, type WireTable } from './protocol';
 import { tagIdsOf, wireToLocal } from './mapping';
 
@@ -176,6 +177,34 @@ async function applySeries(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
   return result;
 }
 
+/**
+ * Settings, which are one row with no id on the wire.
+ *
+ * The server keys it by user_id and strips that column on the way out, so the
+ * local key is a constant and the incoming row is merged over whatever this
+ * device already believes. Nothing here is derived: there is no index on it.
+ */
+async function applyPrefs(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
+  const result: ApplyResult = { applied: 0, skipped: 0 };
+  const current = await db.prefs.get(PREFS_ID);
+
+  for (const { row } of rows) {
+    if (isStale(Number(row.row_version ?? 0), current?.rowVersion)) {
+      result.skipped += 1;
+      continue;
+    }
+    const merged = {
+      ...(current ?? DEFAULT_PREFS),
+      ...wireToLocal('user_settings', row),
+      id: PREFS_ID,
+    } as Prefs;
+    await db.prefs.put(merged);
+    result.applied += 1;
+  }
+
+  return result;
+}
+
 const APPLIERS: Partial<
   Record<WireTable, (db: TendDb, rows: PullRow[]) => Promise<ApplyResult>>
 > = {
@@ -183,6 +212,7 @@ const APPLIERS: Partial<
   projects: applyProjects,
   tags: applyTags,
   task_series: applySeries,
+  user_settings: applyPrefs,
 };
 
 /**
@@ -193,7 +223,14 @@ const APPLIERS: Partial<
  * than enforced, since IndexedDB has no foreign keys, but a UI that renders a
  * task with a dangling project id for one frame is a flicker worth avoiding.
  */
-const TABLE_ORDER: WireTable[] = ['areas', 'projects', 'tags', 'task_series', 'tasks'];
+const TABLE_ORDER: WireTable[] = [
+  'user_settings',
+  'areas',
+  'projects',
+  'tags',
+  'task_series',
+  'tasks',
+];
 
 export async function applyPage(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
   const total: ApplyResult = { applied: 0, skipped: 0 };

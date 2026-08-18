@@ -38,6 +38,7 @@ describe('the migration directory', () => {
       '0004_fix_push_insert.sql',
       '0005_superseded_insert.sql',
       '0006_base_version_zero.sql',
+      '0007_settings_sync.sql',
     ]);
   });
 

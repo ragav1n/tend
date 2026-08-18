@@ -9,6 +9,7 @@ import {
   deleteTask,
   setTaskRecurrence,
   setTaskTags,
+  updatePrefs,
   updateTask,
 } from '@/lib/db/mutations';
 import { today } from '@/lib/db/queries';
@@ -190,6 +191,7 @@ async function snapshot(db: TendDb) {
     [...rows].sort((x, y) => x.id.localeCompare(y.id)).map(strip);
 
   return {
+    prefs: (await db.prefs.toArray()).map(strip),
     tasks: byId(await db.tasks.toArray()),
     projects: byId(await db.projects.toArray()),
     tags: byId(await db.tags.toArray()),
@@ -308,6 +310,30 @@ describe('interleaved writes', () => {
     // join table rides on tasks.tag_ids and a trigger bumps the task's version.
     expect(task?._tagIds).toEqual([tagId]);
     expect((await b.db.projects.get(projectId))?.name).toBe('Garden');
+    await expectConverged(a, b);
+  });
+});
+
+describe('settings', () => {
+  it('carry a change from one device to the other', async () => {
+    const a = await device('a');
+    const b = await device('b');
+
+    await cycle(a);
+    await cycle(b);
+    // Created by the signup trigger, so both devices hold it before anybody
+    // changes anything.
+    expect((await b.db.prefs.get('me'))?.timezone).toBe('UTC');
+
+    await updatePrefs({ timezone: 'America/New_York', digestTime: '06:30' }, a.db);
+    await cycle(a);
+    await cycle(b);
+
+    const prefs = await b.db.prefs.get('me');
+    expect(prefs?.timezone).toBe('America/New_York');
+    // Postgres returns a time column as HH:MM:SS, so both devices settle on the
+    // server's spelling rather than the one that was typed.
+    expect(prefs?.digestTime).toBe('06:30:00');
     await expectConverged(a, b);
   });
 });
