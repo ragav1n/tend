@@ -107,8 +107,9 @@ export const LIFT = { type: 'spring' as const, stiffness: 260, damping: 24 };
 
 // ─── The check-off ────────────────────────────────────────────────────────────
 // The most-touched control in a todo app, so it gets its own tokens rather than
-// borrowing generic ones. Sequence: press (90ms) -> release spring + box fill
-// -> check path draws (220ms) -> strikethrough sweeps (260ms, 60ms behind).
+// borrowing generic ones. Sequence: press (90ms) -> release spring -> the mark
+// draws (500ms) -> strikethrough sweeps (260ms, 60ms behind), overlapping the
+// draw rather than queuing after it, so the row answers immediately.
 
 export const CHECK_PRESS = { duration: 0.09, ease: EASE_OUT_SOFT };
 export const CHECK_RELEASE = {
@@ -117,8 +118,16 @@ export const CHECK_RELEASE = {
   damping: 22,
   mass: 0.6,
 };
-export const CHECK_DRAW = { duration: 0.22, ease: EASE_GLIDE };
-export const CHECK_FILL = { duration: 0.18, ease: EASE_OUT_SOFT };
+/**
+ * The check mark drawing itself on.
+ *
+ * 500ms rather than the 220ms a plain tick wanted: the scribble is roughly four
+ * times the arc length, and at 220ms it reads as a flicker instead of a stroke.
+ * EASE_IN_OUT_SOFT rather than EASE_GLIDE for the same reason. GLIDE dumps most
+ * of its distance up front and crawls to a stop, which looks like a pen running
+ * out of ink; a real stroke starts easy, moves, then lands.
+ */
+export const CHECK_DRAW = { duration: 0.5, ease: EASE_IN_OUT_SOFT };
 export const STRIKE = { duration: 0.26, ease: EASE_GLIDE, delay: 0.06 };
 
 /** How long a completed row stays visible before it leaves a filtered list.
