@@ -1,10 +1,13 @@
 'use client';
 
 import { Toaster } from 'sonner';
+import { SyncBadge } from '@/components/shell/SyncBadge';
 import { TaskDetailHost } from '@/components/task/TaskDetailHost';
 
 /**
- * Everything that floats above the views: the detail sheet and toasts.
+ * Everything that floats above the views: the detail sheet, the sync badge
+ * and toasts. The badge is what starts the sync engine, since this component
+ * mounts once for the whole authenticated shell.
  *
  * Sonner is re-skinned through its own CSS variables rather than by overriding
  * its classes, because the variables are the part of its API that is stable
@@ -18,6 +21,7 @@ export function AppOverlays() {
   return (
     <>
       <TaskDetailHost />
+      <SyncBadge />
       <Toaster
         theme="dark"
         position="bottom-center"
