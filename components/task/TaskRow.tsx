@@ -87,10 +87,15 @@ export function TaskRow({ task, onToggle, onOpen, todayDate = today() }: TaskRow
         transition={PRESS_DEPTH}
       >
         <div className="pt-0.5">
+          {/* The one element shared with the detail panel. The check is the
+              right choice for it because it is the same 22px box in both
+              places: a title would have to warp between two font sizes, which
+              is what makes most shared-element text transitions look wrong. */}
           <TaskCheck
             checked={done}
             onChange={(next) => onToggle(task.id, next)}
             label={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
+            layoutId={`task-check-${task.id}`}
           />
         </div>
 

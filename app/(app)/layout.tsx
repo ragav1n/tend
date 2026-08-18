@@ -1,3 +1,4 @@
+import { AppOverlays } from '@/components/shell/AppOverlays';
 import { Sidebar } from '@/components/shell/Sidebar';
 
 /**
@@ -20,6 +21,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <main className="safe-top safe-x mx-auto w-full max-w-2xl px-4 pb-28 pt-6 md:pb-10 md:pt-10">
         {children}
       </main>
+      <AppOverlays />
     </div>
   );
 }

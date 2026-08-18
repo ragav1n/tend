@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
 import { COMPLETED_ROW_LINGER_MS, listVariants, QUICK_FADE } from '@/lib/motion';
-import { updateTask } from '@/lib/db/mutations';
+import { completeTask } from '@/lib/db/mutations';
 import { today } from '@/lib/db/queries';
 import type { Task } from '@/lib/db/types';
+import { useUiStore } from '@/hooks/use-ui';
 import { TaskRow } from '@/components/task/TaskRow';
 
 /**
@@ -30,6 +31,7 @@ interface TaskListProps {
 
 export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
   const todayDate = today();
+  const openTask = useUiStore((state) => state.openTask);
   const [lingering, setLingering] = useState<Task[]>([]);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
@@ -66,7 +68,9 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
       forget(id);
     }
 
-    void updateTask(id, { status: done ? 'done' : 'active' });
+    // completeTask rather than a status patch: a recurring task materializes
+    // its next occurrence here, and a patch would silently skip that.
+    void completeTask(id, done);
   }
 
   // Lingering rows keep their place, so the list does not reflow under a finger
@@ -103,7 +107,13 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
       <motion.ul variants={listVariants} initial="hidden" animate="visible" className="space-y-2">
         <AnimatePresence mode="popLayout" initial={false}>
           {shown.map((task) => (
-            <TaskRow key={task.id} task={task} onToggle={handleToggle} todayDate={todayDate} />
+            <TaskRow
+              key={task.id}
+              task={task}
+              onToggle={handleToggle}
+              onOpen={openTask}
+              todayDate={todayDate}
+            />
           ))}
         </AnimatePresence>
       </motion.ul>
