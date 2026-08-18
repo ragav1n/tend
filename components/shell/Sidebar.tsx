@@ -3,15 +3,15 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion } from 'motion/react';
-import { Archive, CalendarDots, Sun, Tray } from '@phosphor-icons/react/dist/ssr';
+import { Archive, CalendarDots, CheckCircle, Sun, Tray } from '@phosphor-icons/react/dist/ssr';
 import { APP_NAME } from '@/lib/config';
 import { SOFT } from '@/lib/motion';
 import { useSidebarCounts } from '@/hooks/use-tasks';
 import { cn } from '@/lib/utils';
 
 /**
- * Navigation. Doubles as the mobile bottom bar, since the same four
- * destinations matter on both and maintaining two lists guarantees they drift.
+ * Navigation. Doubles as the mobile bottom bar, since the same destinations
+ * matter on both and maintaining two lists guarantees they drift.
  *
  * The active indicator is a single shared element moved with `layoutId`, so it
  * slides between items rather than cross-fading. That is the cheapest place in
@@ -23,6 +23,7 @@ const NAV = [
   { href: '/upcoming', label: 'Upcoming', icon: CalendarDots, count: 'upcoming' as const },
   { href: '/inbox', label: 'Inbox', icon: Tray, count: 'inbox' as const },
   { href: '/someday', label: 'Someday', icon: Archive, count: null },
+  { href: '/logbook', label: 'Logbook', icon: CheckCircle, count: null },
 ];
 
 export function Sidebar() {

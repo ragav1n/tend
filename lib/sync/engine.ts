@@ -32,7 +32,7 @@ import { SyncError } from './transport';
 
 type Listener = (state: SyncState) => void;
 
-class SyncEngine {
+export class SyncEngine {
   private state: SyncState = initialState;
   private listeners = new Set<Listener>();
   private db: TendDb | null = null;
@@ -161,34 +161,51 @@ class SyncEngine {
     );
   }
 
+  /**
+   * The guard covers the awaited request and nothing else.
+   *
+   * Clearing it in a `finally` after dispatching looks equivalent and is not:
+   * the event dispatched inside the try produces the next effect synchronously,
+   * that effect sees the flag still set, and drops itself. The cycle then dies
+   * one step in, with no error and no retry, and the badge sits on "Setting up"
+   * forever. Every settled event below is dispatched after the flag is down.
+   */
   private async push(): Promise<void> {
     if (!this.db || this.inFlight) return;
     this.inFlight = true;
+
+    let outcome;
     try {
-      const outcome = await pushOnce(this.db);
-      this.dispatch({ type: 'push_settled', cursor: outcome.cursor });
+      outcome = await pushOnce(this.db);
     } catch (error) {
-      this.fail(error);
-    } finally {
       this.inFlight = false;
+      this.fail(error);
+      return;
     }
+
+    this.inFlight = false;
+    this.dispatch({ type: 'push_settled', cursor: outcome.cursor });
   }
 
   private async pull(): Promise<void> {
     if (!this.db || this.inFlight) return;
     this.inFlight = true;
+
+    let outcome;
     try {
-      const outcome = await pullOnce(this.db);
-      this.dispatch({
-        type: 'pull_settled',
-        cursor: outcome.cursor,
-        hasMore: outcome.hasMore,
-      });
+      outcome = await pullOnce(this.db);
     } catch (error) {
-      this.fail(error);
-    } finally {
       this.inFlight = false;
+      this.fail(error);
+      return;
     }
+
+    this.inFlight = false;
+    this.dispatch({
+      type: 'pull_settled',
+      cursor: outcome.cursor,
+      hasMore: outcome.hasMore,
+    });
   }
 
   private fail(error: unknown): void {
@@ -208,5 +225,3 @@ export function getSyncEngine(): SyncEngine {
 export function startSync(): void {
   getSyncEngine().start();
 }
-
-export type { SyncEngine };
