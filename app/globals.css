@@ -1,0 +1,186 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TEND design tokens
+
+   Direction: tactile material. Restrained modern skeuomorphism, not 2010 leather.
+   One light source from the top. Three elevation levels. Depth comes from a 1px
+   top highlight plus a real shadow, and motion carries the rest.
+
+   The palette is four source hexes: beige #C29B72, terracotta #8D321F,
+   olive #3A4027, charcoal #2B2D31. Used raw they do not work: terracotta on
+   charcoal measures 1.71:1 and olive measures 1.28:1, both invisible, because
+   three of the four sit between lightness 0.30 and 0.45. So charcoal became the
+   card surface rather than the page, and each accent got a lightness ramp at
+   fixed hue and chroma. Every source hex survives as its ramp's 600 step.
+
+   All contrast numbers in the comments are measured, and lib/color.test.ts
+   parses this file and re-asserts them, so they cannot drift.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@theme {
+  /* ── Neutral ramp, hue 264 inherited from charcoal ───────────────────────── */
+  --color-void:    oklch(0.185 0.008 264);  /* #111316  page floor */
+  --color-sunken:  oklch(0.230 0.008 264);  /* #1B1D21  inputs, wells */
+  --color-surface: oklch(0.297 0.008 264);  /* #2B2D31  source charcoal, cards */
+  --color-raised:  oklch(0.345 0.010 264);  /* #37393F  controls inside cards */
+
+  /* ── CLAY = interaction. Focus, primary, selection, the check-off. ────────
+     600 is the source terracotta and is a FILL ONLY: it never carries text or
+     an icon at 1.71:1. Text on top of a clay fill is --color-text-hi (7.16:1). */
+  --color-clay-700: oklch(0.380 0.128 33.5); /* #781D09  pressed fill */
+  --color-clay-600: oklch(0.446 0.128 33.5); /* #8D321F  SOURCE, resting fill */
+  --color-clay-500: oklch(0.520 0.128 33.5); /* #A54834  hover fill */
+  --color-clay-400: oklch(0.600 0.128 33.5); /* #C0604B  borders, focus ring */
+  --color-clay-300: oklch(0.680 0.128 33.5); /* #DB7963  text/icons on surface */
+  --color-clay-200: oklch(0.760 0.128 33.5); /* #F7917B  text on raised, overdue */
+
+  /* ── OLIVE = state. Completion, streaks, progress, "done and good." ───────
+     600 is the source olive, fill only, and only on --color-void. */
+  --color-olive-700: oklch(0.380 0.055 119.5); /* #3F4724 */
+  --color-olive-600: oklch(0.446 0.055 119.5); /* #505935  SOURCE, fill */
+  --color-olive-500: oklch(0.520 0.055 119.5); /* #656E49 */
+  --color-olive-400: oklch(0.600 0.055 119.5); /* #7C8560  rings, borders */
+  --color-olive-300: oklch(0.680 0.055 119.5); /* #949E77  done text on surface */
+  --color-olive-200: oklch(0.760 0.055 119.5); /* #ADB790  done text on raised */
+
+  /* ── SAND = warm neutral, hue 67.6 from beige. Not an accent. ────────────
+     sand-500 is the source beige. Text on a sand fill is --color-void (7.31:1). */
+  --color-sand-500: oklch(0.716 0.073 67.6);  /* #C29B72  SOURCE */
+  --color-sand-400: oklch(0.600 0.073 67.6);  /* #9E7850 */
+  --color-sand-300: oklch(0.680 0.073 67.6);  /* #B79067 */
+  --color-sand-200: oklch(0.760 0.073 67.6);  /* #D0A97F */
+
+  /* ── Text, warm-tinted so it belongs to the palette. Never pure white. ──── */
+  --color-text-hi:    oklch(0.960 0.012 67.6); /* #F7F0E9  12.25 on surface */
+  --color-text-mid:   oklch(0.790 0.020 67.6); /* #C4B8AD   7.11 on surface */
+  --color-text-lo:    oklch(0.670 0.024 67.6); /* #A09386   4.59 on surface, the AA floor */
+  --color-text-faint: oklch(0.550 0.022 67.6); /* #7B6F64   2.83, NON-TEXT ONLY */
+
+  /* ── Hairlines. Tinted alpha so they read at every elevation. ───────────── */
+  --color-line:        color-mix(in oklab, white 8%,  transparent);
+  --color-line-bright: color-mix(in oklab, white 15%, transparent);
+  --color-line-strong: color-mix(in oklab, white 22%, transparent);
+
+  /* ── Type ───────────────────────────────────────────────────────────────── */
+  --font-sans:    var(--font-instrument-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-instrument-serif), ui-serif, Georgia, serif;
+  --font-mono:    var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  /* ── Radius ─────────────────────────────────────────────────────────────── */
+  --radius-sm:   7px;
+  --radius-md:  11px;
+  --radius-lg:  15px;
+  --radius-xl:  20px;
+  --radius-pill: 999px;
+
+  /* ── Elevation. Exactly three levels, no fourth. Light comes from the top,
+        so every shadow falls down and every highlight sits on a top edge. ─── */
+  --shadow-sunken: inset 0 1px 2px oklch(0.12 0.008 264 / 0.55),
+                   inset 0 -1px 0 var(--color-line);
+  --shadow-flush:  0 1px 2px oklch(0.12 0.008 264 / 0.30);
+  --shadow-raised: inset 0 1px 0 var(--color-line-bright),
+                   0 2px 4px oklch(0.12 0.008 264 / 0.35),
+                   0 8px 20px oklch(0.12 0.008 264 / 0.28);
+  --shadow-lifted: inset 0 1px 0 var(--color-line-bright),
+                   0 8px 16px oklch(0.12 0.008 264 / 0.40),
+                   0 24px 48px oklch(0.12 0.008 264 / 0.32);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Contrast rules that fall out of the measured ramp. These are not style
+   preferences, they are the AA floor:
+
+   On --color-void / --color-sunken / --color-surface:
+     body text      text-lo  and up      (4.59 on surface)
+     accent text    clay-300 / olive-300 (4.54 / 4.85 on surface)
+   On --color-raised, everything steps up one because it is lighter:
+     body text      text-mid and up      (5.95; text-lo is only 3.84 here)
+     accent text    clay-200 / olive-200 (5.12 / 5.44; the 300s fail at 3.80 / 4.06)
+
+   --color-text-faint clears nothing. Dividers and decoration only, never text a
+   user has to read. --color-clay-600 and --color-olive-600 are fills only.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    /* iOS: dvh tracks the collapsing address bar, vh does not. */
+    height: 100dvh;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    min-height: 100dvh;
+    background-color: var(--color-void);
+    color: var(--color-text-mid);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Kill page-level rubber-band in standalone mode while leaving it inside
+       scroll containers, where the bottom sheet needs it. */
+    overscroll-behavior-y: none;
+  }
+
+  h1, h2, h3 {
+    color: var(--color-text-hi);
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+
+  /* Mono is the instrument voice: every count, every uppercase label, every key
+     cap. Tabular figures so a ticking timer never shifts width. */
+  .tnum {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .label {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-text-lo);
+  }
+
+  ::selection {
+    background-color: var(--color-clay-600);
+    color: var(--color-text-hi);
+  }
+
+  /* Clay is interaction, so the focus ring is clay. Offset so it reads on every
+     surface level without needing a per-surface override. */
+  :focus-visible {
+    outline: 2px solid var(--color-clay-400);
+    outline-offset: 2px;
+  }
+
+  input, textarea, select, button {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* Safe-area padding for standalone iOS. Applied to the shell, not body, so a
+     full-bleed sheet can still reach the screen edge. */
+  .safe-top    { padding-top:    env(safe-area-inset-top); }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  .safe-x {
+    padding-left:  env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* prefers-reduced-motion is a real path, not durations set to zero. Springs
+   become short opacity fades and ambient loops stop. MotionConfig
+   reducedMotion="user" handles the JS side; this covers CSS-only motion. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.12s !important;
+    scroll-behavior: auto !important;
+  }
+}
