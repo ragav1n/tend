@@ -9,6 +9,9 @@ import {
   SignIn,
   WarningCircle,
 } from '@phosphor-icons/react/dist/ssr';
+import { getDb } from '@/lib/db/client';
+import { getSyncEngine } from '@/lib/sync/engine';
+import { requeueDead } from '@/lib/sync/outbox';
 import { useQueueCounts, useStartSync, useSyncState } from '@/hooks/use-sync';
 import { LINEAR_SPIN, QUICK_FADE } from '@/lib/motion';
 import type { SyncStatus } from '@/lib/sync/machine';
@@ -34,9 +37,24 @@ interface Appearance {
   /** Worth interrupting for. Anything false stays hidden on a phone. */
   loud?: boolean;
   href?: string;
+  /** Tapping it puts retired work back in the queue. */
+  retry?: boolean;
 }
 
-function appearanceFor(status: SyncStatus, pending: number): Appearance {
+function appearanceFor(status: SyncStatus, pending: number, dead: number): Appearance {
+  // Retired work outranks every status, including idle. Reporting "Synced"
+  // while mutations sit in the deadletter is how a total sync failure looks
+  // exactly like success, which is the one thing this badge must never do.
+  if (dead > 0) {
+    return {
+      label: `${dead} not sent, retry`,
+      icon: WarningCircle,
+      tone: 'text-clay-200',
+      loud: true,
+      retry: true,
+    };
+  }
+
   switch (status) {
     case 'boot':
     case 'opening_db':
@@ -76,10 +94,15 @@ function appearanceFor(status: SyncStatus, pending: number): Appearance {
 export function SyncBadge() {
   useStartSync();
   const state = useSyncState();
-  const { pending } = useQueueCounts();
+  const { pending, dead } = useQueueCounts();
 
-  const look = appearanceFor(state.status, pending);
+  const look = appearanceFor(state.status, pending, dead);
   const Icon = look.icon;
+
+  async function retry() {
+    await requeueDead(getDb());
+    getSyncEngine().dispatch({ type: 'wake' });
+  }
 
   const body = (
     <span
@@ -125,6 +148,10 @@ export function SyncBadge() {
             <Link href={look.href} className="inline-block">
               {body}
             </Link>
+          ) : look.retry ? (
+            <button type="button" onClick={() => void retry()} className="inline-block">
+              {body}
+            </button>
           ) : (
             body
           )}

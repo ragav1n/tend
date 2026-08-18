@@ -231,3 +231,30 @@ export async function noteConflict(
   if (droppedFields.length === 0) return;
   await db.conflicts.add({ table, entityId, at: now, droppedFields });
 }
+
+/**
+ * Puts retired work back in the queue.
+ *
+ * Records reach the deadletter when the server refused them enough times, and
+ * the usual cause is a server-side bug rather than anything wrong with the
+ * mutation. Once that bug is fixed the work is still perfectly good, and
+ * without this it would sit there forever.
+ *
+ * Safe to call twice. Every record still carries its original mutationId, so a
+ * mutation that actually did apply before the ack was lost comes back from the
+ * server's log rather than applying a second time.
+ */
+export async function requeueDead(db: TendDb): Promise<number> {
+  const dead = await db.outbox.where('state').equals('dead').toArray();
+
+  for (const record of dead) {
+    await db.outbox.update(record.seq!, {
+      state: 'pending' as const,
+      attempts: 0,
+      nextAttemptAt: 0,
+    });
+    await db.deadletter.delete(record.mutationId);
+  }
+
+  return dead.length;
+}

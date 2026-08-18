@@ -12,6 +12,7 @@ import {
   MAX_ATTEMPTS,
   pendingCount,
   reclaimStale,
+  requeueDead,
   STALE_INFLIGHT_MS,
 } from './outbox';
 
@@ -243,5 +244,41 @@ describe('counts', () => {
 
     await ackBatch(db, seqs);
     expect(await pendingCount(db)).toBe(0);
+  });
+});
+
+describe('bringing retired work back', () => {
+  it('returns dead records to the queue with their attempts reset', async () => {
+    // Work reaches the deadletter because of a server-side bug far more often
+    // than because the mutation was bad. Once that is fixed the work is still
+    // good, and without this it sits there forever.
+    await db.outbox.add(record());
+    const { seqs } = await claimBatch(db);
+    await failBatch(db, seqs, { kind: 'fatal', code: '42601', message: 'generated column' });
+
+    expect(await deadCount(db)).toBe(1);
+    expect(await pendingCount(db)).toBe(0);
+
+    expect(await requeueDead(db)).toBe(1);
+
+    const revived = await db.outbox.get(seqs[0]!);
+    expect(revived).toMatchObject({ state: 'pending', attempts: 0, nextAttemptAt: 0 });
+    expect(await db.deadletter.count()).toBe(0);
+    expect(await pendingCount(db)).toBe(1);
+  });
+
+  it('keeps the original mutation id, so a retry cannot double-apply', async () => {
+    // If the mutation did land and only the ack was lost, the server answers
+    // from its own log rather than applying it twice.
+    await db.outbox.add(record({ mutationId: 'stable-id' }));
+    const { seqs } = await claimBatch(db);
+    await failBatch(db, seqs, { kind: 'fatal', code: '42601', message: 'x' });
+    await requeueDead(db);
+
+    expect((await db.outbox.get(seqs[0]!))?.mutationId).toBe('stable-id');
+  });
+
+  it('does nothing when there is nothing retired', async () => {
+    expect(await requeueDead(db)).toBe(0);
   });
 });

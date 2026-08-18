@@ -34,6 +34,7 @@ describe('the migration directory', () => {
       '0001_core_schema.sql',
       '0002_rls.sql',
       '0003_sync_rpc.sql',
+      '0004_fix_push_insert.sql',
     ]);
   });
 });
@@ -144,6 +145,21 @@ describe('the push contract', () => {
     const executes = [...pushBody.matchAll(/^\s*execute\s+([\s\S]{0,40})/gm)];
     expect(executes.length).toBeGreaterThan(2);
     expect(executes.filter((m) => !m[1]!.trimStart().startsWith('format('))).toEqual([]);
+  });
+
+  it('never inserts without naming its columns', () => {
+    // `insert into t select r.*` maps positionally onto every column in the
+    // table. That fails outright against a generated column, and where it does
+    // not, it writes explicit NULLs over the defaults that updated_at,
+    // row_version and field_versions depend on. The latest definition of the
+    // push has to name what it writes.
+    // Stripped, because this file's own header quotes the broken form it
+    // replaced, and a guard that trips on its own explanation is useless.
+    const latest = code(SQL['0004_fix_push_insert.sql']!);
+    const inserts = [...latest.matchAll(/insert into public\.%I([^\n]*)/g)];
+    expect(inserts.length).toBeGreaterThan(0);
+    expect(inserts.filter((m) => !m[1]!.includes('(%s)'))).toEqual([]);
+    expect(latest).not.toContain('select r.*');
   });
 
   it('logs every mutation id so a retry cannot apply twice', () => {
