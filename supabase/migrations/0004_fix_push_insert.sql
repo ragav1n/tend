@@ -21,6 +21,41 @@
 -- the triggers own everything else, which is what they were written for.
 -- ═══════════════════════════════════════════════════════════════════════════
 
+-- ── mutation_log needed an insert policy ───────────────────────────────────
+--
+-- 0003 enabled RLS on mutation_log and gave it a SELECT policy only. sync_push
+-- is SECURITY INVOKER, by design, so that RLS applies to everything it touches
+-- and the service-role key is never involved. Which means its own write to
+-- mutation_log runs as the user too, and with RLS on and no INSERT policy
+-- Postgres rejected it.
+--
+-- So every push failed at the point where it recorded its idempotency key, on
+-- every table, whether or not the insert below was fixed. This was the first
+-- failure; the column list was the second one waiting behind it.
+--
+-- Dropped first so the migration can be run more than once.
+
+drop policy if exists mutation_log_insert on public.mutation_log;
+
+create policy mutation_log_insert on public.mutation_log
+  for insert to authenticated
+  with check (user_id = (select auth.uid()));
+
+-- ── user_row_version needed a read policy ──────────────────────────────────
+--
+-- 0001 enabled RLS on the counter table and never gave it a policy, so the
+-- final `select counter ... into v_cursor` in sync_push read nothing and the
+-- push always reported cursor 0. Harmless today, because the machine only ever
+-- takes the max of the cursors it has seen and the pull is authoritative, but a
+-- push that cannot say where the server got to is a push whose answer nobody
+-- can use.
+
+drop policy if exists user_row_version_select on public.user_row_version;
+
+create policy user_row_version_select on public.user_row_version
+  for select to authenticated
+  using (user_id = (select auth.uid()));
+
 create or replace function public.sync_push(p_mutations jsonb)
 returns jsonb
 language plpgsql
