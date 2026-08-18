@@ -1,0 +1,241 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import Dexie from 'dexie';
+import { setDb, TendDb } from '@/lib/db/client';
+import { createTask, ensureTag, setTaskTags } from '@/lib/db/mutations';
+import { todayList, today } from '@/lib/db/queries';
+import { applyPage, readCursor, writeCursor } from './apply';
+import type { PullRow } from './protocol';
+
+let db: TendDb;
+let dbName: string;
+let counter = 0;
+
+beforeEach(async () => {
+  dbName = `tend_apply_${Date.now()}_${counter++}`;
+  db = new TendDb(dbName);
+  setDb(db);
+  await db.open();
+});
+
+afterEach(async () => {
+  db.close();
+  setDb(null);
+  await Dexie.delete(dbName);
+});
+
+/** A task row shaped the way sync_pull emits one: snake case, real nulls. */
+function taskRow(over: Record<string, unknown> = {}): PullRow {
+  return {
+    table: 'tasks',
+    row: {
+      id: 'task-1',
+      project_id: null,
+      parent_task_id: null,
+      series_id: null,
+      depth: 0,
+      title: 'Buy oat milk',
+      notes: '',
+      status: 'active',
+      priority: 0,
+      due_date: null,
+      due_time: null,
+      start_date: null,
+      planned_for: null,
+      estimate_minutes: null,
+      completed_at: null,
+      cancel_reason: null,
+      archived_at: null,
+      sort_key: 'a0',
+      planned_sort_key: 'a0',
+      occurrence_date: null,
+      occurrence_seq: null,
+      created_at: '2026-08-18T00:00:00.000Z',
+      updated_at: '2026-08-18T00:00:00.000Z',
+      deleted_at: null,
+      row_version: 10,
+      tag_ids: [],
+      ...over,
+    },
+  };
+}
+
+describe('applying a pulled page', () => {
+  it('writes the row and turns nulls back into sentinels', async () => {
+    const result = await applyPage(db, [taskRow()]);
+    expect(result.applied).toBe(1);
+
+    const task = await db.tasks.get('task-1');
+    expect(task).toMatchObject({
+      title: 'Buy oat milk',
+      projectId: '',
+      parentTaskId: '',
+      seriesId: '',
+      rowVersion: 10,
+    });
+  });
+
+  it('recomputes derived fields rather than trusting the wire', async () => {
+    // The server never sends them. Recomputing here through derive.ts is what
+    // keeps this path and the optimistic path from disagreeing about Today.
+    await applyPage(db, [taskRow({ due_date: today(), status: 'active' })]);
+
+    const task = await db.tasks.get('task-1');
+    expect(task?._dueDay).toBe(today());
+    expect(task?._done).toBe(0);
+    expect(task?._del).toBe(0);
+    expect(task?._words).toContain('milk');
+    expect(await todayList(today(), db)).toHaveLength(1);
+  });
+
+  it('queues nothing back at the server', async () => {
+    // Routing a pulled row through the write API would queue it straight back
+    // and the two would ping-pong forever.
+    await applyPage(db, [taskRow()]);
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('applies the same page twice with the same result', async () => {
+    await applyPage(db, [taskRow()]);
+    const second = await applyPage(db, [taskRow()]);
+
+    // The second pass sees a row already at that version and skips it.
+    expect(second.applied).toBe(0);
+    expect(second.skipped).toBe(1);
+    expect(await db.tasks.count()).toBe(1);
+  });
+
+  it('takes a newer version and refuses an older one', async () => {
+    await applyPage(db, [taskRow({ row_version: 10, title: 'ten' })]);
+
+    await applyPage(db, [taskRow({ row_version: 11, title: 'eleven' })]);
+    expect((await db.tasks.get('task-1'))?.title).toBe('eleven');
+
+    // A late response from an abandoned cycle must not overwrite newer state.
+    await applyPage(db, [taskRow({ row_version: 9, title: 'nine' })]);
+    expect((await db.tasks.get('task-1'))?.title).toBe('eleven');
+  });
+
+  it('overwrites a local row that has never been synced', async () => {
+    // rowVersion 0 means it has only ever existed on this device, so anything
+    // the server says about it is newer by definition.
+    const id = await createTask({ title: 'local only' }, db);
+    await applyPage(db, [taskRow({ id, title: 'canonical', row_version: 1 })]);
+    expect((await db.tasks.get(id))?.title).toBe('canonical');
+  });
+
+  it('keeps a column this client is too old to understand', async () => {
+    await applyPage(db, [taskRow({ some_future_column: 'keep me' })]);
+    const task = await db.tasks.get('task-1');
+    expect((task as unknown as Record<string, unknown>).someFutureColumn).toBe('keep me');
+  });
+
+  it('applies a tombstone as a soft delete', async () => {
+    await applyPage(db, [taskRow({ deleted_at: '2026-08-18T01:00:00.000Z', row_version: 11 })]);
+    expect((await db.tasks.get('task-1'))?._del).toBe(1);
+    expect(await todayList(today(), db)).toHaveLength(0);
+  });
+});
+
+describe('tag sets', () => {
+  it('replaces the whole set rather than merging it', async () => {
+    const id = await createTask({ title: 'Water the plants' }, db);
+    const garden = await ensureTag('garden', db);
+    const home = await ensureTag('home', db);
+    await setTaskTags(id, [garden, home], db);
+    expect((await db.tasks.get(id))?._tagIds).toHaveLength(2);
+
+    // Untagged on another device. A merge here is what leaves a task wearing a
+    // tag it was removed from somewhere else.
+    await applyPage(db, [taskRow({ id, tag_ids: [garden], row_version: 20 })]);
+
+    expect((await db.tasks.get(id))?._tagIds).toEqual([garden]);
+    expect(await db.taskTags.where('taskId').equals(id).count()).toBe(1);
+  });
+
+  it('keeps the local set when the server sends no tag list at all', async () => {
+    // Empty means "no tags" and absent means "the server did not say".
+    // Applying the first when you meant the second wipes tags.
+    const id = await createTask({ title: 'Water the plants' }, db);
+    const garden = await ensureTag('garden', db);
+    await setTaskTags(id, [garden], db);
+
+    const row = taskRow({ id, row_version: 20 });
+    delete row.row.tag_ids;
+    await applyPage(db, [row]);
+
+    expect((await db.tasks.get(id))?._tagIds).toEqual([garden]);
+  });
+});
+
+describe('page shape', () => {
+  it('applies parents before the rows that point at them', async () => {
+    const page: PullRow[] = [
+      taskRow({ id: 'task-1', project_id: 'project-1' }),
+      {
+        table: 'projects',
+        row: {
+          id: 'project-1',
+          area_id: null,
+          name: 'House',
+          notes: '',
+          status: 'active',
+          color: '#C29B72',
+          due_date: null,
+          completed_at: null,
+          sort_key: 'a0',
+          archived_at: null,
+          created_at: '2026-08-18T00:00:00.000Z',
+          updated_at: '2026-08-18T00:00:00.000Z',
+          deleted_at: null,
+          row_version: 5,
+        },
+      },
+    ];
+
+    await applyPage(db, page);
+    expect((await db.projects.get('project-1'))?.name).toBe('House');
+    expect((await db.tasks.get('task-1'))?.projectId).toBe('project-1');
+  });
+
+  it('ignores a table it has no local home for', async () => {
+    // A server that grew a table before this client shipped is deploy skew,
+    // not a reason to halt sync.
+    const result = await applyPage(db, [
+      { table: 'areas', row: { id: 'area-1', name: 'Work', row_version: 3 } },
+      taskRow(),
+    ]);
+    expect(result.applied).toBe(1);
+  });
+
+  it('handles an empty page', async () => {
+    expect(await applyPage(db, [])).toEqual({ applied: 0, skipped: 0 });
+  });
+
+  it('applies more rows than fit in one chunk', async () => {
+    const page = Array.from({ length: 1_200 }, (_, i) =>
+      taskRow({ id: `task-${i}`, sort_key: `a${i}` }),
+    );
+    const result = await applyPage(db, page);
+    expect(result.applied).toBe(1_200);
+    expect(await db.tasks.count()).toBe(1_200);
+  });
+});
+
+describe('the cursor', () => {
+  it('starts at zero, meaning this device has never synced', async () => {
+    expect(await readCursor(db)).toBe(0);
+  });
+
+  it('advances', async () => {
+    await writeCursor(db, 42);
+    expect(await readCursor(db)).toBe(42);
+  });
+
+  it('never goes backwards', async () => {
+    // A late response carrying an older cursor would make the next pull re-send
+    // rows that were already applied.
+    await writeCursor(db, 42);
+    await writeCursor(db, 7);
+    expect(await readCursor(db)).toBe(42);
+  });
+});

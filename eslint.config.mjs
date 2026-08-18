@@ -14,6 +14,13 @@ import nextTs from "eslint-config-next/typescript";
  */
 const WRITE_METHODS = "put|add|update|delete|bulkPut|bulkAdd|bulkUpdate|bulkDelete|clear";
 
+// Only the synced tables. The local-only ones (outbox, deadletter, conflicts,
+// syncMeta, reminderState) carry no outbox record by definition, so banning
+// writes to them would mean adding a file to the ignore list every time the
+// sync engine grows a module, which is how an ignore list stops meaning
+// anything.
+const SYNCED_TABLES = "tasks|projects|tags|taskTags|taskSeries|prefs";
+
 const bannedDexieWrites = {
   files: ["**/*.ts", "**/*.tsx"],
   ignores: [
@@ -28,7 +35,9 @@ const bannedDexieWrites = {
     "no-restricted-syntax": [
       "error",
       {
-        selector: `CallExpression > MemberExpression[property.name=/^(${WRITE_METHODS})$/] > MemberExpression[object.name="db"]`,
+        selector:
+          `CallExpression > MemberExpression[property.name=/^(${WRITE_METHODS})$/]` +
+          ` > MemberExpression[object.name="db"][property.name=/^(${SYNCED_TABLES})$/]`,
         message:
           "Write through lib/db/mutations.ts. Direct Dexie writes skip the outbox, so the change never syncs.",
       },
