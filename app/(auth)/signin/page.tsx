@@ -171,13 +171,20 @@ function SignInForm() {
         {error && (
           <div role="alert" className="mt-3 space-y-1">
             <p className="text-xs text-clay-200">{error}</p>
-            {/* Expiry is the one failure with a cause worth naming: mail
-                scanners follow links before anybody clicks them, and a
-                single-use token is spent by the time it reaches a human. */}
+            {/* Two failures have causes worth naming, because Supabase's own
+                wording for both describes the mechanism rather than the thing
+                the person actually did. */}
             {errorCode === 'otp_expired' && (
               <p className="text-xs text-text-lo">
                 Sign-in links are single use, and some mail providers open them
                 automatically while scanning. Sending a fresh one usually works.
+              </p>
+            )}
+            {errorCode === 'pkce_code_verifier_not_found' && (
+              <p className="text-xs text-text-lo">
+                The link has to open in the same browser you asked for it from.
+                A private window counts as a different browser, and so does
+                opening it on your phone. Request one here and click it here.
               </p>
             )}
             {errorCode && <p className="tnum text-[0.625rem] text-text-faint">{errorCode}</p>}
