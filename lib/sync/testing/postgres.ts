@@ -24,6 +24,7 @@ export const MIGRATIONS = [
   '0005_superseded_insert',
   '0006_base_version_zero',
   '0007_settings_sync',
+  '0008_reminders',
 ];
 
 export function migrationSql(name: string): string {
@@ -53,18 +54,24 @@ const SUPABASE_STUBS = `
 `;
 
 /**
- * Supabase grants these through default privileges on the public schema. A bare
- * Postgres has no such default, and without them a SECURITY INVOKER function
- * fails with 42501 before RLS is ever consulted.
+ * Supabase's default privileges, which a bare Postgres does not have.
+ *
+ * Applied before the migrations rather than after, because that is when they
+ * apply in a real project: Supabase grants on the *creation* of a table or a
+ * function, so a migration that revokes execute afterwards ends up with the
+ * revoke in force. Granting after the fact instead would quietly undo every
+ * revoke in 0008 and let this suite claim a lockdown that is not there.
  */
-const GRANTS = `
+const DEFAULT_PRIVILEGES = `
   -- Without usage on auth, every policy fails at auth.uid() before it ever
   -- evaluates a row.
   grant usage on schema auth to authenticated;
   grant select on auth.users to authenticated;
-  grant usage on schema public to authenticated;
-  grant all on all tables in schema public to authenticated;
-  grant execute on all functions in schema public to authenticated;
+  grant usage on schema public to authenticated, anon;
+
+  alter default privileges in schema public grant all on tables to authenticated;
+  alter default privileges in schema public grant all on sequences to authenticated;
+  alter default privileges in schema public grant execute on functions to authenticated, anon;
 `;
 
 /**
@@ -76,8 +83,8 @@ const GRANTS = `
 export async function bootPostgres(migrations: readonly string[] = MIGRATIONS): Promise<PGlite> {
   const pg = new PGlite();
   await pg.exec(SUPABASE_STUBS);
+  await pg.exec(DEFAULT_PRIVILEGES);
   for (const name of migrations) await pg.exec(migrationSql(name));
-  await pg.exec(GRANTS);
   return pg;
 }
 
