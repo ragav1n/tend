@@ -35,6 +35,7 @@ function SignInForm() {
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(params.get('error'));
+  const errorCode = params.get('code');
 
   async function sendLink(event: React.FormEvent) {
     event.preventDefault();
@@ -44,7 +45,11 @@ function SignInForm() {
     setError(null);
     const { error: failure } = await getSupabase().auth.signInWithOtp({
       email: email.trim(),
-      options: { emailRedirectTo: `${window.location.origin}/auth/confirm?next=/today` },
+      // The default Supabase email template sends people through its own
+      // verify endpoint, which hands back a PKCE code, so this points at the
+      // callback. Both routes accept either shape, so customizing the
+      // template to {{ .TokenHash }} later needs no change here.
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/today` },
     });
     setBusy(false);
 
@@ -164,9 +169,19 @@ function SignInForm() {
         )}
 
         {error && (
-          <p role="alert" className="mt-3 text-xs text-clay-200">
-            {error}
-          </p>
+          <div role="alert" className="mt-3 space-y-1">
+            <p className="text-xs text-clay-200">{error}</p>
+            {/* Expiry is the one failure with a cause worth naming: mail
+                scanners follow links before anybody clicks them, and a
+                single-use token is spent by the time it reaches a human. */}
+            {errorCode === 'otp_expired' && (
+              <p className="text-xs text-text-lo">
+                Sign-in links are single use, and some mail providers open them
+                automatically while scanning. Sending a fresh one usually works.
+              </p>
+            )}
+            {errorCode && <p className="tnum text-[0.625rem] text-text-faint">{errorCode}</p>}
+          </div>
         )}
       </div>
 
