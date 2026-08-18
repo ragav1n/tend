@@ -1,5 +1,6 @@
 import type { TendDb } from '@/lib/db/client';
 import type { OutboxRecord } from '@/lib/db/types';
+import { discardLocal } from './apply';
 import { localToWire } from './mapping';
 import { ackBatch, claimBatch, failBatch, noteConflict } from './outbox';
 import { WIRE_TABLE, type PushMutation, type PushResponse } from './protocol';
@@ -20,6 +21,8 @@ export interface PushOutcome {
   /** More records are ready, so the caller should push again. */
   hasMore: boolean;
   merged: number;
+  /** Local rows dropped because another device created the same row first. */
+  discarded: number;
 }
 
 /**
@@ -48,7 +51,7 @@ export async function pushOnce(db: TendDb): Promise<PushOutcome> {
   const { records, seqs } = await claimBatch(db);
 
   if (records.length === 0) {
-    return { cursor: 0, sent: false, hasMore: false, merged: 0 };
+    return { cursor: 0, sent: false, hasMore: false, merged: 0, discarded: 0 };
   }
 
   let response: PushResponse;
@@ -67,14 +70,33 @@ export async function pushOnce(db: TendDb): Promise<PushOutcome> {
   }
 
   let merged = 0;
+  let discarded = 0;
+
   for (const result of response.results) {
+    // The local entityId, not the one that went out. task_tags sends its task id
+    // on the wire and is keyed locally by `taskId:tagId`.
+    const record = records.find((r) => r.mutationId === result.mutationId);
+
     if (result.status === 'merged' && result.droppedFields?.length) {
       // Recorded rather than surfaced. The default is silence: the merge
       // already did the right thing, and a toast saying "2 of your changes were
       // replaced" is alarming for something the user cannot act on.
-      const record = records.find((r) => r.mutationId === result.mutationId);
       if (record) await noteConflict(db, record.table, record.entityId, result.droppedFields);
       merged += 1;
+      continue;
+    }
+
+    // Another device created this row first. Taking the server's copy means
+    // dropping the local one, or this device shows it twice from here on.
+    const lostTheRace =
+      result.status === 'superseded' ||
+      // A join row whose tag lost that race. The task carries the whole tag set
+      // on every pull, so the local row is the only thing left to clean up.
+      (result.status === 'missing' && record?.table === 'taskTags' && record.op === 'insert');
+
+    if (lostTheRace && record) {
+      await discardLocal(db, record.table, record.entityId);
+      discarded += 1;
     }
   }
 
@@ -89,5 +111,5 @@ export async function pushOnce(db: TendDb): Promise<PushOutcome> {
     await db.outbox.update(seq, { state: 'pending' as const });
   }
 
-  return { cursor: response.cursor, sent: true, hasMore, merged };
+  return { cursor: response.cursor, sent: true, hasMore, merged, discarded };
 }

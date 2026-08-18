@@ -29,9 +29,18 @@ import type { WireTable } from './protocol';
  * from diverging.
  */
 
-/** Local columns that carry `''` where Postgres carries null. */
+/**
+ * Local columns that carry `''` where Postgres carries null.
+ *
+ * Every nullable uuid a client can write belongs here. Postgres rejects `''` as
+ * a uuid outright, with a 22P02 the client classifies as fatal, so a column
+ * missing from this list means that whole table never syncs and every mutation
+ * for it lands in the deadletter. `projects.area_id` was missing until the
+ * convergence test created a project on one device.
+ */
 const SENTINEL_COLUMNS: Partial<Record<WireTable, string[]>> = {
   tasks: ['project_id', 'parent_task_id', 'series_id'],
+  projects: ['area_id'],
 };
 
 export function toSnakeCase(key: string): string {

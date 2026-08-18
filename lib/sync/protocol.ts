@@ -79,7 +79,12 @@ export interface PushRequest {
   mutations: PushMutation[];
 }
 
-export type PushStatus = 'applied' | 'merged' | 'missing';
+/**
+ * `superseded` is the uniqueness race: the row the client tried to insert
+ * already exists under another id, because another device created it first. The
+ * client drops its local copy and takes the server's on the next pull.
+ */
+export type PushStatus = 'applied' | 'merged' | 'missing' | 'superseded';
 
 export interface PushResult {
   mutationId: string;

@@ -1,77 +1,33 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { PGlite } from '@electric-sql/pglite';
+import type { PGlite } from '@electric-sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { localToWire } from './mapping';
+import {
+  asSuperuser as ownerRole,
+  asUser as userRole,
+  bootPostgres,
+  createUsers,
+} from './testing/postgres';
 
 /**
  * The sync RPCs, executed against a real Postgres.
  *
- * PGlite is Postgres compiled to wasm, so this runs the actual migrations, the
- * actual plpgsql and the actual constraints in-process, with no Docker and no
- * cloud project. That matters because the two worst bugs in this project so far
- * were both in SQL that every other test happily ignored: an insert that could
- * not run at all, and a per-field merge nobody had ever executed.
+ * The boot sequence lives in `testing/postgres.ts`: real migrations, real
+ * plpgsql, real constraints, in-process. That matters because the two worst bugs
+ * in this project so far were both in SQL that every other test happily ignored:
+ * an insert that could not run at all, and a per-field merge nobody had ever
+ * executed.
  *
  * Grep tests can tell you a policy is shaped correctly. Only this can tell you
  * the thing works.
  */
-
-const MIGRATIONS = ['0001_core_schema', '0002_rls', '0003_sync_rpc', '0004_fix_push_insert'];
-
-function migration(name: string): string {
-  return (
-    readFileSync(join(process.cwd(), 'supabase', 'migrations', `${name}.sql`), 'utf8')
-      // PGlite ships without contrib extensions. Nothing in the schema calls
-      // pgcrypto, since every id is generated on the client, so removing the
-      // line leaves everything under test intact.
-      .replace(/create extension[^;]+;/gi, '')
-  );
-}
-
-/** The pieces Supabase provides that a bare Postgres does not. */
-const SUPABASE_STUBS = `
-  create role authenticated;
-  create role anon;
-  create role service_role;
-
-  create schema auth;
-  create table auth.users (id uuid primary key, email text);
-
-  -- Matches Supabase's own implementation: the uid comes from the request's
-  -- JWT claims, which is what makes every RLS policy in 0002 work.
-  create or replace function auth.uid() returns uuid language sql stable as $$
-    select (nullif(current_setting('request.jwt.claims', true), '')::json->>'sub')::uuid
-  $$;
-`;
-
-/**
- * Supabase grants these through default privileges on the public schema. A bare
- * Postgres has no such default, and without them a SECURITY INVOKER function
- * fails with 42501 before RLS is ever consulted.
- */
-const GRANTS = `
-  -- Without usage on auth, every policy fails at auth.uid() before it ever
-  -- evaluates a row.
-  grant usage on schema auth to authenticated;
-  grant select on auth.users to authenticated;
-  grant usage on schema public to authenticated;
-  grant all on all tables in schema public to authenticated;
-  grant execute on all functions in schema public to authenticated;
-`;
 
 const USER = '00000000-0000-4000-8000-000000000001';
 const OTHER = '00000000-0000-4000-8000-000000000002';
 
 let db: PGlite;
 
-async function asUser(uid: string) {
-  await db.exec(`set request.jwt.claims = '{"sub":"${uid}"}'; set role authenticated;`);
-}
-
-async function asSuperuser() {
-  await db.exec(`reset role; set request.jwt.claims = '';`);
-}
+const asUser = (uid: string) => userRole(db, uid);
+const asSuperuser = () => ownerRole(db);
 
 /** The exact payload push.ts builds for a new task. */
 function insertMutation(over: Record<string, unknown> = {}) {
@@ -130,14 +86,8 @@ async function pull(cursor = 0) {
 }
 
 beforeAll(async () => {
-  db = new PGlite();
-  await db.exec(SUPABASE_STUBS);
-  for (const name of MIGRATIONS) await db.exec(migration(name));
-  await db.exec(GRANTS);
-  await db.exec(
-    `insert into auth.users (id, email) values
-       ('${USER}', 'a@example.com'), ('${OTHER}', 'b@example.com');`,
-  );
+  db = await bootPostgres();
+  await createUsers(db, [USER, OTHER]);
 }, 60_000);
 
 afterAll(async () => {
@@ -288,7 +238,16 @@ describe('the per-field merge', () => {
   it('keeps the server value and reports the loss when both touch one field', async () => {
     await asUser(USER);
     const base = (await pull(0)).rows.find((r) => r.table === 'tasks')!.row;
-    const stale = Number(base.row_version) - 5;
+
+    // One below the version that last wrote the title, taken from the row rather
+    // than guessed at. Zero would say something else entirely since 0006: that
+    // the client has never seen a server version of this row at all.
+    await asSuperuser();
+    const { rows: stamped } = await db.query<{ title_version: string }>(
+      `select (field_versions->>'title')::bigint as title_version from tasks where id = '${base.id}'`,
+    );
+    const stale = Number(stamped[0]!.title_version) - 1;
+    await asUser(USER);
 
     const response = await push([
       {
@@ -399,15 +358,10 @@ describe('what 0004 actually fixes', () => {
    * visible.
    */
   it('fails without it', async () => {
-    const old = new PGlite();
+    const old = await bootPostgres(['0001_core_schema', '0002_rls', '0003_sync_rpc']);
     try {
-      await old.exec(SUPABASE_STUBS);
-      for (const name of ['0001_core_schema', '0002_rls', '0003_sync_rpc']) {
-        await old.exec(migration(name));
-      }
-      await old.exec(GRANTS);
-      await old.exec(`insert into auth.users (id, email) values ('${USER}', 'a@example.com');`);
-      await old.exec(`set request.jwt.claims = '{"sub":"${USER}"}'; set role authenticated;`);
+      await createUsers(old, [USER]);
+      await userRole(old, USER);
 
       await expect(
         old.query('select public.sync_push($1::jsonb)', [
@@ -422,4 +376,66 @@ describe('what 0004 actually fixes', () => {
       await old.close();
     }
   }, 60_000);
+});
+
+describe('a row edited before its insert was ever acked', () => {
+  it('keeps the edit instead of merging it away', async () => {
+    /**
+     * The client holds rowVersion 0 for a row it created and has never pulled
+     * back, so every update it queues carries baseVersion 0. The insert stamps
+     * field_versions well above that, so comparing the two drops every field of
+     * every edit made before the first successful pull. Adding a task and then
+     * fixing its title is the most ordinary thing anybody does offline, and
+     * before 0006 the fix vanished with the server reporting a merge.
+     */
+    await asUser(USER);
+    const id = '10101010-1010-4101-8101-101010101010';
+
+    const response = await push([
+      insertMutation({
+        id,
+        mutationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
+        title: 'Buy milk',
+      }),
+      {
+        mutationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2',
+        table: 'tasks',
+        entityId: id,
+        op: 'update',
+        patch: { title: 'Buy oat milk', notes: 'the barista one' },
+        baseVersion: 0,
+      },
+    ]);
+
+    expect(response.results[1]).toMatchObject({ status: 'applied' });
+
+    await asSuperuser();
+    const { rows } = await db.query<{ title: string; notes: string }>(
+      `select title, notes from tasks where id = '${id}'`,
+    );
+    expect(rows[0]).toEqual({ title: 'Buy oat milk', notes: 'the barista one' });
+  });
+
+  it('still protects a field from a device that has fallen behind', async () => {
+    // The version the client sends is what decides this. Zero means "I have
+    // never seen a server version of this row", which only its author can say.
+    await asUser(USER);
+    const id = '10101010-1010-4101-8101-101010101010';
+    const { rows: before } = await db.query<{ row_version: number }>(
+      `select row_version from tasks where id = '${id}'`,
+    );
+
+    const response = await push([
+      {
+        mutationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3',
+        table: 'tasks',
+        entityId: id,
+        op: 'update',
+        patch: { title: 'from a device that missed the last pull' },
+        baseVersion: Number(before[0]!.row_version) - 1,
+      },
+    ]);
+
+    expect(response.results[0]).toMatchObject({ status: 'merged', droppedFields: ['title'] });
+  });
 });

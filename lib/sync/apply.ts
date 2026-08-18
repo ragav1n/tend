@@ -1,6 +1,6 @@
 import type { TendDb } from '@/lib/db/client';
 import { deriveProject, deriveSeries, deriveTag, deriveTask } from '@/lib/db/derive';
-import type { Project, Tag, Task, TaskSeries } from '@/lib/db/types';
+import type { EntityTable, Project, Tag, Task, TaskSeries } from '@/lib/db/types';
 import { LOCAL_TABLE, type PullRow, type WireTable } from './protocol';
 import { tagIdsOf, wireToLocal } from './mapping';
 
@@ -224,6 +224,50 @@ export async function applyPage(db: TendDb, rows: PullRow[]): Promise<ApplyResul
   }
 
   return total;
+}
+
+/**
+ * Removes a local row the server refused to create.
+ *
+ * The cause is always a uniqueness race. Two devices completing the same
+ * recurring task offline both generate occurrence 5, `unique (series_id,
+ * occurrence_seq)` lets one of them land, and the loser is holding a row that
+ * exists nowhere else. Keeping it leaves that device showing the occurrence
+ * twice forever, so it goes, and the winner arrives on the pull that follows.
+ *
+ * Writes a synced table without queueing anything, which is why it lives beside
+ * the apply path rather than in the write API.
+ */
+export async function discardLocal(
+  db: TendDb,
+  table: EntityTable,
+  entityId: string,
+): Promise<void> {
+  switch (table) {
+    case 'tasks':
+      await db.transaction('rw', [db.tasks, db.taskTags], async () => {
+        await db.taskTags.where('taskId').equals(entityId).delete();
+        await db.tasks.delete(entityId);
+      });
+      return;
+    case 'taskTags': {
+      const [taskId, tagId] = entityId.split(':');
+      if (taskId && tagId) await db.taskTags.delete([taskId, tagId]);
+      return;
+    }
+    case 'projects':
+      await db.projects.delete(entityId);
+      return;
+    case 'tags':
+      await db.tags.delete(entityId);
+      return;
+    case 'taskSeries':
+      await db.taskSeries.delete(entityId);
+      return;
+    case 'prefs':
+      // One row per user, created by the signup trigger. Nothing can race it.
+      return;
+  }
 }
 
 // ─── The cursor ───────────────────────────────────────────────────────────────

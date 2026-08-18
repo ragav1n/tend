@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { MIGRATIONS } from './testing/postgres';
 
 /**
  * Guards on the SQL that cannot be checked by running it.
@@ -29,13 +30,21 @@ function code(source: string): string {
 const CODE = code(ALL);
 
 describe('the migration directory', () => {
-  it('has the three phase 1 migrations, numbered in order', () => {
+  it('has every phase 1 migration, numbered in order', () => {
     expect(FILES).toEqual([
       '0001_core_schema.sql',
       '0002_rls.sql',
       '0003_sync_rpc.sql',
       '0004_fix_push_insert.sql',
+      '0005_superseded_insert.sql',
+      '0006_base_version_zero.sql',
     ]);
+  });
+
+  it('applies all of them in the test harness', () => {
+    // One missing from that list means every PGlite test runs against a schema
+    // the real project does not have, which is the one way this suite can lie.
+    expect(MIGRATIONS.map((name) => `${name}.sql`)).toEqual(FILES);
   });
 });
 
