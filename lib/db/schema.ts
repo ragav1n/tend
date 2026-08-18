@@ -21,7 +21,7 @@ import type Dexie from 'dexie';
  * items or closed items, never a mix.
  */
 
-export const DATA_LAYER_VERSION = 1;
+export const DATA_LAYER_VERSION = 2;
 
 export function defineSchema(db: Dexie): void {
   db.version(1).stores({
@@ -70,5 +70,12 @@ export function defineSchema(db: Dexie): void {
     // Which reminders already fired locally. Local-only on purpose: syncing it
     // would cause write churn across devices for no benefit.
     reminderState: 'taskId',
+  });
+
+  // v2 adds recurrence. A series is fetched by id from the task that points at
+  // it, so id plus the tombstone and cursor indexes every synced table needs is
+  // the whole index set.
+  db.version(2).stores({
+    taskSeries: ['id', '_del', 'rowVersion'].join(', '),
   });
 }

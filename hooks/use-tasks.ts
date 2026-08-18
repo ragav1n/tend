@@ -5,16 +5,20 @@ import { useStableLiveQuery } from './use-live';
 import {
   inboxList,
   logbook,
+  projectOptions,
   searchTasks,
+  seriesById,
   sidebarCounts,
   somedayList,
   subtasksOf,
+  tagOptions,
+  taskById,
   today,
   todayList,
   todayProgress,
   upcomingList,
 } from '@/lib/db/queries';
-import type { Task } from '@/lib/db/types';
+import type { Project, Tag, Task, TaskSeries } from '@/lib/db/types';
 
 /** Module-scope so the reference is stable and never triggers a re-render. */
 const NO_TASKS: Task[] = [];
@@ -72,4 +76,31 @@ export function useTodayProgress() {
 export function useFirstLoadComplete(): boolean {
   const count = useLiveQuery(() => todayList(today()).then((r) => r.length), []);
   return count !== undefined;
+}
+
+/**
+ * One task, live.
+ *
+ * Deliberately not wrapped in `useStableLiveQuery`: the detail panel needs to
+ * tell "still reading" from "this row is gone", and undefined is the only value
+ * that carries the difference. A soft delete keeps returning the row with
+ * `_del: 1`, which is what the panel watches to close itself.
+ */
+export function useTask(id: string | null): Task | undefined {
+  return useLiveQuery(() => (id ? taskById(id) : Promise.resolve(undefined)), [id]);
+}
+
+export function useSeries(seriesId: string | undefined): TaskSeries | undefined {
+  return useLiveQuery(() => seriesById(seriesId ?? ''), [seriesId]);
+}
+
+const NO_PROJECTS: Project[] = [];
+const NO_TAGS: Tag[] = [];
+
+export function useProjects(): Project[] {
+  return useStableLiveQuery(() => projectOptions(), [], NO_PROJECTS);
+}
+
+export function useTags(): Tag[] {
+  return useStableLiveQuery(() => tagOptions(), [], NO_TAGS);
 }

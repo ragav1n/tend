@@ -1,7 +1,15 @@
+import {
+  addDays,
+  daysBetween,
+  nextOccurrence,
+  type RecurrenceRule,
+} from '@/lib/recurrence';
 import { getDb, LOCAL_USER_ID, type TendDb } from './client';
-import { deriveProject, deriveTag, deriveTask, isClosed } from './derive';
+import { deriveProject, deriveSeries, deriveTag, deriveTask, isClosed } from './derive';
 import { newBatchId, newId, newMutationId } from './ids';
+import { today } from './queries';
 import { rankAfter, rankBefore, rankBetween } from './rank';
+import { fromRule, toRule } from './series';
 import {
   NO_DUE_DAY,
   NO_PARENT,
@@ -13,6 +21,7 @@ import {
   type Project,
   type Tag,
   type Task,
+  type TaskSeries,
   type TaskStatus,
 } from './types';
 
@@ -67,6 +76,9 @@ export type TaskPatch = Partial<
     | 'archivedAt'
     | 'sortKey'
     | 'plannedSortKey'
+    | 'seriesId'
+    | 'occurrenceDate'
+    | 'occurrenceSeq'
   >
 >;
 
@@ -249,13 +261,131 @@ export async function updateTask(
  * because it is the app's most common mutation and because a recurring task also
  * has to materialize its next occurrence. That generation happens locally with
  * no server round trip, so it works offline.
+ *
+ * Returns the id of the occurrence that was created, or null when nothing
+ * recurred, so the caller can scroll to it or say so.
  */
 export async function completeTask(
   id: string,
   done = true,
   db: TendDb = getDb(),
-): Promise<void> {
-  await updateTask(id, { status: done ? 'done' : 'active' }, db);
+): Promise<string | null> {
+  let created: string | null = null;
+
+  await db.transaction('rw', [db.tasks, db.taskTags, db.taskSeries, db.outbox], async () => {
+    // Read before the write, so the clone copies the status the task had rather
+    // than the 'done' it is about to get.
+    const before = await db.tasks.get(id);
+    if (!before) return;
+
+    await updateTask(id, { status: done ? 'done' : 'active' }, db);
+    if (!done || before.seriesId === '') return;
+
+    created = await materializeNext(before, db);
+  });
+
+  return created;
+}
+
+/**
+ * Clones the completed occurrence forward.
+ *
+ * The clone is what makes the series row hold nothing but the rule: there is no
+ * second set of template columns that can drift out of step with the task the
+ * user actually edits.
+ */
+async function materializeNext(completed: Task, db: TendDb): Promise<string | null> {
+  const series = await db.taskSeries.get(completed.seriesId);
+  if (!series || series._del === 1) return null;
+
+  const day = today();
+  const result = nextOccurrence({
+    rule: toRule(series),
+    occurrenceDate: completed.occurrenceDate ?? completed.dueDate ?? day,
+    completedOn: day,
+    today: day,
+    completedCount: series.completedCount,
+  });
+
+  // The count advances even when the series ends here, because it records
+  // completions rather than generations and endsAfterCount reads it next time.
+  const seriesPatch = { completedCount: series.completedCount + 1 };
+  await db.taskSeries.put({ ...series, ...seriesPatch, updatedAt: nowIso() });
+  await db.outbox.add(
+    outboxRecord('taskSeries', series.id, 'update', seriesPatch, series.rowVersion),
+  );
+
+  if (result.kind === 'ended') return null;
+
+  const id = newId();
+  const tagIds = (await db.taskTags.where('taskId').equals(completed.id).toArray()).map(
+    (t) => t.tagId,
+  );
+  const batchId = tagIds.length > 0 ? newBatchId() : null;
+
+  // A lead time is a gap, not a date, so it moves with the occurrence.
+  const startDate =
+    completed.startDate && completed.dueDate
+      ? addDays(result.date, daysBetween(completed.dueDate, completed.startDate))
+      : null;
+
+  const base = {
+    id,
+    userId: LOCAL_USER_ID,
+    projectId: completed.projectId,
+    parentTaskId: completed.parentTaskId,
+    seriesId: completed.seriesId,
+    depth: completed.depth,
+    title: completed.title,
+    notes: completed.notes,
+    status: isClosed(completed.status) ? ('active' as TaskStatus) : completed.status,
+    priority: completed.priority,
+    dueDate: result.date,
+    dueTime: completed.dueTime,
+    startDate,
+    // Today's plan is a decision about today, so it does not travel forward.
+    plannedFor: null,
+    estimateMinutes: completed.estimateMinutes,
+    completedAt: null,
+    cancelReason: null,
+    archivedAt: null,
+    // The new occurrence takes the old one's place in the list. Reusing the key
+    // costs no query, and the completed row has already left the open lists.
+    sortKey: completed.sortKey,
+    plannedSortKey: completed.plannedSortKey,
+    occurrenceDate: result.date,
+    // Exactly +1, never +1+skipped: two devices in different zones compute
+    // different skip counts, and the server's unique (series_id, occurrence_seq)
+    // is what stops both of them creating occurrence 5. A seq derived from
+    // anything zone-dependent would let the duplicate through.
+    occurrenceSeq: (completed.occurrenceSeq ?? 0) + 1,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    deletedAt: null,
+    rowVersion: 0,
+  };
+
+  const row: Task = { ...base, ...deriveTask(base, tagIds) };
+  await db.tasks.add(row);
+  await db.outbox.add(outboxRecord('tasks', id, 'insert', toInsertPatch(row), 0, { batchId }));
+
+  for (const tagId of tagIds) {
+    await db.taskTags.add({
+      taskId: id,
+      tagId,
+      userId: LOCAL_USER_ID,
+      createdAt: nowIso(),
+      rowVersion: 0,
+    });
+    await db.outbox.add(
+      outboxRecord('taskTags', `${id}:${tagId}`, 'insert', { taskId: id, tagId }, 0, {
+        batchId,
+        deps: [id, tagId],
+      }),
+    );
+  }
+
+  return id;
 }
 
 /** Soft delete. The row keeps its content so restore is just another field write. */
@@ -269,7 +399,12 @@ export async function deleteTask(id: string, db: TendDb = getDb()): Promise<void
 
     // Cascade to subtasks, matching the Postgres ON DELETE CASCADE on the
     // composite parent key, so local and server agree on what a delete removes.
-    const children = await db.tasks.where('parentTaskId').equals(id).toArray();
+    // Children already deleted are left alone: re-stamping deletedAt would
+    // restart their retention window, queue a pointless mutation, and make them
+    // look like part of this delete to the undo that follows it.
+    const children = (await db.tasks.where('parentTaskId').equals(id).toArray()).filter(
+      (t) => t.deletedAt === null,
+    );
 
     for (const row of [current, ...children]) {
       const next = { ...row, deletedAt, updatedAt: deletedAt };
@@ -283,16 +418,33 @@ export async function deleteTask(id: string, db: TendDb = getDb()): Promise<void
   });
 }
 
+/**
+ * Undo of a delete, which is why it cascades the way the delete did.
+ *
+ * Only children carrying the parent's exact `deletedAt` come back. Restoring
+ * every child would resurrect subtasks that were deleted on their own weeks
+ * earlier, and an undo toast that quietly does more than it undid is worse than
+ * no undo at all.
+ */
 export async function restoreTask(id: string, db: TendDb = getDb()): Promise<void> {
   await db.transaction('rw', [db.tasks, db.taskTags, db.outbox], async () => {
     const current = await db.tasks.get(id);
     if (!current) return;
-    const next = { ...current, deletedAt: null, updatedAt: nowIso() };
-    const tagIds = (await db.taskTags.where('taskId').equals(id).toArray()).map((t) => t.tagId);
-    await db.tasks.put({ ...next, ...deriveTask(next, tagIds) });
-    await db.outbox.add(
-      outboxRecord('tasks', id, 'undelete', { deletedAt: null }, current.rowVersion),
+
+    const children = (await db.tasks.where('parentTaskId').equals(id).toArray()).filter(
+      (t) => t.deletedAt !== null && t.deletedAt === current.deletedAt,
     );
+
+    for (const row of [current, ...children]) {
+      const next = { ...row, deletedAt: null, updatedAt: nowIso() };
+      const tagIds = (await db.taskTags.where('taskId').equals(row.id).toArray()).map(
+        (t) => t.tagId,
+      );
+      await db.tasks.put({ ...next, ...deriveTask(next, tagIds) });
+      await db.outbox.add(
+        outboxRecord('tasks', row.id, 'undelete', { deletedAt: null }, row.rowVersion),
+      );
+    }
   });
 }
 
@@ -359,6 +511,95 @@ export async function setTaskTags(
 
     const next = { ...task, updatedAt: nowIso() };
     await db.tasks.put({ ...next, ...deriveTask(next, [...wanted]) });
+  });
+}
+
+// ─── Recurrence ───────────────────────────────────────────────────────────────
+
+/**
+ * Makes a task repeat, or edits the rule it already repeats by.
+ *
+ * The task points at the series rather than the other way round, so the series
+ * row never has to be found by scanning tasks, and exactly one open occurrence
+ * exists at a time.
+ */
+export async function setTaskRecurrence(
+  taskId: string,
+  rule: RecurrenceRule,
+  db: TendDb = getDb(),
+): Promise<string | null> {
+  let seriesId: string | null = null;
+
+  await db.transaction('rw', [db.tasks, db.taskTags, db.taskSeries, db.outbox], async () => {
+    const task = await db.tasks.get(taskId);
+    if (!task) return;
+
+    const fields = fromRule(rule);
+    const existing = task.seriesId ? await db.taskSeries.get(task.seriesId) : undefined;
+
+    if (existing && existing._del === 0) {
+      seriesId = existing.id;
+      const next = { ...existing, ...fields, updatedAt: nowIso() };
+      await db.taskSeries.put({ ...next, ...deriveSeries(next) });
+      await db.outbox.add(
+        outboxRecord('taskSeries', existing.id, 'update', { ...fields }, existing.rowVersion),
+      );
+      return;
+    }
+
+    const id = newId();
+    seriesId = id;
+    const base = {
+      id,
+      userId: LOCAL_USER_ID,
+      kind: 'structured' as const,
+      ...fields,
+      completedCount: 0,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      deletedAt: null,
+      rowVersion: 0,
+    };
+    const row: TaskSeries = { ...base, ...deriveSeries(base) };
+    await db.taskSeries.add(row);
+    await db.outbox.add(outboxRecord('taskSeries', id, 'insert', toInsertPatch(row), 0));
+
+    // The anchor the first generation steps from. A task with no due date still
+    // needs one, or "every 3 days" has nothing to count from.
+    await updateTask(
+      taskId,
+      { seriesId: id, occurrenceDate: task.dueDate ?? today(), occurrenceSeq: 0 },
+      db,
+    );
+  });
+
+  return seriesId;
+}
+
+/**
+ * Stops a task repeating. The series is tombstoned rather than unlinked, so
+ * completed occurrences keep pointing at a row that explains where they came
+ * from instead of at a dangling id.
+ */
+export async function clearTaskRecurrence(
+  taskId: string,
+  db: TendDb = getDb(),
+): Promise<void> {
+  await db.transaction('rw', [db.tasks, db.taskTags, db.taskSeries, db.outbox], async () => {
+    const task = await db.tasks.get(taskId);
+    if (!task || task.seriesId === '') return;
+
+    const series = await db.taskSeries.get(task.seriesId);
+    if (series && series._del === 0) {
+      const deletedAt = nowIso();
+      const next = { ...series, deletedAt, updatedAt: deletedAt };
+      await db.taskSeries.put({ ...next, ...deriveSeries(next) });
+      await db.outbox.add(
+        outboxRecord('taskSeries', series.id, 'delete', { deletedAt }, series.rowVersion),
+      );
+    }
+
+    await updateTask(taskId, { seriesId: '', occurrenceDate: null, occurrenceSeq: null }, db);
   });
 }
 

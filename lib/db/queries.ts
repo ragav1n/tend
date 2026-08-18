@@ -1,6 +1,15 @@
 import { getDb, type TendDb } from './client';
 import { compareRank } from './rank';
-import { NO_DUE_DAY, NO_PARENT, NO_PROJECT, type PlainDate, type Task } from './types';
+import {
+  NO_DUE_DAY,
+  NO_PARENT,
+  NO_PROJECT,
+  type PlainDate,
+  type Project,
+  type Tag,
+  type Task,
+  type TaskSeries,
+} from './types';
 
 /**
  * Hot-path reads.
@@ -127,6 +136,36 @@ export async function subtasksOf(taskId: string, db: TendDb = getDb()): Promise<
     .where('[_del+parentTaskId+sortKey]')
     .between([0, taskId, ''], [0, taskId, MAX_STR], true, true)
     .toArray();
+}
+
+/** One task by id. Undefined once it is hard-deleted or never existed. */
+export async function taskById(id: string, db: TendDb = getDb()): Promise<Task | undefined> {
+  return db.tasks.get(id);
+}
+
+/** The rule a task repeats by. Undefined for an empty id or a tombstoned row,
+ *  so a caller never has to check both. */
+export async function seriesById(
+  seriesId: string,
+  db: TendDb = getDb(),
+): Promise<TaskSeries | undefined> {
+  if (seriesId === '') return undefined;
+  const series = await db.taskSeries.get(seriesId);
+  return series && series._del === 0 ? series : undefined;
+}
+
+/** Every live project, in the user's order. Small enough to read whole. */
+export async function projectOptions(db: TendDb = getDb()): Promise<Project[]> {
+  const rows = await db.projects
+    .where('[_del+_archived+sortKey]')
+    .between([0, 0, ''], [0, 0, MAX_STR], true, true)
+    .toArray();
+  return rows.sort(compareRank);
+}
+
+/** Every live tag, alphabetical. Also small enough to read whole. */
+export async function tagOptions(db: TendDb = getDb()): Promise<Tag[]> {
+  return db.tags.where('[_del+name]').between([0, ''], [0, MAX_STR], true, true).toArray();
 }
 
 /** Tag filter, served by the multiEntry `_tagIds` index. */

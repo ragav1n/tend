@@ -8,6 +8,7 @@ import type {
   SyncMetaRow,
   Tag,
   Task,
+  TaskSeries,
   TaskTag,
 } from './types';
 
@@ -45,6 +46,7 @@ export class TendDb extends Dexie {
   tags!: EntityTable<Tag, 'id'>;
   /** Compound primary key, so this is a plain Table rather than an EntityTable. */
   taskTags!: Table<TaskTag, [string, string]>;
+  taskSeries!: EntityTable<TaskSeries, 'id'>;
   prefs!: EntityTable<Prefs, 'id'>;
   /** Auto-incrementing seq, so the key type is a number. */
   outbox!: Table<OutboxRecord, number>;

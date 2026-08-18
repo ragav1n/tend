@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import Dexie from 'dexie';
 import { setDb, TendDb } from './client';
 import {
+  clearTaskRecurrence,
+  completeTask,
   createProject,
   createTag,
   createTask,
@@ -9,6 +11,7 @@ import {
   ensureTag,
   reorderTask,
   restoreTask,
+  setTaskRecurrence,
   setTaskTags,
   updateTask,
 } from './mutations';
@@ -352,5 +355,228 @@ describe('search', () => {
   it('ignores single characters, which would match nearly everything', async () => {
     await createTask({ title: 'A task' }, db);
     expect(await searchTasks('a', 50, db)).toHaveLength(0);
+  });
+});
+
+describe('recurrence', () => {
+  /** Every day, counted from the due date. The rule most tasks get. */
+  const DAILY = {
+    freq: 'daily' as const,
+    interval: 1,
+    anchorMode: 'due_date' as const,
+    catchupPolicy: 'skip_to_future' as const,
+    endsMode: 'never' as const,
+  };
+
+  it('creates a series and points the task at it', async () => {
+    const id = await createTask({ title: 'Water the plants', dueDate: TODAY }, db);
+    const seriesId = await setTaskRecurrence(id, DAILY, db);
+
+    const series = await db.taskSeries.get(seriesId!);
+    expect(series).toMatchObject({ freq: 'daily', interval: 1, completedCount: 0, _del: 0 });
+
+    const task = await db.tasks.get(id);
+    expect(task?.seriesId).toBe(seriesId);
+    // The anchor the first generation steps from.
+    expect(task?.occurrenceDate).toBe(TODAY);
+    expect(task?.occurrenceSeq).toBe(0);
+  });
+
+  it('falls back to today as the anchor when the task has no due date', async () => {
+    const id = await createTask({ title: 'Stretch' }, db);
+    await setTaskRecurrence(id, DAILY, db);
+    expect((await db.tasks.get(id))?.occurrenceDate).toBe(TODAY);
+  });
+
+  it('edits the existing series rather than making a second one', async () => {
+    const id = await createTask({ title: 'Standup', dueDate: TODAY }, db);
+    const first = await setTaskRecurrence(id, DAILY, db);
+    const second = await setTaskRecurrence(id, { ...DAILY, interval: 3 }, db);
+
+    expect(second).toBe(first);
+    expect(await db.taskSeries.count()).toBe(1);
+    expect((await db.taskSeries.get(first!))?.interval).toBe(3);
+  });
+
+  it('queues the series insert without any server-owned column', async () => {
+    const id = await createTask({ title: 'Bins', dueDate: TODAY }, db);
+    const seriesId = await setTaskRecurrence(id, DAILY, db);
+
+    const record = (await db.outbox.toArray()).find(
+      (r) => r.table === 'taskSeries' && r.entityId === seriesId,
+    );
+    expect(record).toMatchObject({ op: 'insert', baseVersion: 0 });
+    for (const column of ['updatedAt', 'rowVersion', '_del']) {
+      expect(record?.patch).not.toHaveProperty(column);
+    }
+  });
+
+  it('materializes the next occurrence when one is completed', async () => {
+    const id = await createTask(
+      { title: 'Water the plants', dueDate: TODAY, status: 'active' },
+      db,
+    );
+    await setTaskRecurrence(id, DAILY, db);
+
+    const nextId = await completeTask(id, true, db);
+    expect(nextId).not.toBeNull();
+
+    const next = await db.tasks.get(nextId!);
+    expect(next).toMatchObject({
+      title: 'Water the plants',
+      dueDate: daysFrom(1),
+      occurrenceDate: daysFrom(1),
+      // Exactly +1. A seq derived from the skip count would differ between two
+      // devices in different zones and defeat the server's uniqueness check.
+      occurrenceSeq: 1,
+      status: 'active',
+      _done: 0,
+    });
+
+    // The completed one stays completed rather than being replaced.
+    expect((await db.tasks.get(id))?._done).toBe(1);
+    // And the series counted the completion.
+    expect((await db.taskSeries.get(next!.seriesId))?.completedCount).toBe(1);
+  });
+
+  it('carries the tags forward and drops the day plan', async () => {
+    const tagId = await ensureTag('garden', db);
+    const id = await createTask(
+      { title: 'Water the plants', dueDate: TODAY, plannedFor: TODAY, tagIds: [tagId] },
+      db,
+    );
+    await setTaskRecurrence(id, DAILY, db);
+
+    const nextId = await completeTask(id, true, db);
+    const next = await db.tasks.get(nextId!);
+
+    expect(next?._tagIds).toEqual([tagId]);
+    expect(await db.taskTags.where('taskId').equals(nextId!).count()).toBe(1);
+    // Today's plan is a decision about today, so it does not travel.
+    expect(next?.plannedFor).toBeNull();
+  });
+
+  it('keeps a start date the same distance ahead of the due date', async () => {
+    const id = await createTask(
+      { title: 'File taxes', dueDate: daysFrom(10), startDate: daysFrom(7) },
+      db,
+    );
+    await setTaskRecurrence(id, DAILY, db);
+
+    const nextId = await completeTask(id, true, db);
+    const next = await db.tasks.get(nextId!);
+    expect(next?.dueDate).toBe(daysFrom(11));
+    expect(next?.startDate).toBe(daysFrom(8));
+  });
+
+  it('counts from the completion date when the rule says so', async () => {
+    const id = await createTask({ title: 'Change filter', dueDate: daysFrom(-9) }, db);
+    await setTaskRecurrence(
+      id,
+      { ...DAILY, interval: 3, anchorMode: 'completion_date' },
+      db,
+    );
+
+    const nextId = await completeTask(id, true, db);
+    // Three days after finishing it, not three days after it was due.
+    expect((await db.tasks.get(nextId!))?.dueDate).toBe(daysFrom(3));
+  });
+
+  it('stops after the agreed number of completions', async () => {
+    const id = await createTask({ title: 'Take the course', dueDate: TODAY }, db);
+    await setTaskRecurrence(id, { ...DAILY, endsMode: 'after_count', endsAfterCount: 2 }, db);
+
+    const second = await completeTask(id, true, db);
+    expect(second).not.toBeNull();
+
+    const third = await completeTask(second!, true, db);
+    expect(third).toBeNull();
+    // The count still records the second completion, so nothing regenerates.
+    const series = await db.taskSeries.get((await db.tasks.get(id))!.seriesId);
+    expect(series?.completedCount).toBe(2);
+  });
+
+  it('generates nothing for a task that does not repeat', async () => {
+    const id = await createTask({ title: 'One off', dueDate: TODAY }, db);
+    expect(await completeTask(id, true, db)).toBeNull();
+    expect(await db.tasks.count()).toBe(1);
+  });
+
+  it('generates nothing when a task is reopened', async () => {
+    const id = await createTask({ title: 'Water the plants', dueDate: TODAY }, db);
+    await setTaskRecurrence(id, DAILY, db);
+    await completeTask(id, false, db);
+    expect(await db.tasks.count()).toBe(1);
+  });
+
+  it('stops repeating without orphaning the completed occurrences', async () => {
+    const id = await createTask({ title: 'Water the plants', dueDate: TODAY }, db);
+    const seriesId = await setTaskRecurrence(id, DAILY, db);
+    await clearTaskRecurrence(id, db);
+
+    const task = await db.tasks.get(id);
+    expect(task?.seriesId).toBe('');
+    expect(task?.occurrenceDate).toBeNull();
+
+    // Tombstoned rather than removed, so history still resolves.
+    const series = await db.taskSeries.get(seriesId!);
+    expect(series?._del).toBe(1);
+    expect(series?.deletedAt).not.toBeNull();
+
+    expect(await completeTask(id, true, db)).toBeNull();
+  });
+
+  it('does not regenerate from a series that was turned off', async () => {
+    const id = await createTask({ title: 'Water the plants', dueDate: TODAY }, db);
+    const seriesId = await setTaskRecurrence(id, DAILY, db);
+    // Tombstone the series while the task still points at it, which is what a
+    // delete arriving from another device looks like.
+    await clearTaskRecurrence(id, db);
+    await updateTask(id, { seriesId: seriesId! }, db);
+
+    expect(await completeTask(id, true, db)).toBeNull();
+  });
+});
+
+describe('undo of a delete', () => {
+  it('brings back the subtasks the delete took with it', async () => {
+    const parent = await createTask({ title: 'Ship the release' }, db);
+    const child = await createTask({ title: 'Write notes', parentTaskId: parent }, db);
+
+    await deleteTask(parent, db);
+    expect((await db.tasks.get(child))?._del).toBe(1);
+
+    await restoreTask(parent, db);
+    expect((await db.tasks.get(parent))?._del).toBe(0);
+    expect((await db.tasks.get(child))?._del).toBe(0);
+    expect(await subtasksOf(parent, db)).toHaveLength(1);
+  });
+
+  it('leaves a subtask deleted on its own alone', async () => {
+    const parent = await createTask({ title: 'Ship the release' }, db);
+    const earlier = await createTask({ title: 'Old step', parentTaskId: parent }, db);
+    const withParent = await createTask({ title: 'New step', parentTaskId: parent }, db);
+
+    await deleteTask(earlier, db);
+    // The two deletes have to land on different milliseconds, because
+    // deletedAt is exactly what tells restore which rows belonged to which
+    // delete. Back to back awaits can share a timestamp.
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await deleteTask(parent, db);
+    await restoreTask(parent, db);
+
+    // Undo means undo that delete, not resurrect everything ever removed.
+    expect((await db.tasks.get(earlier))?._del).toBe(1);
+    expect((await db.tasks.get(withParent))?._del).toBe(0);
+  });
+
+  it('queues an undelete for every row it restores', async () => {
+    const parent = await createTask({ title: 'Ship the release' }, db);
+    await createTask({ title: 'Write notes', parentTaskId: parent }, db);
+    await deleteTask(parent, db);
+    await restoreTask(parent, db);
+
+    const undeletes = (await db.outbox.toArray()).filter((r) => r.op === 'undelete');
+    expect(undeletes).toHaveLength(2);
   });
 });

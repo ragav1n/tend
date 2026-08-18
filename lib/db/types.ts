@@ -130,6 +130,42 @@ export interface Tag extends SyncedRow {
   _del: 0 | 1;
 }
 
+/**
+ * A recurring series.
+ *
+ * Holds the rule and the counters, nothing else. The next occurrence is cloned
+ * from the one just completed, so there is no second set of template columns to
+ * keep in step with the task, no series-level tag table and no series-level
+ * reminders. "Edit all future occurrences" becomes "edit the open occurrence",
+ * which is how people already expect it to behave.
+ *
+ * Column names mirror the Postgres `task_series` table so the sync mapping stays
+ * a rename from snake_case and nothing else.
+ */
+export interface TaskSeries extends SyncedRow {
+  /** Discriminator reserving an RRULE escape hatch. Always 'structured' today. */
+  kind: 'structured';
+  freq: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  /** Every N periods. 1 means every period. */
+  interval: number;
+  /** ISO days of week, 1 Monday through 7 Sunday. Empty unless weekly, or
+   *  monthly paired with `monthWeek`. */
+  byday: number[];
+  /** 1 through 31, or -1 for the last day of the month. */
+  bymonthday: number[];
+  bymonth: number[];
+  /** 1 through 5 for "nth", -1 for "last". 0 means unused. */
+  monthWeek: number;
+  anchorMode: 'due_date' | 'completion_date';
+  catchupPolicy: 'skip_to_future' | 'keep_backlog';
+  endsMode: 'never' | 'on_date' | 'after_count';
+  endsOn: PlainDate | null;
+  endsAfterCount: number | null;
+  /** Occurrences completed so far. Drives `endsAfterCount`. */
+  completedCount: number;
+  _del: 0 | 1;
+}
+
 /** Join rows are hard-deleted rather than tombstoned. The sync layer treats
  *  "the tag set for task X" as a replaceable set keyed by taskId, which avoids
  *  needing tombstones on a three-column table. */
@@ -157,7 +193,7 @@ export interface Prefs {
 
 // ─── Outbox ───────────────────────────────────────────────────────────────────
 
-export type EntityTable = 'tasks' | 'projects' | 'tags' | 'taskTags' | 'prefs';
+export type EntityTable = 'tasks' | 'projects' | 'tags' | 'taskTags' | 'taskSeries' | 'prefs';
 export type MutationOp = 'insert' | 'update' | 'delete' | 'undelete';
 export type OutboxState = 'pending' | 'inflight' | 'failed' | 'dead';
 

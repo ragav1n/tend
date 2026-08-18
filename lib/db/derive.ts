@@ -4,6 +4,7 @@ import {
   type Project,
   type Tag,
   type Task,
+  type TaskSeries,
 } from './types';
 
 /**
@@ -92,4 +93,8 @@ export function deriveProject(
 
 export function deriveTag(tag: Omit<Tag, '_del'>): Pick<Tag, '_del'> {
   return { _del: tag.deletedAt ? 1 : 0 };
+}
+
+export function deriveSeries(series: Omit<TaskSeries, '_del'>): Pick<TaskSeries, '_del'> {
+  return { _del: series.deletedAt ? 1 : 0 };
 }
