@@ -1,6 +1,6 @@
 {
   "name": "tend",
-  "version": "0.16.0",
+  "version": "0.16.1",
   "private": true,
   "engines": {
     "node": ">=22"
@@ -48,7 +48,9 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.1",
     "fake-indexeddb": "^6.2.5",
+    "jiti": "^2.7.0",
     "jsdom": "^29.1.1",
+    "sharp": "^0.35.3",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.10"
