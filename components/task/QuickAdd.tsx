@@ -18,8 +18,9 @@ import { cn } from '@/lib/utils';
  */
 
 interface QuickAddProps {
-  /** Pre-set for the view the input sits in, so Today's field files into Today. */
-  defaults?: { plannedFor?: string | null; projectId?: string };
+  /** Pre-set for the view the input sits in, so Today's field files into Today
+   *  and the calendar's files into the day being looked at. */
+  defaults?: { plannedFor?: string | null; dueDate?: string | null; projectId?: string };
   placeholder?: string;
 }
 
@@ -54,12 +55,16 @@ export function QuickAdd({ defaults, placeholder = 'Add a task' }: QuickAddProps
         ? await ensureProject(parsed.projectName)
         : defaults?.projectId;
 
+      // A typed date wins over the view's, for the same reason a typed project
+      // does: it is the more specific instruction and the chip already showed it.
+      const dueDate = parsed.dueDate ?? defaults?.dueDate ?? null;
+
       await createTask({
         title: parsed.title,
-        dueDate: parsed.dueDate,
+        dueDate,
         dueTime: parsed.dueTime,
         priority: parsed.priority,
-        plannedFor: parsed.dueDate === null ? (defaults?.plannedFor ?? null) : null,
+        plannedFor: dueDate === null ? (defaults?.plannedFor ?? null) : null,
         ...(projectId ? { projectId } : {}),
         tagIds,
       });

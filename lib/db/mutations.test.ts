@@ -16,6 +16,7 @@ import {
   updateTask,
 } from './mutations';
 import {
+  dueBetween,
   inboxList,
   projectList,
   searchTasks,
@@ -315,6 +316,20 @@ describe('views', () => {
     const id = await createTask({ title: 'Learn to sail' }, db);
     expect((await db.tasks.get(id))!._dueDay).toBe(NO_DUE_DAY);
     expect((await somedayList(db)).map((t) => t.id)).toEqual([id]);
+  });
+
+  it('gives the calendar the window it asked for, done work included', async () => {
+    const inside = await createTask({ title: 'Inside', dueDate: daysFrom(2) }, db);
+    const finished = await createTask({ title: 'Finished', dueDate: daysFrom(1) }, db);
+    await completeTask(finished, true, db);
+    await createTask({ title: 'Outside', dueDate: daysFrom(40) }, db);
+    await createTask({ title: 'Dateless' }, db);
+    await createTask({ title: 'Subtask', dueDate: daysFrom(2), parentTaskId: inside }, db);
+
+    const rows = await dueBetween(daysFrom(0), daysFrom(30), db);
+    // Ordered by day, and the completed one is still on the day it was due.
+    expect(rows.map((t) => t.id)).toEqual([finished, inside]);
+    expect(rows[0]!._done).toBe(1);
   });
 
   it('keeps a filed task out of the inbox', async () => {

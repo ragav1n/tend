@@ -3,6 +3,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useStableLiveQuery } from './use-live';
 import {
+  dueBetween,
   inboxList,
   logbook,
   projectOptions,
@@ -29,6 +30,11 @@ export function useTodayList(): Task[] {
 
 export function useUpcomingList(days = 30): Task[] {
   return useStableLiveQuery(() => upcomingList(today(), days), [days], NO_TASKS);
+}
+
+/** Everything dated inside a window, which is what the calendar grid reads. */
+export function useDueBetween(from: string, to: string): Task[] {
+  return useStableLiveQuery(() => dueBetween(from, to), [from, to], NO_TASKS);
 }
 
 export function useInboxList(): Task[] {

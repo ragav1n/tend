@@ -1,4 +1,5 @@
 import { AppOverlays } from '@/components/shell/AppOverlays';
+import { MainFrame } from '@/components/shell/MainFrame';
 import { Sidebar } from '@/components/shell/Sidebar';
 
 /**
@@ -17,10 +18,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-dvh md:pl-[232px]">
       <Sidebar />
-      {/* Bottom padding clears the mobile nav bar plus the home indicator. */}
-      <main className="safe-top safe-x mx-auto w-full max-w-2xl px-4 pb-28 pt-6 md:pb-10 md:pt-10">
-        {children}
-      </main>
+      {/* MainFrame owns the width, which differs between a list and a grid, and
+          the bottom padding that clears the mobile nav plus the home indicator. */}
+      <MainFrame>{children}</MainFrame>
       <AppOverlays />
     </div>
   );

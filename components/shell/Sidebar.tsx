@@ -1,142 +1,195 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion } from 'motion/react';
-import {
-  Archive,
-  CalendarDots,
-  CheckCircle,
-  GearSix,
-  Sun,
-  Tray,
-} from '@phosphor-icons/react/dist/ssr';
+import { DotsThree } from '@phosphor-icons/react/dist/ssr';
 import { APP_NAME } from '@/lib/config';
 import { MarkTile } from '@/components/brand/Mark';
+import { MoreMenu } from '@/components/shell/MoreMenu';
+import { BAR_ITEMS, LISTS, MORE_ITEMS, SETTINGS, TOOLS, type NavItem } from '@/components/shell/nav';
 import { SOFT } from '@/lib/motion';
 import { useSidebarCounts } from '@/hooks/use-tasks';
 import { cn } from '@/lib/utils';
 
 /**
- * Navigation. Doubles as the mobile bottom bar, since the same destinations
- * matter on both and maintaining two lists guarantees they drift.
+ * Navigation: a rail on wide screens, a bottom bar on phones.
  *
- * The active indicator is a single shared element moved with `layoutId`, so it
- * slides between items rather than cross-fading. That is the cheapest place in
- * the app to spend a layout animation and the most legible.
+ * They were one responsive element until the calendar landed. A phone bar holds
+ * four destinations before the labels stop being readable, and the app now has
+ * nine, so the bar carries the four that get opened daily and More carries the
+ * rest. The rail keeps everything, grouped: lists are what is on the plate,
+ * tools are ways of working through it.
+ *
+ * The active indicator is one shared element moved with `layoutId`, so it slides
+ * between items. The rail and the bar use different ids because both are in the
+ * DOM at once and a shared id would make them fight over the same pill.
  */
 
-const NAV = [
-  { href: '/today', label: 'Today', icon: Sun, count: 'today' as const },
-  { href: '/upcoming', label: 'Upcoming', icon: CalendarDots, count: 'upcoming' as const },
-  { href: '/inbox', label: 'Inbox', icon: Tray, count: 'inbox' as const },
-  { href: '/someday', label: 'Someday', icon: Archive, count: null },
-  { href: '/logbook', label: 'Logbook', icon: CheckCircle, count: null },
-];
+function countFor(item: NavItem, counts: ReturnType<typeof useSidebarCounts>): number {
+  return item.count ? counts[item.count] : 0;
+}
+
+function RailLink({ item, active, count }: { item: NavItem; active: boolean; count: number }) {
+  const Icon = item.icon;
+
+  return (
+    <Link
+      href={item.href}
+      aria-current={active ? 'page' : undefined}
+      className={cn(
+        'relative flex items-center gap-2.5 rounded-md px-3 py-2',
+        active ? 'text-text-hi' : 'text-text-lo hover:text-text-mid',
+      )}
+    >
+      {active && (
+        <motion.span
+          layoutId="nav-active-rail"
+          aria-hidden
+          className="absolute inset-0 rounded-md border border-line-bright bg-raised"
+          transition={SOFT}
+        />
+      )}
+      <Icon
+        size={19}
+        weight={active ? 'fill' : 'regular'}
+        className={cn('relative', active && 'text-clay-300')}
+        aria-hidden
+      />
+      <span className="relative flex-1 text-sm">{item.label}</span>
+      {count > 0 && <span className="tnum relative text-xs text-text-lo">{count}</span>}
+    </Link>
+  );
+}
 
 export function Sidebar() {
   const pathname = usePathname();
   const counts = useSidebarCounts();
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreActive = MORE_ITEMS.some((item) => item.href === pathname);
 
   return (
-    <nav
-      aria-label="Views"
-      className={cn(
-        // Bottom bar on phones, rail on anything wider.
-        'safe-bottom safe-x fixed inset-x-0 bottom-0 z-20 flex items-stretch gap-1',
-        'border-t border-line bg-surface/95 px-2 py-1.5 backdrop-blur-xl',
-        'md:safe-top md:inset-y-0 md:right-auto md:left-0 md:w-[232px] md:flex-col',
-        'md:items-stretch md:border-t-0 md:border-r md:bg-void/60 md:px-3 md:pt-5',
-        // The bottom padding is a reservation, not spacing. SyncBadge is fixed at
-        // the foot of the rail and cannot know what the rail put there, so the
-        // rail keeps that row empty. Without it the badge sits on top of Settings.
-        'md:pb-16',
-      )}
-    >
-      <div className="hidden md:mb-6 md:block md:px-2">
-        <span className="flex items-center gap-2.5">
-          <MarkTile size={26} />
-          <span className="font-display text-2xl text-text-hi">{APP_NAME}</span>
-        </span>
-        <p className="label mt-1 !text-[0.5625rem]">Look after what needs doing</p>
-      </div>
-
-      {NAV.map((item) => {
-        const active = pathname === item.href;
-        const count = item.count ? counts[item.count] : 0;
-        const Icon = item.icon;
-
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            aria-current={active ? 'page' : undefined}
-            className={cn(
-              'relative flex flex-1 flex-col items-center gap-0.5 rounded-md px-2 py-1.5',
-              'md:flex-none md:flex-row md:gap-2.5 md:px-3 md:py-2',
-              active ? 'text-text-hi' : 'text-text-lo hover:text-text-mid',
-            )}
-          >
-            {active && (
-              <motion.span
-                layoutId="nav-active"
-                aria-hidden
-                className="absolute inset-0 rounded-md border border-line-bright bg-raised"
-                transition={SOFT}
-              />
-            )}
-            <Icon
-              size={19}
-              weight={active ? 'fill' : 'regular'}
-              className={cn('relative', active && 'text-clay-300')}
-              aria-hidden
-            />
-            <span className="relative text-[0.6875rem] md:flex-1 md:text-left md:text-sm">
-              {item.label}
-            </span>
-            {count > 0 && (
-              <span className="tnum relative hidden text-xs text-text-lo md:inline">{count}</span>
-            )}
-            {/* On the bottom bar there is no room for a number, so overdue work
-                shows as a dot instead of being hidden entirely. */}
-            {item.count === 'today' && counts.overdue > 0 && (
-              <span
-                aria-label={`${counts.overdue} overdue`}
-                className="absolute right-1.5 top-1 size-1.5 rounded-full bg-clay-400 md:hidden"
-              />
-            )}
-          </Link>
-        );
-      })}
-
-      {/* Pinned to the bottom of the rail, and just another item on the bar. */}
-      <Link
-        href="/settings"
-        aria-current={pathname === '/settings' ? 'page' : undefined}
+    <>
+      <nav
+        aria-label="Views"
         className={cn(
-          'relative flex flex-1 flex-col items-center gap-0.5 rounded-md px-2 py-1.5',
-          'md:mt-auto md:flex-none md:flex-row md:gap-2.5 md:px-3 md:py-2',
-          pathname === '/settings' ? 'text-text-hi' : 'text-text-lo hover:text-text-mid',
+          'safe-top hidden md:fixed md:inset-y-0 md:left-0 md:z-20 md:flex md:w-[232px]',
+          'md:flex-col md:border-r md:border-line md:bg-void/60 md:px-3 md:pt-5',
+          // A reservation, not spacing. SyncBadge is fixed at the foot of the
+          // rail and cannot know what the rail put there, so the rail keeps that
+          // row empty. Without it the badge sits on top of Settings.
+          'md:pb-16',
         )}
       >
-        {pathname === '/settings' && (
-          <motion.span
-            layoutId="nav-active"
-            aria-hidden
-            className="absolute inset-0 rounded-md border border-line-bright bg-raised"
-            transition={SOFT}
+        <div className="mb-6 px-2">
+          <span className="flex items-center gap-2.5">
+            <MarkTile size={26} />
+            <span className="font-display text-2xl text-text-hi">{APP_NAME}</span>
+          </span>
+          <p className="label mt-1 !text-[0.5625rem]">Look after what needs doing</p>
+        </div>
+
+        {LISTS.map((item) => (
+          <RailLink
+            key={item.href}
+            item={item}
+            active={pathname === item.href}
+            count={countFor(item, counts)}
           />
+        ))}
+
+        <p className="label mb-1 mt-5 px-3 !text-[0.5625rem]">Tools</p>
+        {TOOLS.map((item) => (
+          <RailLink
+            key={item.href}
+            item={item}
+            active={pathname === item.href}
+            count={countFor(item, counts)}
+          />
+        ))}
+
+        <div className="mt-auto">
+          <RailLink item={SETTINGS} active={pathname === SETTINGS.href} count={0} />
+        </div>
+      </nav>
+
+      <nav
+        aria-label="Views"
+        className={cn(
+          'safe-bottom safe-x fixed inset-x-0 bottom-0 z-20 flex items-stretch gap-1 md:hidden',
+          'border-t border-line bg-surface/95 px-2 py-1.5 backdrop-blur-xl',
         )}
-        <GearSix
-          size={19}
-          weight={pathname === '/settings' ? 'fill' : 'regular'}
-          className={cn('relative', pathname === '/settings' && 'text-clay-300')}
-          aria-hidden
-        />
-        <span className="relative text-[0.6875rem] md:flex-1 md:text-left md:text-sm">
-          Settings
-        </span>
-      </Link>
-    </nav>
+      >
+        {BAR_ITEMS.map((item) => {
+          const active = pathname === item.href;
+          const Icon = item.icon;
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                'relative flex flex-1 flex-col items-center gap-0.5 rounded-md px-2 py-1.5',
+                active ? 'text-text-hi' : 'text-text-lo',
+              )}
+            >
+              {active && (
+                <motion.span
+                  layoutId="nav-active-bar"
+                  aria-hidden
+                  className="absolute inset-0 rounded-md border border-line-bright bg-raised"
+                  transition={SOFT}
+                />
+              )}
+              <Icon
+                size={19}
+                weight={active ? 'fill' : 'regular'}
+                className={cn('relative', active && 'text-clay-300')}
+                aria-hidden
+              />
+              <span className="relative text-[0.6875rem]">{item.label}</span>
+              {/* No room for a number on the bar, so overdue work shows as a dot
+                  rather than being hidden entirely. */}
+              {item.count === 'today' && counts.overdue > 0 && (
+                <span
+                  aria-label={`${counts.overdue} overdue`}
+                  className="absolute right-1.5 top-1 size-1.5 rounded-full bg-clay-400"
+                />
+              )}
+            </Link>
+          );
+        })}
+
+        <button
+          type="button"
+          onClick={() => setMoreOpen(true)}
+          aria-expanded={moreOpen}
+          className={cn(
+            'relative flex flex-1 flex-col items-center gap-0.5 rounded-md px-2 py-1.5',
+            moreActive ? 'text-text-hi' : 'text-text-lo',
+          )}
+        >
+          {moreActive && (
+            <motion.span
+              layoutId="nav-active-bar"
+              aria-hidden
+              className="absolute inset-0 rounded-md border border-line-bright bg-raised"
+              transition={SOFT}
+            />
+          )}
+          <DotsThree
+            size={19}
+            weight={moreActive ? 'fill' : 'bold'}
+            className={cn('relative', moreActive && 'text-clay-300')}
+            aria-hidden
+          />
+          <span className="relative text-[0.6875rem]">More</span>
+        </button>
+      </nav>
+
+      <MoreMenu open={moreOpen} onClose={() => setMoreOpen(false)} />
+    </>
   );
 }

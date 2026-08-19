@@ -105,6 +105,35 @@ export async function upcomingList(
   return rows.filter((t) => t.parentTaskId === NO_PARENT);
 }
 
+/**
+ * Everything dated inside a window, open and closed, for the calendar grid.
+ *
+ * Two scans rather than one because `_done` sits above `_dueDay` in the index,
+ * so a single range would have to walk both halves of the store. Completed work
+ * stays in the answer: a month with nothing on the days already lived through
+ * reads as a broken calendar rather than a finished week.
+ */
+export async function dueBetween(
+  from: PlainDate,
+  to: PlainDate,
+  db: TendDb = getDb(),
+): Promise<Task[]> {
+  const [open, closed] = await Promise.all([
+    db.tasks
+      .where('[_del+_done+_dueDay+sortKey]')
+      .between([0, 0, from, ''], [0, 0, to, MAX_STR], true, true)
+      .toArray(),
+    db.tasks
+      .where('[_del+_done+_dueDay+sortKey]')
+      .between([0, 1, from, ''], [0, 1, to, MAX_STR], true, true)
+      .toArray(),
+  ]);
+
+  return [...open, ...closed]
+    .filter((t) => t.parentTaskId === NO_PARENT)
+    .sort((a, b) => (a._dueDay === b._dueDay ? compareRank(a, b) : a._dueDay < b._dueDay ? -1 : 1));
+}
+
 /** Unfiled top-level tasks, which is what Inbox means. */
 export async function inboxList(db: TendDb = getDb()): Promise<Task[]> {
   const rows = await db.tasks
