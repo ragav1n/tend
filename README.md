@@ -84,8 +84,8 @@ select vault.create_secret('<the same value as CRON_SECRET>', 'tend_cron_secret'
 ```
 
 **4. Set the environment variables** from `.env.example` on Vercel:
-`SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_TOKEN_SECRET`,
-`CRON_SECRET`. Leave `EMAIL_MODE` unset in production, where it defaults to `live`, and set
+`SUPABASE_SECRET_KEY` (the `sb_secret_` one, not the legacy `service_role` JWT),
+`RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_TOKEN_SECRET`, `CRON_SECRET`. Leave `EMAIL_MODE` unset in production, where it defaults to `live`, and set
 it to `console` locally.
 
 **5. Point a Resend webhook** at `/api/webhooks/resend` for `email.bounced` and
