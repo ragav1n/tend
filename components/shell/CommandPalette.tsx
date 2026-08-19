@@ -23,9 +23,11 @@ import { MODAL, QUICK_FADE, modalVariants } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 import { useScrollLock } from '@/hooks/use-scroll-lock';
 import { useSearch } from '@/hooks/use-tasks';
+import { useSavedViews } from '@/hooks/use-views';
 import { useUiStore, type PaletteMode } from '@/hooks/use-ui';
 import { Chord } from '@/components/ui/Kbd';
 import { ALL_ITEMS } from '@/components/shell/nav';
+import { viewIcon } from '@/components/views/viewIcons';
 import { CHORD_FOR } from '@/components/shell/keymap';
 
 /**
@@ -85,6 +87,7 @@ function Palette({ mode, onClose }: { mode: PaletteMode; onClose: () => void }) 
   const [query, setQuery] = useState('');
   const deferred = useDeferredValue(query);
   const tasks = useSearch(deferred);
+  const views = useSavedViews();
   const todayDate = today();
 
   useScrollLock();
@@ -134,7 +137,16 @@ function Palette({ mode, onClose }: { mode: PaletteMode; onClose: () => void }) 
     return rows;
   }, [router, setShortcutsOpen]);
 
-  const shownCommands = trimmed === '' ? commands : commands.filter((c) => matches(c.label, trimmed));
+  const viewRows: Row[] = views.map((view) => ({
+    id: `view:${view.id}`,
+    label: view.name,
+    icon: viewIcon(view.icon),
+    run: () => router.push(`/views?v=${view.id}`),
+  }));
+
+  const jumpTargets = [...commands, ...viewRows];
+  const shownCommands =
+    trimmed === '' ? jumpTargets : jumpTargets.filter((c) => matches(c.label, trimmed));
 
   const taskRows: Row[] = tasks.slice(0, 8).map((task) => ({
     id: `task:${task.id}`,

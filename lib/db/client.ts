@@ -8,6 +8,7 @@ import type {
   OutboxRecord,
   Prefs,
   Project,
+  SavedView,
   SyncMetaRow,
   Tag,
   Task,
@@ -52,6 +53,7 @@ export class TendDb extends Dexie {
   taskSeries!: EntityTable<TaskSeries, 'id'>;
   focusSessions!: EntityTable<FocusSession, 'id'>;
   activityLog!: EntityTable<ActivityEntry, 'id'>;
+  savedViews!: EntityTable<SavedView, 'id'>;
   prefs!: EntityTable<Prefs, 'id'>;
   /** Auto-incrementing seq, so the key type is a number. */
   outbox!: Table<OutboxRecord, number>;

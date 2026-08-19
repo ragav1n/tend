@@ -19,6 +19,7 @@ export type WireTable =
   | 'task_tags'
   | 'focus_sessions'
   | 'activity_log'
+  | 'saved_views'
   | 'user_settings';
 
 export const WIRE_TABLE: Record<EntityTable, WireTable> = {
@@ -29,6 +30,7 @@ export const WIRE_TABLE: Record<EntityTable, WireTable> = {
   taskSeries: 'task_series',
   focusSessions: 'focus_sessions',
   activityLog: 'activity_log',
+  savedViews: 'saved_views',
   prefs: 'user_settings',
 };
 
@@ -40,6 +42,7 @@ export const LOCAL_TABLE: Record<WireTable, EntityTable | null> = {
   task_series: 'taskSeries',
   focus_sessions: 'focusSessions',
   activity_log: 'activityLog',
+  saved_views: 'savedViews',
   user_settings: 'prefs',
   // Areas exist server-side so projects can reference them. No local table
   // until the phase that introduces the UI for them.

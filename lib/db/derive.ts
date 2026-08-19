@@ -4,6 +4,7 @@ import {
   type DerivedTaskFields,
   type FocusSession,
   type Project,
+  type SavedView,
   type Tag,
   type Task,
   type TaskSeries,
@@ -105,6 +106,10 @@ export function deriveFocusSession(
   session: Omit<FocusSession, '_del'>,
 ): Pick<FocusSession, '_del'> {
   return { _del: session.deletedAt ? 1 : 0 };
+}
+
+export function deriveSavedView(view: Omit<SavedView, '_del'>): Pick<SavedView, '_del'> {
+  return { _del: view.deletedAt ? 1 : 0 };
 }
 
 /** `_undone` exists because IndexedDB cannot index a boolean or a null, and the

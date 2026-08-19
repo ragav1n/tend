@@ -21,7 +21,7 @@ import type Dexie from 'dexie';
  * items or closed items, never a mix.
  */
 
-export const DATA_LAYER_VERSION = 4;
+export const DATA_LAYER_VERSION = 5;
 
 export function defineSchema(db: Dexie): void {
   db.version(1).stores({
@@ -97,5 +97,11 @@ export function defineSchema(db: Dexie): void {
       '[_del+_undone+createdAt]',
       '[_del+entityId+createdAt]',
     ].join(', '),
+  });
+
+  // v5 adds saved views. The whole list is read at once, so sortKey is the only
+  // ordering index it needs.
+  db.version(5).stores({
+    savedViews: ['id', '_del', 'rowVersion', '[_del+sortKey]'].join(', '),
   });
 }

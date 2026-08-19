@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { motion } from 'motion/react';
 import { DotsThree, MagnifyingGlass } from '@phosphor-icons/react/dist/ssr';
 import { APP_NAME } from '@/lib/config';
@@ -13,6 +13,8 @@ import { CHORD_FOR } from '@/components/shell/keymap';
 import { Chord } from '@/components/ui/Kbd';
 import { SOFT } from '@/lib/motion';
 import { useSidebarCounts } from '@/hooks/use-tasks';
+import { useSavedViews } from '@/hooks/use-views';
+import { viewIcon } from '@/components/views/viewIcons';
 import { useUiStore } from '@/hooks/use-ui';
 import { cn } from '@/lib/utils';
 
@@ -63,6 +65,37 @@ function RailLink({ item, active, count }: { item: NavItem; active: boolean; cou
       <span className="relative flex-1 text-sm">{item.label}</span>
       {count > 0 && <span className="tnum relative text-xs text-text-lo">{count}</span>}
     </Link>
+  );
+}
+
+/**
+ * The saved views pinned to the rail.
+ *
+ * Its own component behind a Suspense boundary because it reads
+ * `useSearchParams`: a saved view is a query string on one route, so knowing
+ * which one is open needs the search. Read from the Sidebar itself that call
+ * opts every page in the app out of prerendering, which the service worker
+ * precache depends on.
+ */
+function PinnedViews({ pathname }: { pathname: string }) {
+  const views = useSavedViews().filter((view) => view.pinned);
+  const search = useSearchParams().toString();
+  if (views.length === 0) return null;
+
+  const here = search ? `${pathname}?${search}` : pathname;
+
+  return (
+    <>
+      <p className="label mb-1 mt-5 px-3 !text-[0.5625rem]">Views</p>
+      {views.map((view) => (
+        <RailLink
+          key={view.id}
+          item={{ href: `/views?v=${view.id}`, label: view.name, icon: viewIcon(view.icon) }}
+          active={`/views?v=${view.id}` === here}
+          count={0}
+        />
+      ))}
+    </>
   );
 }
 
@@ -119,6 +152,10 @@ export function Sidebar() {
             count={countFor(item, counts)}
           />
         ))}
+
+        <Suspense fallback={null}>
+          <PinnedViews pathname={pathname} />
+        </Suspense>
 
         <p className="label mb-1 mt-5 px-3 !text-[0.5625rem]">Tools</p>
         {TOOLS.map((item) => (

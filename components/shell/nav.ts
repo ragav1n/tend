@@ -7,6 +7,7 @@ import {
   CheckCircle,
   GearSix,
   Kanban,
+  Funnel,
   Sun,
   Timer,
   Tray,
@@ -43,6 +44,7 @@ export const LISTS: NavItem[] = [
   { href: '/inbox', label: 'Inbox', icon: Tray, count: 'inbox', bar: true, key: 'i' },
   { href: '/someday', label: 'Someday', icon: Archive, key: 's' },
   { href: '/logbook', label: 'Logbook', icon: CheckCircle, key: 'l' },
+  { href: '/views', label: 'Views', icon: Funnel, key: 'v' },
 ];
 
 /** Ways of working through it. */

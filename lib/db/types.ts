@@ -229,6 +229,26 @@ export interface ActivityEntry extends SyncedRow {
   _undone: 0 | 1;
 }
 
+/**
+ * A filter with a name.
+ *
+ * `filter` and `sort` are the shapes `lib/views/filter.ts` defines. They are
+ * typed as unknown-ish here on purpose: this file describes rows, and a row
+ * written by a newer client can carry a filter key this one has never heard of.
+ * Reading it back as a partial is correct; rejecting it would lose the view.
+ */
+export interface SavedView extends SyncedRow {
+  name: string;
+  /** A Phosphor icon name the client knows, or a fallback. */
+  icon: string;
+  filter: Record<string, unknown>;
+  sort: string;
+  /** In the sidebar, rather than only on the views screen. */
+  pinned: boolean;
+  sortKey: string;
+  _del: 0 | 1;
+}
+
 /** Join rows are hard-deleted rather than tombstoned. The sync layer treats
  *  "the tag set for task X" as a replaceable set keyed by taskId, which avoids
  *  needing tombstones on a three-column table. */
@@ -283,6 +303,7 @@ export type EntityTable =
   | 'taskSeries'
   | 'focusSessions'
   | 'activityLog'
+  | 'savedViews'
   | 'prefs';
 export type MutationOp = 'insert' | 'update' | 'delete' | 'undelete';
 export type OutboxState = 'pending' | 'inflight' | 'failed' | 'dead';

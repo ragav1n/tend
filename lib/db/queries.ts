@@ -8,6 +8,7 @@ import {
   type Instant,
   type PlainDate,
   type Project,
+  type SavedView,
   type Tag,
   type Task,
   type TaskSeries,
@@ -370,4 +371,31 @@ export async function todayProgress(day = today(), db: TendDb = getDb()) {
   const done = closed.length;
   const total = open.length + done;
   return { done, total, ratio: total === 0 ? 0 : done / total };
+}
+
+/** Every saved view, in the order the sidebar and the views screen show them. */
+export async function savedViews(db: TendDb = getDb()): Promise<SavedView[]> {
+  return db.savedViews
+    .where('[_del+sortKey]')
+    .between([0, ''], [0, MAX_STR])
+    .toArray();
+}
+
+export async function savedViewById(
+  id: string,
+  db: TendDb = getDb(),
+): Promise<SavedView | undefined> {
+  const row = await db.savedViews.get(id);
+  return row && row._del === 0 ? row : undefined;
+}
+
+/**
+ * The candidate set a saved view filters.
+ *
+ * One index-bound read of everything not deleted, capped, because no compound
+ * index can serve a filter that combines a project, tags, a priority floor and
+ * a due window. `lib/views/filter.ts` decides from here.
+ */
+export async function viewCandidates(limit = 2000, db: TendDb = getDb()): Promise<Task[]> {
+  return db.tasks.where('_del').equals(0).limit(limit).toArray();
 }

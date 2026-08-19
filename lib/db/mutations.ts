@@ -9,6 +9,7 @@ import {
   deriveActivity,
   deriveFocusSession,
   deriveProject,
+  deriveSavedView,
   deriveSeries,
   deriveTag,
   deriveTask,
@@ -32,6 +33,7 @@ import {
   type Prefs,
   type Priority,
   type Project,
+  type SavedView,
   type Tag,
   type Task,
   type TaskSeries,
@@ -888,6 +890,95 @@ export async function clearTaskRecurrence(
     }
 
     await writeTaskPatch(taskId, { seriesId: '', occurrenceDate: null, occurrenceSeq: null }, db);
+  });
+}
+
+// ─── Saved views ──────────────────────────────────────────────────────────────
+
+export interface NewViewInput {
+  name: string;
+  icon?: string;
+  filter?: Record<string, unknown>;
+  sort?: string;
+  pinned?: boolean;
+}
+
+export type ViewPatch = Partial<Pick<SavedView, 'name' | 'icon' | 'filter' | 'sort' | 'pinned' | 'sortKey'>>;
+
+export async function createSavedView(
+  input: NewViewInput,
+  db: TendDb = getDb(),
+): Promise<string> {
+  const id = newId();
+
+  await db.transaction('rw', [db.savedViews, db.outbox], async () => {
+    const existing = await db.savedViews.where('_del').equals(0).toArray();
+    const base = {
+      id,
+      userId: LOCAL_USER_ID,
+      name: input.name,
+      icon: input.icon ?? 'Funnel',
+      filter: input.filter ?? {},
+      sort: input.sort ?? 'manual',
+      pinned: input.pinned ?? true,
+      sortKey: endRank(existing.map((view) => view.sortKey)),
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      deletedAt: null,
+      rowVersion: 0,
+    };
+
+    const row: SavedView = { ...base, ...deriveSavedView(base) };
+    await db.savedViews.add(row);
+    await db.outbox.add(outboxRecord('savedViews', id, 'insert', toInsertPatch(row), 0));
+  });
+
+  return id;
+}
+
+export async function updateSavedView(
+  id: string,
+  patch: ViewPatch,
+  db: TendDb = getDb(),
+): Promise<void> {
+  await db.transaction('rw', [db.savedViews, db.outbox], async () => {
+    const current = await db.savedViews.get(id);
+    if (!current) return;
+
+    const next = { ...current, ...patch, updatedAt: nowIso() };
+    await db.savedViews.put({ ...next, ...deriveSavedView(next) });
+    await db.outbox.add(
+      outboxRecord('savedViews', id, 'update', { ...patch }, current.rowVersion),
+    );
+  });
+}
+
+/** Soft delete, like everything else here: the row keeps its content so the
+ *  undo toast is a field write rather than a re-create with a new id. */
+export async function deleteSavedView(id: string, db: TendDb = getDb()): Promise<void> {
+  await db.transaction('rw', [db.savedViews, db.outbox], async () => {
+    const current = await db.savedViews.get(id);
+    if (!current) return;
+
+    const deletedAt = nowIso();
+    const next = { ...current, deletedAt, updatedAt: deletedAt };
+    await db.savedViews.put({ ...next, ...deriveSavedView(next) });
+    await db.outbox.add(
+      outboxRecord('savedViews', id, 'delete', { deletedAt }, current.rowVersion),
+    );
+  });
+}
+
+export async function restoreSavedView(id: string, db: TendDb = getDb()): Promise<void> {
+  await db.transaction('rw', [db.savedViews, db.outbox], async () => {
+    const current = await db.savedViews.get(id);
+    if (!current) return;
+
+    const next = { ...current, deletedAt: null, updatedAt: nowIso() };
+    await db.savedViews.put({ ...next, ...deriveSavedView(next) });
+    await db.outbox.add(
+      outboxRecord('savedViews', id, 'undelete', { deletedAt: null }, current.rowVersion),
+    );
   });
 }
 

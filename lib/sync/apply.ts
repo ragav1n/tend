@@ -3,6 +3,7 @@ import {
   deriveActivity,
   deriveFocusSession,
   deriveProject,
+  deriveSavedView,
   deriveSeries,
   deriveTag,
   deriveTask,
@@ -14,6 +15,7 @@ import type {
   FocusSession,
   Prefs,
   Project,
+  SavedView,
   Tag,
   Task,
   TaskSeries,
@@ -277,6 +279,31 @@ async function applyActivity(db: TendDb, rows: PullRow[]): Promise<ApplyResult> 
   return result;
 }
 
+async function applySavedViews(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
+  const result: ApplyResult = { applied: 0, skipped: 0 };
+  const ids = rows.map((r) => String(r.row.id));
+  const current = new Map(
+    (await db.savedViews.bulkGet(ids))
+      .filter((view): view is SavedView => view !== undefined)
+      .map((view) => [view.id, view]),
+  );
+
+  const puts: SavedView[] = [];
+  for (const { row } of rows) {
+    const id = String(row.id);
+    if (isStale(Number(row.row_version ?? 0), current.get(id)?.rowVersion)) {
+      result.skipped += 1;
+      continue;
+    }
+    const base = { ...(current.get(id) ?? {}), ...wireToLocal('saved_views', row) } as SavedView;
+    puts.push({ ...base, ...deriveSavedView(base) });
+    result.applied += 1;
+  }
+
+  if (puts.length > 0) await db.savedViews.bulkPut(puts);
+  return result;
+}
+
 const APPLIERS: Partial<
   Record<WireTable, (db: TendDb, rows: PullRow[]) => Promise<ApplyResult>>
 > = {
@@ -286,6 +313,7 @@ const APPLIERS: Partial<
   task_series: applySeries,
   focus_sessions: applyFocusSessions,
   activity_log: applyActivity,
+  saved_views: applySavedViews,
   user_settings: applyPrefs,
 };
 
