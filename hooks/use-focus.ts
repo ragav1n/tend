@@ -9,9 +9,9 @@ import {
   subscribeClock,
 } from '@/lib/focus/store';
 import {
-  elapsedMs,
   isFinished,
   pause as pauseClock,
+  recordedSeconds,
   resume as resumeClock,
   type FocusClock,
 } from '@/lib/focus/timer';
@@ -96,13 +96,12 @@ export function useFocusTimer(): FocusTimer {
   const pause = useCallback(async () => {
     const live = getClock();
     if (!live || live.runningSince === null) return;
-    const held = pauseClock(live, Date.now());
+    const at = Date.now();
+    const held = pauseClock(live, at);
     setClock(held);
     // Banked on every pause rather than only at the end, so a tab that dies
     // while paused loses nothing.
-    await updateFocusSession(held.sessionId, {
-      focusedSeconds: Math.round(held.accumulatedMs / 1000),
-    });
+    await updateFocusSession(held.sessionId, { focusedSeconds: recordedSeconds(live, at) });
   }, []);
 
   const resume = useCallback(() => {
@@ -117,7 +116,7 @@ export function useFocusTimer(): FocusTimer {
     const at = Date.now();
     setClock(null);
     await updateFocusSession(live.sessionId, {
-      focusedSeconds: Math.round(elapsedMs(live, at) / 1000),
+      focusedSeconds: recordedSeconds(live, at),
       endedAt: new Date(at).toISOString(),
     });
   }, []);

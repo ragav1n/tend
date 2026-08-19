@@ -58,6 +58,20 @@ export function progress(clock: FocusClock, now: number): number {
   return Math.min(1, elapsedMs(clock, now) / planned);
 }
 
+/**
+ * What a write should record: never more than the session that was started.
+ *
+ * A tab suspended at minute 3 of 25 and woken six hours later reports six hours
+ * elapsed, and every one of those hours would be banked as focus by the pause
+ * that follows. Nobody focused for six hours, and a weekly total that says so is
+ * worth less than no total. Overtime past the planned length is dropped for the
+ * same reason: nothing was watching, so the only defensible number is the one
+ * that was promised.
+ */
+export function recordedSeconds(clock: FocusClock, now: number): number {
+  return Math.round(Math.min(elapsedMs(clock, now), plannedMs(clock)) / 1000);
+}
+
 /** Banks the current run. Pausing an already paused clock changes nothing. */
 export function pause(clock: FocusClock, now: number): FocusClock {
   if (clock.runningSince === null) return clock;

@@ -9,6 +9,7 @@ import {
   isRunning,
   pause,
   progress,
+  recordedSeconds,
   remainingMs,
   resume,
   type FocusClock,
@@ -99,5 +100,29 @@ describe('formatting', () => {
     expect(formatMinutes(25 * 60)).toBe('25m');
     expect(formatMinutes(60 * 60)).toBe('1h');
     expect(formatMinutes(85 * 60)).toBe('1h 25m');
+  });
+});
+
+describe('what gets written down', () => {
+  it('never records more than the session that was started', () => {
+    // A tab suspended at minute 3 of 25 and woken six hours later.
+    const slept = clock({ plannedMinutes: 25 });
+    expect(recordedSeconds(slept, START + 6 * 60 * MINUTE_MS)).toBe(25 * 60);
+  });
+
+  it('records the real length of a session stopped early', () => {
+    expect(recordedSeconds(clock(), START + 7 * MINUTE_MS)).toBe(7 * 60);
+  });
+
+  it('records the banked total while paused, not the wall clock since', () => {
+    const held = pause(clock(), START + 5 * MINUTE_MS);
+    expect(recordedSeconds(held, START + 90 * MINUTE_MS)).toBe(5 * 60);
+  });
+
+  it('stays inside the column the database will accept', () => {
+    // focus_sessions.focused_seconds is checked between 0 and 86400, and
+    // planned_minutes cannot exceed 240, so the cap keeps every write legal.
+    const long = clock({ plannedMinutes: 240 });
+    expect(recordedSeconds(long, START + 10 * 24 * 60 * MINUTE_MS)).toBe(240 * 60);
   });
 });

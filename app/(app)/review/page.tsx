@@ -81,10 +81,7 @@ export default function ReviewPage() {
   const sessions = useFocusBetween(bounds.from, bounds.to);
   const overdue = useOverdue();
 
-  const summary = useMemo(
-    () => summarize(days, completed, sessions, todayDate),
-    [days, completed, sessions, todayDate],
-  );
+  const summary = useMemo(() => summarize(days, completed, sessions), [days, completed, sessions]);
   const thisWeek = offset === 0;
   // A past week gets the streak as it stood at the end of it. Showing today's
   // number beside March's totals reports something that is true and answers a

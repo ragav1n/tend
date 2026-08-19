@@ -125,7 +125,12 @@ export function Board({ columns, todayDate, onMove, onOpen }: BoardProps) {
 
                         <button
                           type="button"
-                          onClick={() => setMoving({ task, columnId: column.id })}
+                          onClick={() => {
+                            // Guarded like the title: a drag released over this
+                            // button fires a click on it, and a move sheet
+                            // opening on its own after a drop reads as a bug.
+                            if (!dragged.current) setMoving({ task, columnId: column.id });
+                          }}
                           aria-label={`Move ${task.title} to another column`}
                           className="shrink-0 rounded p-0.5 text-text-faint hover:text-text-mid"
                         >

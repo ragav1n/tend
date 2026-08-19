@@ -191,6 +191,19 @@ export async function taskById(id: string, db: TendDb = getDb()): Promise<Task |
   return db.tasks.get(id);
 }
 
+/**
+ * A handful of tasks by id.
+ *
+ * For a view holding references rather than a list: the focus log points at
+ * tasks from any list, and looking their titles up in whatever list happens to
+ * be on screen reports "no task" for half of them.
+ */
+export async function tasksByIds(ids: readonly string[], db: TendDb = getDb()): Promise<Task[]> {
+  if (ids.length === 0) return [];
+  const rows = await db.tasks.bulkGet([...ids]);
+  return rows.filter((t): t is Task => t !== undefined);
+}
+
 /** The rule a task repeats by. Undefined for an empty id or a tombstoned row,
  *  so a caller never has to check both. */
 export async function seriesById(

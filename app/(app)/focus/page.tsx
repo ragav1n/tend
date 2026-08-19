@@ -6,15 +6,15 @@ import { FocusRing } from '@/components/focus/FocusRing';
 import { EmptyState } from '@/components/views/EmptyState';
 import { Segmented } from '@/components/ui/Segmented';
 import { ViewHeader } from '@/components/views/ViewHeader';
-import { useFocusBetween, useTodayList } from '@/hooks/use-tasks';
+import { useFocusBetween, useTasksByIds, useTodayList } from '@/hooks/use-tasks';
 import { useFocusTimer } from '@/hooks/use-focus';
 import { updateFocusSession } from '@/lib/db/mutations';
 import { focusSeconds, unfinishedFocus } from '@/lib/db/queries';
 import { getDb } from '@/lib/db/client';
 import {
-  elapsedMs,
   formatDuration,
   formatMinutes,
+  plannedMs,
   progress,
   remainingMs,
 } from '@/lib/focus/timer';
@@ -73,7 +73,20 @@ export default function FocusPage() {
 
   const logged = focusSeconds(sessions.filter((s) => s.endedAt !== null));
   const finishedCount = sessions.filter((s) => s.endedAt !== null).length;
-  const titleOf = (id: string) => tasks.find((task) => task.id === id)?.title ?? '';
+
+  // Sessions point at tasks from any list, so the titles are read by id. Looking
+  // them up in today's list reported "no task" for anything worked on that was
+  // not also due today, which is most of what a focus session is for.
+  const referenced = useMemo(
+    () => [...sessions.map((session) => session.taskId), clock?.taskId ?? ''],
+    [sessions, clock?.taskId],
+  );
+  const named = useTasksByIds(referenced);
+  const titleOf = (id: string) => named.find((task) => task.id === id)?.title ?? '';
+  /** A session outlives the row it was about, so both blanks are possible and
+   *  they mean different things. */
+  const labelFor = (id: string) =>
+    id === '' ? 'No task' : (titleOf(id) || 'Not on this device');
 
   const eyebrow =
     finishedCount === 0
@@ -99,18 +112,16 @@ export default function FocusPage() {
           <>
             <FocusRing
               ratio={progress(clock, now)}
-              time={
-                done
-                  ? formatDuration(elapsedMs(clock, now))
-                  : formatDuration(remainingMs(clock, now))
-              }
+              // Frozen at the length once it is up, rather than counting into
+              // overtime nothing is measuring and nothing will record.
+              time={formatDuration(done ? plannedMs(clock) : remainingMs(clock, now))}
               caption={done ? 'time is up' : running ? 'focusing' : 'paused'}
               paused={!running && !done}
             />
 
-            {clock.taskId !== '' && (
+            {clock.taskId !== '' && titleOf(clock.taskId) !== '' && (
               <p className="max-w-[28ch] text-center text-sm text-text-mid">
-                {titleOf(clock.taskId) || 'On a task from another list'}
+                {titleOf(clock.taskId)}
               </p>
             )}
 
@@ -217,7 +228,7 @@ export default function FocusPage() {
                     {formatMinutes(session.focusedSeconds)}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-sm text-text-mid">
-                    {titleOf(session.taskId) || 'No task'}
+                    {labelFor(session.taskId)}
                   </span>
                   <span className="tnum text-xs text-text-lo" suppressHydrationWarning>
                     {new Date(session.startedAt).toLocaleTimeString(undefined, {

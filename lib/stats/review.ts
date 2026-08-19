@@ -1,5 +1,5 @@
-import { today } from '@/lib/db/queries';
 import { shiftDays } from '@/lib/calendar/grid';
+import { today } from '@/lib/db/queries';
 import type { FocusSession, Instant, PlainDate, Task } from '@/lib/db/types';
 
 /**
@@ -22,11 +22,14 @@ export interface WeekSummary {
   days: DayStat[];
   completed: number;
   focusSeconds: number;
-  /** Consecutive days ending today with at least one completion. */
-  streak: number;
   /** The busiest day of the week, or null when nothing was finished. */
   best: DayStat | null;
 }
+
+// The streak is deliberately not in here. It needs history behind the week being
+// summarized, so computing it from one week's rows would answer confidently and
+// wrongly for anybody whose streak is longer than a week. `streakLength` takes
+// its own set of rows for that reason.
 
 /** The local calendar day an instant falls on. */
 export function localDay(instant: Instant): PlainDate {
@@ -61,7 +64,6 @@ export function summarize(
   days: readonly PlainDate[],
   completed: readonly Task[],
   sessions: readonly FocusSession[],
-  todayDate = today(),
 ): WeekSummary {
   const stats = new Map<PlainDate, DayStat>(
     days.map((date) => [date, { date, completed: 0, focusSeconds: 0 }]),
@@ -88,7 +90,6 @@ export function summarize(
     days: list,
     completed: list.reduce((sum, day) => sum + day.completed, 0),
     focusSeconds: list.reduce((sum, day) => sum + day.focusSeconds, 0),
-    streak: streakLength(completed, todayDate),
     best,
   };
 }

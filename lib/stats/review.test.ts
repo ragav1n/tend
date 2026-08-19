@@ -75,7 +75,6 @@ describe('summarize', () => {
       days,
       [done('2026-08-17'), done('2026-08-19', 'a'), done('2026-08-19', 'b')],
       [session('2026-08-19', 1500), session('2026-08-19', 600), session('2026-08-21', 900)],
-      '2026-08-19',
     );
 
     expect(summary.completed).toBe(3);
@@ -86,13 +85,13 @@ describe('summarize', () => {
   });
 
   it('ignores anything outside the week it was asked about', () => {
-    const summary = summarize(days, [done('2026-08-10'), done('2026-09-01')], [], '2026-08-19');
+    const summary = summarize(days, [done('2026-08-10'), done('2026-09-01')], []);
     expect(summary.completed).toBe(0);
     expect(summary.best).toBeNull();
   });
 
   it('skips a closed task with no completion instant, which is a cancelled one', () => {
-    const summary = summarize(days, [done(null, 'cancelled')], [], '2026-08-19');
+    const summary = summarize(days, [done(null, 'cancelled')], []);
     expect(summary.completed).toBe(0);
   });
 
@@ -101,7 +100,6 @@ describe('summarize', () => {
       days,
       [done('2026-08-17'), done('2026-08-19', 'a'), done('2026-08-19', 'b')],
       [],
-      '2026-08-19',
     );
     expect(summary.best!.date).toBe('2026-08-19');
   });

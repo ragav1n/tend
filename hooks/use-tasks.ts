@@ -18,6 +18,7 @@ import {
   subtasksOf,
   tagOptions,
   taskById,
+  tasksByIds,
   today,
   todayList,
   todayProgress,
@@ -121,6 +122,18 @@ export function useTags(): Tag[] {
 }
 
 const NO_SESSIONS: FocusSession[] = [];
+
+/**
+ * Named tasks, live.
+ *
+ * The ids are joined into one string so the dependency is a value rather than an
+ * array identity, which changes on every render and would re-run the query with
+ * it.
+ */
+export function useTasksByIds(ids: readonly string[]): Task[] {
+  const key = [...new Set(ids)].filter(Boolean).sort().join(',');
+  return useStableLiveQuery(() => tasksByIds(key === '' ? [] : key.split(',')), [key], NO_TASKS);
+}
 
 /** Tasks completed inside a window. Both bounds are instants. */
 export function useCompletedBetween(from: string, to: string): Task[] {
