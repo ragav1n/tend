@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { LayoutGroup, motion, useReducedMotion, type PanInfo } from 'motion/react';
 import { LIFT, ROW } from '@/lib/motion';
 import { monthGrid, weekdayLabels, type Month } from '@/lib/calendar/grid';
-import { dayUnderPointer } from '@/lib/calendar/drop';
+import { targetUnderPointer } from '@/lib/dnd/drop';
 import { MD_QUERY, useMediaQuery } from '@/hooks/use-media-query';
 import type { PlainDate, Task } from '@/lib/db/types';
 import { cn } from '@/lib/utils';
@@ -79,7 +79,7 @@ export function CalendarMonth({
     info: PanInfo,
   ) {
     setDragging(null);
-    const day = dayUnderPointer(event, info, chips.current.get(taskId) ?? null);
+    const day = targetUnderPointer(event, info, chips.current.get(taskId) ?? null, 'data-day');
     if (day) onMove(taskId, day);
   }
 

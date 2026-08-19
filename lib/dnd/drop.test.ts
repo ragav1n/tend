@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { dayFromStack } from './drop';
+import { targetFromStack } from './drop';
 
 function grid(): { cells: Record<string, HTMLElement>; chip: HTMLElement } {
   const root = document.createElement('div');
@@ -19,29 +19,29 @@ function grid(): { cells: Record<string, HTMLElement>; chip: HTMLElement } {
   return { cells, chip };
 }
 
-describe('dayFromStack', () => {
+describe('targetFromStack', () => {
   it('reads the day off the cell under the pointer', () => {
     const { cells, chip } = grid();
-    expect(dayFromStack([cells['2026-08-21']!], chip)).toBe('2026-08-21');
+    expect(targetFromStack([cells['2026-08-21']!], chip, 'data-day')).toBe('2026-08-21');
   });
 
   it('skips the cell the dragged chip came from', () => {
     const { cells, chip } = grid();
     // The chip is on top of the stack and still parented by its own cell.
-    expect(dayFromStack([chip, cells['2026-08-20']!, cells['2026-08-21']!], chip)).toBe(
+    expect(targetFromStack([chip, cells['2026-08-20']!, cells['2026-08-21']!], chip, 'data-day')).toBe(
       '2026-08-21',
     );
   });
 
   it('answers nothing when the drop landed off the grid', () => {
     const { chip } = grid();
-    expect(dayFromStack([document.body], chip)).toBeNull();
+    expect(targetFromStack([document.body], chip, 'data-day')).toBeNull();
   });
 
   it('finds the cell from a child element of it', () => {
     const { cells, chip } = grid();
     const label = document.createElement('span');
     cells['2026-08-21']!.append(label);
-    expect(dayFromStack([label], chip)).toBe('2026-08-21');
+    expect(targetFromStack([label], chip, 'data-day')).toBe('2026-08-21');
   });
 });

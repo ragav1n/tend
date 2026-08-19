@@ -134,6 +134,23 @@ export async function dueBetween(
     .sort((a, b) => (a._dueDay === b._dueDay ? compareRank(a, b) : a._dueDay < b._dueDay ? -1 : 1));
 }
 
+/**
+ * Every open top-level task, in the user's order. The board reads this.
+ *
+ * One scan across the whole due-day range rather than a per-column query, since
+ * the board shows all four status columns at once and four scans would read the
+ * same rows anyway. Capped: past a few hundred open tasks the board is not the
+ * view that helps, and an unbounded read is what the hot-path rule forbids.
+ */
+export async function openTasks(limit = 500, db: TendDb = getDb()): Promise<Task[]> {
+  const rows = await db.tasks
+    .where('[_del+_done+_dueDay+sortKey]')
+    .between([0, 0, '', ''], [0, 0, NO_DUE_DAY, MAX_STR], true, true)
+    .limit(limit)
+    .toArray();
+  return rows.filter((t) => t.parentTaskId === NO_PARENT).sort(compareRank);
+}
+
 /** Unfiled top-level tasks, which is what Inbox means. */
 export async function inboxList(db: TendDb = getDb()): Promise<Task[]> {
   const rows = await db.tasks

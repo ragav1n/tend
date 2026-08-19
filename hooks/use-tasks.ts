@@ -6,6 +6,7 @@ import {
   dueBetween,
   inboxList,
   logbook,
+  openTasks,
   projectOptions,
   searchTasks,
   seriesById,
@@ -39,6 +40,11 @@ export function useDueBetween(from: string, to: string): Task[] {
 
 export function useInboxList(): Task[] {
   return useStableLiveQuery(() => inboxList(), [], NO_TASKS);
+}
+
+/** Every open top-level task, which is what the board groups. */
+export function useOpenTasks(): Task[] {
+  return useStableLiveQuery(() => openTasks(), [], NO_TASKS);
 }
 
 export function useSomedayList(): Task[] {

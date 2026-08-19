@@ -5,6 +5,7 @@ import {
   CalendarDots,
   CheckCircle,
   GearSix,
+  Kanban,
   Sun,
   Tray,
 } from '@phosphor-icons/react/dist/ssr';
@@ -42,6 +43,7 @@ export const LISTS: NavItem[] = [
 /** Ways of working through it. */
 export const TOOLS: NavItem[] = [
   { href: '/calendar', label: 'Calendar', icon: CalendarBlank, bar: true },
+  { href: '/board', label: 'Board', icon: Kanban },
 ];
 
 export const SETTINGS: NavItem = { href: '/settings', label: 'Settings', icon: GearSix };

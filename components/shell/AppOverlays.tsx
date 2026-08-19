@@ -47,6 +47,11 @@ export function AppOverlays() {
         mobileOffset={{ bottom: '96px', left: '16px', right: '16px' }}
         style={
           {
+            // Sonner ships z-index 999999999, which puts a toast on top of an
+            // open sheet. A prompt cannot outrank a dialog the person is in the
+            // middle of, so the toaster sits above the page and the nav (20) and
+            // the sync badge (30) but under the sheet backdrop (40).
+            zIndex: 35,
             '--normal-bg': 'var(--color-surface)',
             '--normal-border': 'var(--color-line-bright)',
             '--normal-text': 'var(--color-text-mid)',

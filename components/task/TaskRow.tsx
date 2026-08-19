@@ -3,6 +3,7 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { CalendarBlank, Flag, WarningCircle } from '@phosphor-icons/react/dist/ssr';
 import { PRESS_DEPTH, ROW, STRIKE, rowVariants } from '@/lib/motion';
+import { formatClock, formatDueLabel } from '@/lib/format/date';
 import { today } from '@/lib/db/queries';
 import { NO_DUE_DAY, type Task } from '@/lib/db/types';
 import { cn } from '@/lib/utils';
@@ -31,35 +32,6 @@ const PRIORITY_LABEL: Record<number, string> = {
   2: 'Medium priority',
   3: 'High priority',
 };
-
-/** Weekday and month for anything inside a week, then a date. */
-function formatDue(due: string, todayDate: string): string {
-  if (due === todayDate) return 'Today';
-
-  const [y, m, d] = due.split('-').map(Number) as [number, number, number];
-  const asUtc = Date.UTC(y, m - 1, d);
-  const [ty, tm, td] = todayDate.split('-').map(Number) as [number, number, number];
-  const diff = Math.round((asUtc - Date.UTC(ty, tm - 1, td)) / 86_400_000);
-
-  if (diff === 1) return 'Tomorrow';
-  if (diff === -1) return 'Yesterday';
-  if (diff > 1 && diff < 7) {
-    return new Date(asUtc).toLocaleDateString(undefined, { weekday: 'long', timeZone: 'UTC' });
-  }
-  if (diff < 0) return `${Math.abs(diff)} days ago`;
-  return new Date(asUtc).toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
-}
-
-function formatTime(time: string): string {
-  const [h, min] = time.split(':').map(Number) as [number, number];
-  const meridiem = h < 12 ? 'am' : 'pm';
-  const hour = h % 12 === 0 ? 12 : h % 12;
-  return min === 0 ? `${hour}${meridiem}` : `${hour}:${String(min).padStart(2, '0')}${meridiem}`;
-}
 
 export function TaskRow({ task, onToggle, onOpen, todayDate = today() }: TaskRowProps) {
   const reduced = useReducedMotion();
@@ -140,8 +112,8 @@ export function TaskRow({ task, onToggle, onOpen, todayDate = today() }: TaskRow
                     <CalendarBlank size={13} aria-hidden />
                   )}
                   <span className="tnum">
-                    {formatDue(task._dueDay, todayDate)}
-                    {task.dueTime ? ` ${formatTime(task.dueTime)}` : ''}
+                    {formatDueLabel(task._dueDay, todayDate)}
+                    {task.dueTime ? ` ${formatClock(task.dueTime)}` : ''}
                   </span>
                 </span>
               )}
