@@ -56,3 +56,64 @@ npm run typecheck   # tsc --noEmit, the gate
 npm test            # vitest
 npm run lint
 ```
+
+## Turning reminders on
+
+The scheduling lives in Postgres and the sending lives in Vercel, so both sides need
+one-time setup. Nothing below is in the repo, because all of it is a secret.
+
+**1. Apply the migrations.** `supabase/migrations/0001` through `0008`, in order.
+
+**2. Enable the extensions**, from the Supabase dashboard or SQL:
+
+```sql
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+```
+
+`0008` schedules `notifications_tick()` every minute the moment `pg_cron` exists, and skips
+the schedule where it does not, which is what lets the whole file run in the test harness.
+
+**3. Put the URL and the shared secret in Vault**, not in the cron command:
+`cron.job.command` is readable by anybody who can read the `cron` schema.
+
+```sql
+select vault.create_secret('https://your-app.vercel.app/api/cron/reminders', 'tend_reminders_url');
+select vault.create_secret('<the same value as CRON_SECRET>', 'tend_cron_secret');
+```
+
+**4. Set the environment variables** from `.env.example` on Vercel:
+`SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_TOKEN_SECRET`,
+`CRON_SECRET`. Leave `EMAIL_MODE` unset in production, where it defaults to `live`, and set
+it to `console` locally.
+
+**5. Point a Resend webhook** at `/api/webhooks/resend` for `email.bounced` and
+`email.complained`, and put its signing secret in `RESEND_WEBHOOK_SECRET`.
+
+The daily Vercel cron in `vercel.json` is not optional. A free Supabase project pauses after
+seven days with no requests, and `pg_cron` does not count because it runs inside the database
+and never arrives as one. Without that ping a week away from the app silently ends every
+reminder.
+
+### Checking it
+
+```sql
+-- The SQL side: did the tick run, and what did it find?
+select * from cron.job_run_details order by start_time desc limit 20;
+select * from cron_heartbeats;
+
+-- The queue itself.
+select kind, status, scheduled_at, reason, last_error
+  from reminder_deliveries order by created_at desc limit 20;
+```
+
+`cron.job_run_details` proves the SQL ran. The `reminders_route` row in `cron_heartbeats`
+proves the HTTP call landed, which is the part `pg_net` cannot tell you: it is fire and
+forget by design. Alert on no heartbeat in ten minutes.
+
+Locally, `EMAIL_MODE=console` runs the whole pipeline and prints the rendered mail instead of
+sending it:
+
+```bash
+curl -H "x-cron-secret: $CRON_SECRET" http://localhost:3000/api/cron/reminders
+```

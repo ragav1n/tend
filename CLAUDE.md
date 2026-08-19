@@ -37,6 +37,19 @@ The full architecture plan lives at `~/.claude/plans/i-want-to-create-noble-flam
 - **`sort_key` columns are `collate "C"`** so Postgres ordering matches JavaScript sort.
 - **RLS policies always wrap as `(select auth.uid())`**, never bare `auth.uid()`.
 - **`tasks` has no DELETE policy.** Soft delete only; purging is a `service_role` cron.
+- **The reminder pipeline is SQL.** Postgres decides who gets an email and when
+  (`notifications_tick`, the enqueues, the claim); the route only renders and sends. A new
+  rule about scheduling belongs in a migration with a PGlite test, never in the route.
+- **`lib/supabase/admin.ts` is the only service-role code path**, and only the cron routes
+  may import it. Everything a signed-in person does runs under their own cookie, so a bug in
+  an ordinary route cannot read another account's rows.
+- **Every new pipeline function is revoked from `anon` and `authenticated`.** Supabase grants
+  execute on creation by default, so a function without an explicit revoke is callable by any
+  session. The test harness applies those default privileges before the migrations, which is
+  what makes the revokes testable.
+- **Email sends nothing outside production unless told twice.** `EMAIL_MODE` defaults to
+  `off`, `live` outside a production deployment is refused, and the recipient's domain has to
+  be on `EMAIL_ALLOWED_DOMAINS`.
 - Animate `transform` and `opacity` only. Never animate `height` inside `AnimatePresence`.
 - **Commits are allowed on this repo** (`github.com/ragav1n/tend`, granted 2026-08-18).
   Author them as `ragav1n` and **never add a Claude trailer or co-author line**. Short
