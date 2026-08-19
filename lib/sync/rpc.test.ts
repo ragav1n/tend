@@ -646,3 +646,91 @@ describe('focus sessions', () => {
     ).rejects.toThrow();
   });
 });
+
+describe('a child whose parent is not there', () => {
+  /**
+   * 0017. focus_sessions is the first table pointing at a parent that can be
+   * superseded, so this is the first time a foreign key violation was reachable
+   * from an ordinary sequence of events. It used to abort the whole sync_push
+   * call, and the client settles a raised error across the entire claimed batch,
+   * so one unsendable row killed every unrelated edit queued behind it.
+   */
+  const GHOST = '44444444-4444-4444-8444-444444444441';
+  const SESSION = '44444444-4444-4444-8444-444444444442';
+  const TAG = '44444444-4444-4444-8444-444444444443';
+
+  it('drops the row and lets the rest of the batch commit', async () => {
+    await asUser(USER);
+    const response = await push([
+      {
+        mutationId: '44444444-4444-4444-8444-44444444444a',
+        table: 'focus_sessions',
+        entityId: SESSION,
+        op: 'insert',
+        patch: {
+          id: SESSION,
+          task_id: GHOST,
+          started_at: '2026-08-19T16:00:00.000Z',
+          planned_minutes: 25,
+          focused_seconds: 60,
+        },
+        baseVersion: 0,
+      },
+      {
+        mutationId: '44444444-4444-4444-8444-44444444444b',
+        table: 'tags',
+        entityId: TAG,
+        op: 'insert',
+        patch: { id: TAG, name: 'innocent', color: '#C29B72', sort_key: 'a0' },
+        baseVersion: 0,
+      },
+    ]);
+
+    expect(response.results[0]).toMatchObject({ status: 'missing' });
+    // The whole point: the mutation queued behind it still applied.
+    expect(response.results[1]).toMatchObject({ status: 'applied' });
+
+    await asSuperuser();
+    const sessions = await db.query(`select id from focus_sessions where id = '${SESSION}'`);
+    const tags = await db.query(`select id from tags where id = '${TAG}'`);
+    expect(sessions.rows).toHaveLength(0);
+    expect(tags.rows).toHaveLength(1);
+  });
+
+  it('is remembered, so a retry answers the same thing rather than raising', async () => {
+    await asUser(USER);
+    const again = await push([
+      {
+        mutationId: '44444444-4444-4444-8444-44444444444a',
+        table: 'focus_sessions',
+        entityId: SESSION,
+        op: 'insert',
+        patch: { id: SESSION, task_id: GHOST, started_at: '2026-08-19T16:00:00.000Z' },
+        baseVersion: 0,
+      },
+    ]);
+    expect(again.results[0]).toMatchObject({ status: 'missing' });
+  });
+
+  it('still lets a session through when its task is real', async () => {
+    await asUser(USER);
+    const good = '44444444-4444-4444-8444-444444444444';
+    const response = await push([
+      {
+        mutationId: '44444444-4444-4444-8444-44444444444c',
+        table: 'focus_sessions',
+        entityId: good,
+        op: 'insert',
+        patch: {
+          id: good,
+          task_id: '11111111-1111-4111-8111-111111111111',
+          started_at: '2026-08-19T17:00:00.000Z',
+          planned_minutes: 25,
+          focused_seconds: 0,
+        },
+        baseVersion: 0,
+      },
+    ]);
+    expect(response.results[0]).toMatchObject({ status: 'applied' });
+  });
+});

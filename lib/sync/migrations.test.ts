@@ -48,6 +48,7 @@ describe('the migration directory', () => {
       '0014_web_push.sql',
       '0015_notifiable.sql',
       '0016_focus_sessions.sql',
+      '0017_missing_parent.sql',
     ]);
   });
 

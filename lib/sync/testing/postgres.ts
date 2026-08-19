@@ -33,6 +33,7 @@ export const MIGRATIONS = [
   '0014_web_push',
   '0015_notifiable',
   '0016_focus_sessions',
+  '0017_missing_parent',
 ];
 
 export function migrationSql(name: string): string {
