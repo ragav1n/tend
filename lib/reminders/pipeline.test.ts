@@ -1,6 +1,12 @@
 import type { PGlite } from '@electric-sql/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { asSuperuser, asUser, bootPostgres, createUsers } from '@/lib/sync/testing/postgres';
+import {
+  asSuperuser,
+  asUser,
+  bootPostgres,
+  createUsers,
+  MIGRATIONS,
+} from '@/lib/sync/testing/postgres';
 
 /**
  * The reminder pipeline, run against a real Postgres.
@@ -599,6 +605,105 @@ describe('settling a batch', () => {
 
     const [row] = await deliveries(user, 'daily_digest');
     expect(row!.status).toBe('pending');
+  });
+});
+
+describe('what a digest says', () => {
+  const payloadFor = async (id: string) =>
+    (
+      await one<{ reminder_payload: {
+        today: { id: string; title: string }[];
+        overdue: { id: string; title: string }[];
+        dueSoon: { id: string; title: string }[];
+      } }>('select public.reminder_payload($1) as reminder_payload', [id])
+    ).reminder_payload;
+
+  it('lists a task once, under the first heading that claims it', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+
+    // Added from the Today view, which is what puts planned_for on it, and due
+    // yesterday. It belongs to both lists by predicate and to one by sense.
+    await newTask(user, {
+      title: 'Board Lufthansa',
+      dueDate: shiftDay(today, -1),
+      plannedFor: today,
+    });
+    await newTask(user, { title: 'Unpack bags', plannedFor: today });
+
+    const payload = await payloadFor(await dueDelivery(user));
+
+    expect(payload.overdue.map((item) => item.title)).toEqual(['Board Lufthansa']);
+    // Late wins: a task that is already overdue is not news about today.
+    expect(payload.today.map((item) => item.title)).toEqual(['Unpack bags']);
+  });
+
+  it('keeps a task planned today out of the next few days', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+
+    await newTask(user, {
+      title: 'Pack for Munich',
+      dueDate: shiftDay(today, 2),
+      plannedFor: today,
+    });
+    await newTask(user, { title: 'Return the router', dueDate: shiftDay(today, 2) });
+
+    const payload = await payloadFor(await dueDelivery(user));
+
+    expect(payload.today.map((item) => item.title)).toEqual(['Pack for Munich']);
+    expect(payload.dueSoon.map((item) => item.title)).toEqual(['Return the router']);
+  });
+
+  it('repeated itself before 0010, which is what that migration is for', async () => {
+    // The same scenario against the schema as it stood, because a test that
+    // passes on both sides of a fix is not testing the fix.
+    const old = await bootPostgres(MIGRATIONS.filter((name) => name < '0010'));
+    try {
+      const user = '00000000-0000-4000-8000-0000000000ff';
+      await createUsers(old, [user]);
+      await old.query(
+        `update public.user_settings set timezone = 'America/New_York' where user_id = $1`,
+        [user],
+      );
+      const localDate = (
+        await old.query<{ d: Date }>(`select (now() at time zone 'America/New_York')::date as d`)
+      ).rows[0]!.d;
+      const today = day(localDate)!;
+
+      await old.query(
+        `insert into public.tasks (id, user_id, title, status, due_date, planned_for, sort_key)
+         values ('22222222-0000-4000-8000-0000000000ff', $1, 'Board Lufthansa', 'active', $2, $3, 'a0')`,
+        [user, shiftDay(today, -1), today],
+      );
+      await old.query(
+        `insert into public.reminder_deliveries
+           (user_id, kind, scheduled_at, local_date, dedupe_key)
+         values ($1, 'daily_digest', now(), $2, 'old:1')`,
+        [user, today],
+      );
+
+      const { rows } = await old.query<{
+        payload: { today: { title: string }[]; overdue: { title: string }[] };
+      }>(
+        `select public.reminder_payload(id) as payload
+           from public.reminder_deliveries where dedupe_key = 'old:1'`,
+      );
+
+      expect(rows[0]!.payload.overdue.map((item) => item.title)).toEqual(['Board Lufthansa']);
+      expect(rows[0]!.payload.today.map((item) => item.title)).toEqual(['Board Lufthansa']);
+    } finally {
+      await old.close();
+    }
+  }, 60_000);
+
+  it('says nothing rather than something empty', async () => {
+    const user = await newUser();
+    const payload = await payloadFor(await dueDelivery(user));
+
+    expect(payload.today).toEqual([]);
+    expect(payload.overdue).toEqual([]);
+    expect(payload.dueSoon).toEqual([]);
   });
 });
 

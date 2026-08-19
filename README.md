@@ -43,10 +43,14 @@ animate, and `prefers-reduced-motion` is a real path rather than a duration set 
 ## Running it
 
 ```bash
+nvm use                      # Node 24, per .nvmrc
 npm install
 cp .env.example .env.local   # then fill it in
 npm run dev
 ```
+
+Node 22 is the floor: `@supabase/supabase-js` warns on 20 and drops it in a coming
+release. `nvm install 24` if you do not have it yet.
 
 Phase 0 runs with no backend at all. Everything lives in IndexedDB until the Supabase
 project is wired up.
