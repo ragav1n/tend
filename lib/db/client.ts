@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable, type Table } from 'dexie';
 import { APP_DB_PREFIX } from '@/lib/config';
+import { openWithRecovery, type OpenOutcome } from './recovery';
 import { defineSchema } from './schema';
 import type {
   OutboxRecord,
@@ -82,11 +83,31 @@ export function getDb(): TendDb {
   return instance;
 }
 
-/** Idempotent, so calling it from a provider on mount is safe. */
-export async function openDb(): Promise<TendDb> {
-  const db = getDb();
-  if (!db.isOpen()) await db.open();
-  return db;
+/**
+ * Opens through the recovery ladder, and answers with what it took.
+ *
+ * Idempotent, so calling it from a provider on mount is safe. The outcome is
+ * returned rather than thrown because three of the four failures have different
+ * fixes and only the caller can say them: another tab to close, a reload, or a
+ * rebuild that the person deserves to be told about.
+ *
+ * A rebuild replaces the singleton, so `getDb()` hands the rest of the app the
+ * new handle rather than a closed one.
+ */
+export async function openDb(): Promise<OpenOutcome> {
+  const current = getDb();
+  if (current.isOpen()) return { kind: 'opened', db: current };
+
+  let reusedSingleton = false;
+  return openWithRecovery(current.name, (name) => {
+    if (!reusedSingleton) {
+      reusedSingleton = true;
+      return current;
+    }
+    const replacement = new TendDb(name);
+    setDb(replacement);
+    return replacement;
+  });
 }
 
 /**

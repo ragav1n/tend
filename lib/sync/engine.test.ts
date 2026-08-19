@@ -17,7 +17,14 @@ const pullOnce = vi.fn();
 const readCursor = vi.fn(async () => 0);
 
 vi.mock('@/lib/db/client', () => ({
-  openDb: vi.fn(async () => ({ outbox: {} })),
+  // The recovery ladder's outcome shape, since that is what the engine branches
+  // on before it touches the handle.
+  openDb: vi.fn(async () => ({ kind: 'opened', db: { outbox: {} } })),
+}));
+
+vi.mock('@/lib/db/persist', () => ({
+  requestPersistence: vi.fn(async () => 'granted'),
+  relieveQuota: vi.fn(async () => 0),
 }));
 
 vi.mock('@/lib/supabase/client', () => ({

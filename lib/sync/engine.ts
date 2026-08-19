@@ -2,6 +2,7 @@
 
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { openDb, type TendDb } from '@/lib/db/client';
+import { relieveQuota, requestPersistence } from '@/lib/db/persist';
 import { getSupabase } from '@/lib/supabase/client';
 import { readCursor } from './apply';
 import { classify } from './errors';
@@ -102,28 +103,64 @@ export class SyncEngine {
   }
 
   private async openDatabase(): Promise<void> {
+    let outcome;
     try {
-      this.db = await openDb();
-      // A tab that died mid-push left records claimed. Nothing else ever
-      // releases them, so the queue would strand while the UI said "synced".
-      await reclaimStale(this.db);
-
-      this.teardown = installTriggers(this.db, {
-        onWake: () => this.dispatch({ type: 'wake' }),
-        onOnline: () => this.dispatch({ type: 'network_online' }),
-        onOffline: () => this.dispatch({ type: 'network_offline' }),
-      });
-
-      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        this.dispatch({ type: 'network_offline' });
-      }
-      this.dispatch({ type: 'db_opened' });
+      outcome = await openDb();
     } catch (error) {
       this.dispatch({
         type: 'db_failed',
         message: error instanceof Error ? error.message : 'could not open the database',
       });
+      return;
     }
+
+    // Three of the four failures have different fixes, and a single "sync
+    // stopped" would hide which one applies here.
+    switch (outcome.kind) {
+      case 'blocked':
+        this.dispatch({
+          type: 'db_failed',
+          message: 'Another tab is holding an older version open. Close it and reload.',
+        });
+        return;
+      case 'stale_code':
+        this.dispatch({
+          type: 'db_failed',
+          message: 'This page is older than the data on this device. Reload to catch up.',
+        });
+        return;
+      case 'failed':
+        this.dispatch({ type: 'db_failed', message: outcome.message });
+        return;
+      default:
+        break;
+    }
+
+    this.db = outcome.db;
+
+    // Moves the store out of the browser's evictable bucket. Nobody prompts for
+    // it but Firefox, and an outbox that has not drained yet is the only copy of
+    // that work, so it is worth asking.
+    void requestPersistence();
+
+    // A tab that died mid-push left records claimed. Nothing else ever
+    // releases them, so the queue would strand while the UI said "synced".
+    await reclaimStale(this.db);
+
+    this.teardown = installTriggers(this.db, {
+      onWake: () => this.dispatch({ type: 'wake' }),
+      onOnline: () => this.dispatch({ type: 'network_online' }),
+      onOffline: () => this.dispatch({ type: 'network_offline' }),
+    });
+
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      this.dispatch({ type: 'network_offline' });
+    }
+    this.dispatch(
+      outcome.kind === 'rebuilt'
+        ? { type: 'db_opened', rescued: outcome.rescued }
+        : { type: 'db_opened' },
+    );
   }
 
   private async checkSession(): Promise<void> {
@@ -211,6 +248,20 @@ export class SyncEngine {
   private fail(error: unknown): void {
     const failure = error instanceof SyncError ? error.failure : classify(error);
     this.dispatch({ type: 'failed', kind: failure.kind, message: failure.message });
+    // paused_quota has no exit of its own, because nothing else in the app ever
+    // deletes anything. Trimming the local-only logs is the only exit that does
+    // not cost the person data, so if it frees nothing the engine stays parked
+    // and the badge keeps saying storage is full.
+    if (failure.kind === 'quota') void this.relieve();
+  }
+
+  private async relieve(): Promise<void> {
+    if (!this.db) return;
+    try {
+      if ((await relieveQuota(this.db)) > 0) this.dispatch({ type: 'quota_cleared' });
+    } catch {
+      // Pruning failed too. Staying paused is the correct outcome.
+    }
   }
 }
 

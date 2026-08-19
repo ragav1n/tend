@@ -35,6 +35,21 @@ describe('booting', () => {
     expect(state.status).toBe('fatal');
   });
 
+  it('says nothing about a rebuild when there was not one', () => {
+    const { state } = run(initialState, BOOT);
+    expect(state.rebuilt).toBeNull();
+  });
+
+  it('carries a rebuild forward so the shell can say so', () => {
+    // A rescue of zero is still a rebuild: the local copy is gone either way,
+    // and that is the part worth telling somebody.
+    const { state } = run(initialState, [{ type: 'started' }, { type: 'db_opened', rescued: 0 }]);
+    expect(state.rebuilt).toEqual({ rescued: 0 });
+
+    const withQueue = run(initialState, [{ type: 'started' }, { type: 'db_opened', rescued: 3 }]);
+    expect(withQueue.state.rebuilt).toEqual({ rescued: 3 });
+  });
+
   it('rests in no_session when signed out, rather than erroring', () => {
     // The app is fully usable signed out. It reads and it queues.
     const { state } = run(initialState, [...BOOT, { type: 'session_lost' }]);

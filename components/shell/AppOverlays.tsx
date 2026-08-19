@@ -2,6 +2,7 @@
 
 import { Toaster } from 'sonner';
 import { InstallPrompt } from '@/components/shell/InstallPrompt';
+import { RecoveryNotice } from '@/components/shell/RecoveryNotice';
 import { SyncBadge } from '@/components/shell/SyncBadge';
 import { UpdatePrompt } from '@/components/shell/UpdatePrompt';
 import { TaskDetailHost } from '@/components/task/TaskDetailHost';
@@ -33,6 +34,7 @@ export function AppOverlays() {
           above the Toaster it fires into. */}
       <UpdatePrompt />
       <InstallPrompt />
+      <RecoveryNotice />
       <Toaster
         theme="dark"
         position="bottom-center"

@@ -1,12 +1,13 @@
 'use client';
 
 import { useId } from 'react';
-import { Bell, EnvelopeSimple, Globe, MoonStars } from '@phosphor-icons/react/dist/ssr';
+import { Bell, EnvelopeSimple, Globe, HardDrives, MoonStars } from '@phosphor-icons/react/dist/ssr';
 import { Segmented } from '@/components/ui/Segmented';
 import { Toggle } from '@/components/ui/Toggle';
 import { controlClass } from '@/components/ui/Field';
 import { ViewHeader } from '@/components/views/ViewHeader';
 import { usePrefs } from '@/hooks/use-prefs';
+import { formatBytes, useStorageState } from '@/hooks/use-storage';
 import { updatePrefs } from '@/lib/db/mutations';
 import { deviceTimezone, fromTimeInput, toTimeInput } from '@/lib/db/prefs';
 import type { PrefsPatch } from '@/lib/db/mutations';
@@ -274,6 +275,8 @@ export default function SettingsPage() {
         </Row>
       </Group>
 
+      <DeviceGroup />
+
       <p className="mt-8 flex items-start gap-2 text-xs leading-relaxed text-text-lo">
         <Bell size={14} className="mt-0.5 shrink-0" aria-hidden />
         Changes sync to your other devices. Every email also carries a link that turns
@@ -344,6 +347,46 @@ function Group({
         {children}
       </div>
     </section>
+  );
+}
+
+/**
+ * This device, which is the only group here that is not a synced setting.
+ *
+ * Worth showing because the app's promise is that the data lives on the device.
+ * "Kept on this device" is the answer to whether the browser may throw it away
+ * under disk pressure, and nothing else in the app ever tells you. It is a
+ * readout rather than a switch: the request can put a dialog on screen in
+ * Firefox, and opening settings is not a reason to ask for anything.
+ */
+function DeviceGroup() {
+  const { persisted, report } = useStorageState();
+
+  return (
+    <Group title="This device" icon={HardDrives}>
+      <Row
+        label="Kept on this device"
+        hint={
+          persisted === true
+            ? 'The browser has promised not to clear it to make room.'
+            : 'Granted once the app is installed, on every browser but Firefox.'
+        }
+      >
+        {() => (
+          <span className={cn('text-sm', persisted ? 'text-olive-300' : 'text-text-lo')}>
+            {persisted === null ? 'Unknown' : persisted ? 'Yes' : 'Not yet'}
+          </span>
+        )}
+      </Row>
+
+      <Row label="Space used" hint="Your tasks, plus the app itself for offline use.">
+        {() => (
+          <span className="tnum text-sm text-text-mid">
+            {report ? formatBytes(report.usage) : '—'}
+          </span>
+        )}
+      </Row>
+    </Group>
   );
 }
 

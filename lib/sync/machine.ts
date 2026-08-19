@@ -52,13 +52,19 @@ export interface SyncState {
   leader: boolean;
   session: boolean;
   dbOpen: boolean;
+  /**
+   * Set once when the local database had to be rebuilt from empty, with the count
+   * of unsent mutations the ladder carried across. Null is the normal case.
+   */
+  rebuilt: { rescued: number } | null;
   /** The last failure, kept so the badge can explain itself. */
   lastError: string | null;
 }
 
 export type SyncEvent =
   | { type: 'started' }
-  | { type: 'db_opened' }
+  /** `rescued` is present only when the database was rebuilt to open it. */
+  | { type: 'db_opened'; rescued?: number }
   | { type: 'db_failed'; message: string }
   | { type: 'session_found'; cursor: number }
   | { type: 'session_lost' }
@@ -97,6 +103,7 @@ export const initialState: SyncState = {
   leader: false,
   session: false,
   dbOpen: false,
+  rebuilt: null,
   lastError: null,
 };
 
@@ -151,7 +158,13 @@ export function reduce(state: SyncState, event: SyncEvent): Transition {
 
     case 'db_opened':
       return {
-        state: { ...state, dbOpen: true },
+        state: {
+          ...state,
+          dbOpen: true,
+          // A rescue of zero is still a rebuild and still worth saying, so the
+          // flag turns on undefined rather than on a count of zero.
+          rebuilt: event.rescued === undefined ? state.rebuilt : { rescued: event.rescued },
+        },
         effects: [{ kind: 'check_session' }, { kind: 'acquire_leader' }],
       };
 
