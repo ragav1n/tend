@@ -44,6 +44,13 @@ The full architecture plan lives at `~/.claude/plans/i-want-to-create-noble-flam
 - **The reminder pipeline is SQL.** Postgres decides who gets an email and when
   (`notifications_tick`, the enqueues, the claim); the route only renders and sends. A new
   rule about scheduling belongs in a migration with a PGlite test, never in the route.
+- **No authenticated response ever enters a cache.** `app/sw.ts` is `NetworkOnly` for
+  `/api`, `/auth` and every Supabase request, and which rule a request falls under is decided
+  in `lib/pwa/cache-policy.ts` because that file can be tested and the worker cannot. Caching
+  navigations is safe only while the whole `(app)` group is client rendered: if a view ever
+  renders a task on the server, those entries have to go.
+- **`skipWaiting` stays off.** A worker that takes over on its own can swap the JS under a tab
+  midway through an IndexedDB upgrade, and that costs the local database rather than a render.
 - **`lib/supabase/admin.ts` is the only service-role code path**, and only the cron routes
   may import it. Everything a signed-in person does runs under their own cookie, so a bug in
   an ordinary route cannot read another account's rows.
@@ -77,10 +84,12 @@ declaratives. Never "not X but Y". Comments explain why, not what.
 These differ from Next 14/15 and will silently break things:
 
 - **Turbopack is the default for `next dev` AND `next build`.** A custom `webpack` config in
-  `next.config.ts` makes `next build` **fail outright**, and that includes a webpack config
-  added by a plugin. `@serwist/next`'s `withSerwist()` adds one. When wiring the service
-  worker in phase 3, either use Serwist's `next-turbo-basic` example or switch the build
-  script to `next build --webpack`. Turbopack supports webpack *loaders* but not *plugins*.
+  `next.config.ts` makes `next build` **exit** rather than warn, and that includes a webpack
+  config added by a plugin. `@serwist/next`'s `withSerwist()` adds one. Turbopack supports
+  webpack *loaders* but not *plugins*, so that plugin has no migration path. Settled in phase
+  3: the service worker is built by Serwist's own CLI as a second step, `next build && serwist
+  build serwist.config.mjs`, and `next.config.ts` stays empty. Do not reintroduce
+  `withSerwist()`.
 - **Middleware is `proxy.ts` at the root**, not `middleware.ts`. Named export `proxy`, Node
   runtime only (setting `runtime` throws), and `skipMiddlewareUrlNormalize` is now
   `skipProxyUrlNormalize`. Without a matcher it runs on every request including `public/`
@@ -99,8 +108,9 @@ These differ from Next 14/15 and will silently break things:
 - **Node 20.9+, Safari 16.4+, Chrome 111+** are the floors. Safari 16.4 is also the floor for
   iOS web push, so the targets line up.
 - `experimental.useOffline` plus `useOffline()` from `next/offline` gives connectivity
-  detection and automatic retry of blocked navigations and prefetches. Worth turning on, but
-  it does not replace the service worker: a full reload while offline still needs one.
+  detection and automatic retry of blocked navigations and prefetches. Deliberately left off:
+  the service worker precaches every view, so an offline navigation is served from cache
+  rather than blocked, and there is little left for it to retry.
 - `RouteContext<'/api/path'>` is a generated global type. Prefer it over hand-writing
   `{ params: Promise<...> }`.
 - The `<!-- BEGIN:nextjs-agent-rules -->` block in `AGENTS.md` is rewritten by `next dev` on
