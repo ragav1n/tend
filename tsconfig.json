@@ -41,6 +41,8 @@
     "**/*.mts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "app/sw.ts",
+    "public/sw.js"
   ]
 }

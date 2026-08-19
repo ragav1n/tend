@@ -1,16 +1,17 @@
 {
   "name": "tend",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "private": true,
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && serwist build serwist.config.mjs",
+    "build:sw": "serwist build serwist.config.mjs",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.sw.json",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -31,6 +32,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "resend": "^6.20.0",
+    "serwist": "^9.5.12",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.6.0",
     "uuidv7": "^1.2.1",
@@ -38,6 +40,8 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.5",
+    "@serwist/cli": "^9.5.12",
+    "@serwist/next": "^9.5.12",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -45,6 +49,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.0.5",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.1",
     "fake-indexeddb": "^6.2.5",

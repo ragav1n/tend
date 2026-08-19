@@ -1,0 +1,23 @@
+{
+  // The service worker gets its own compile.
+  //
+  // A worker's globals contradict the DOM's: `self` is a ServiceWorkerGlobalScope
+  // there and a Window here, and TypeScript reports the pair as conflicting
+  // declarations rather than merging them. Putting "webworker" in the app's own
+  // lib would also make `self.registration` and `clients` typecheck inside
+  // components, where they do not exist at runtime.
+  //
+  // So `app/sw.ts` is excluded from tsconfig.json and checked here instead, which
+  // `npm run typecheck` runs as its second step. Serwist's build uses esbuild and
+  // checks no types at all, so without this the worker is the one file in the
+  // repo nothing verifies.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["esnext", "webworker"],
+    // Two configs sharing one .tsbuildinfo overwrite each other's state and the
+    // second run reports nothing.
+    "incremental": false
+  },
+  "include": ["app/sw.ts"],
+  "exclude": []
+}

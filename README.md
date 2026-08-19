@@ -56,10 +56,16 @@ Phase 0 runs with no backend at all. Everything lives in IndexedDB until the Sup
 project is wired up.
 
 ```bash
-npm run typecheck   # tsc --noEmit, the gate
+npm run typecheck   # tsc --noEmit, the gate. Runs twice: the app, then the worker
 npm test            # vitest
 npm run lint
+npm run build       # next build, then serwist build for the service worker
 ```
+
+`next dev` ships no service worker. It is built from `app/sw.ts` by the second half of
+`npm run build`, so installing the app and testing offline means `npm run build && npm start`.
+Serwist has no Turbopack support yet and Next 16 makes Turbopack the default, so the worker
+is built by Serwist's own CLI rather than by a webpack plugin. See `serwist.config.mjs`.
 
 ## Turning reminders on
 

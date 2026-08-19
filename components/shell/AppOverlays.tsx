@@ -2,6 +2,7 @@
 
 import { Toaster } from 'sonner';
 import { SyncBadge } from '@/components/shell/SyncBadge';
+import { UpdatePrompt } from '@/components/shell/UpdatePrompt';
 import { TaskDetailHost } from '@/components/task/TaskDetailHost';
 import { useAdoptDeviceTimezone } from '@/hooks/use-prefs';
 
@@ -27,6 +28,9 @@ export function AppOverlays() {
     <>
       <TaskDetailHost />
       <SyncBadge />
+      {/* Registers the service worker as well as prompting, so it has to mount
+          above the Toaster it fires into. */}
+      <UpdatePrompt />
       <Toaster
         theme="dark"
         position="bottom-center"

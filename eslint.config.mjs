@@ -56,6 +56,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The bundled service worker. `app/sw.ts` is the source and is linted; this
+    // is minified esbuild output, and every rule fires on it at once.
+    "public/sw.js",
+    "public/sw.js.map",
   ]),
 ]);
 

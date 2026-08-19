@@ -41,3 +41,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# the service worker, built from app/sw.ts by `npm run build`. Generated output
+# with a precache manifest of hashed asset names, so committing it means
+# committing a file that is wrong the moment anything else changes.
+/public/sw.js
+/public/sw.js.map
