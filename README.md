@@ -67,6 +67,26 @@ npm run build       # next build, then serwist build for the service worker
 Serwist has no Turbopack support yet and Next 16 makes Turbopack the default, so the worker
 is built by Serwist's own CLI rather than by a webpack plugin. See `serwist.config.mjs`.
 
+## The views
+
+Six lists and four tools. The lists are Today, Upcoming, Inbox, Someday and Logbook, plus
+search. The tools are different ways through the same rows:
+
+- **Calendar** shows the month and reschedules by dragging a task to another day. On a phone
+  the cells hold dots rather than titles and the day list under the grid does the work,
+  because a 50px cell has nothing to grab and dragging one would fight the page scroll.
+- **Board** groups open work by status or by project, and moves a card by dragging it or
+  through the move button every card carries. The button is what a keyboard, a screen reader
+  and a phone use.
+- **Focus** runs one session at a time and logs what it measured. Elapsed time is arithmetic
+  on two instants, never a tick count, so a backgrounded tab reports the real length.
+- **Review** is the week: what got finished, how much of it was focused work, the current
+  streak, and every open task whose date has passed.
+
+Focus sessions sync like everything else, so the weekly total counts the laptop and the
+phone. That needs `0016_focus_sessions.sql` applied: without it the server rejects the table
+by name and every session lands in the deadletter.
+
 ## Turning notifications on
 
 Two variables and one migration. The scheduling is the same pipeline the emails
@@ -95,7 +115,7 @@ coming, and a hard bounce stops the mail without stopping the notification.
 The scheduling lives in Postgres and the sending lives in Vercel, so both sides need
 one-time setup. Nothing below is in the repo, because all of it is a secret.
 
-**1. Apply the migrations.** `supabase/migrations/0001` through `0014`, in order.
+**1. Apply the migrations.** Everything in `supabase/migrations/`, in order.
 
 **2. Enable the extensions**, from the Supabase dashboard or SQL:
 
