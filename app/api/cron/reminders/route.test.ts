@@ -5,10 +5,15 @@ import type { ClaimResponse, ReminderKind } from '@/lib/email/types';
  * The route's orchestration, with a fake Supabase and no network.
  *
  * What is under test is the part neither the SQL suite nor the render suite can
- * reach: that a claim becomes the right number of emails, that each group is
- * settled exactly once, and that a send which throws marks its rows failed rather
- * than losing them. `EMAIL_MODE=console` runs the real render and the real send
- * path with nothing leaving the process.
+ * reach: that a claim becomes the right number of notifications, that each group
+ * is settled exactly once, and that a send which throws marks its rows failed
+ * rather than losing them. `EMAIL_MODE=console` runs the real render and the real
+ * send path with nothing leaving the process.
+ *
+ * Since 0014 a group can go out on two channels, and the rule worth holding is
+ * that one working channel settles the row. A push that lands is a reminder
+ * delivered even if the mail bounced off a guard, and the reverse holds for
+ * somebody with email off. Only a group where everything failed is failed.
  */
 
 interface RpcCall {
@@ -18,6 +23,26 @@ interface RpcCall {
 
 let calls: RpcCall[] = [];
 let claim: ClaimResponse;
+/** Subscription rows the fake `push_subscriptions` table hands back. */
+let subscriptions: { id: string; endpoint: string; p256dh: string; auth: string; failures: number }[] = [];
+let deleted: string[] = [];
+/** What the mocked web-push does. */
+let pushBehaviour: 'ok' | 'gone' | 'throw' = 'ok';
+
+const table = () => {
+  const answer = { data: subscriptions, error: null };
+  const chain = {
+    select: () => ({ eq: async () => answer }),
+    update: () => ({ eq: async () => ({ error: null }) }),
+    delete: () => ({
+      in: async (_column: string, ids: string[]) => {
+        deleted.push(...ids);
+        return { error: null };
+      },
+    }),
+  };
+  return chain;
+};
 
 const supabase = {
   rpc: async (name: string, args: Record<string, unknown>) => {
@@ -25,15 +50,40 @@ const supabase = {
     if (name === 'claim_reminder_batch') return { data: claim, error: null };
     return { data: null, error: null };
   },
+  from: () => table(),
 };
 
 vi.mock('@/lib/supabase/admin', () => ({ getAdminSupabase: () => supabase }));
+
+class FakeWebPushError extends Error {
+  constructor(readonly statusCode: number) {
+    super(`push service said ${statusCode}`);
+  }
+}
+
+vi.mock('web-push', () => ({
+  default: {
+    setVapidDetails: () => {},
+    sendNotification: async () => {
+      if (pushBehaviour === 'gone') throw new FakeWebPushError(410);
+      if (pushBehaviour === 'throw') throw new Error('push service unreachable');
+      return { statusCode: 201 };
+    },
+  },
+  WebPushError: FakeWebPushError,
+}));
 
 const { POST } = await import('./route');
 
 let count = 0;
 
-function delivery(kind: ReminderKind, minutes = 0) {
+const EMAIL_ONLY = { email: true, push: false };
+
+function delivery(
+  kind: ReminderKind,
+  minutes = 0,
+  channels: { email: boolean; push: boolean } = EMAIL_ONLY,
+) {
   count += 1;
   const base = Date.parse('2026-09-01T13:00:00Z');
   const task = {
@@ -48,8 +98,10 @@ function delivery(kind: ReminderKind, minutes = 0) {
 
   return {
     id: `d${count}`,
+    userId: 'u1',
     kind,
-    email: 'me@example.com',
+    email: channels.email ? 'me@example.com' : null,
+    channels,
     scheduledAt: new Date(base + minutes * 60_000).toISOString(),
     dedupeKey: `k${count}`,
     attempts: 1,
@@ -82,6 +134,9 @@ const rpc = (name: string) => calls.filter((call) => call.name === name);
 beforeEach(() => {
   calls = [];
   count = 0;
+  subscriptions = [];
+  deleted = [];
+  pushBehaviour = 'ok';
   claim = { claimed: [], skipped: 0, quotaAvailable: true };
   vi.stubEnv('CRON_SECRET', 'the-cron-secret');
   vi.stubEnv('EMAIL_MODE', 'console');
@@ -188,5 +243,128 @@ describe('a claim', () => {
     };
 
     expect(body).toMatchObject({ skipped: 3, quotaAvailable: false });
+  });
+});
+
+describe('two channels', () => {
+  const subscribed = () => {
+    subscriptions = [
+      { id: 's1', endpoint: 'https://push.example/1', p256dh: 'key', auth: 'secret', failures: 0 },
+    ];
+    vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', 'a-public-key');
+    vi.stubEnv('VAPID_PRIVATE_KEY', 'a-private-key');
+  };
+
+  it('settles a push-only group with no email at all', async () => {
+    subscribed();
+    claim = {
+      claimed: [delivery('daily_digest', 0, { email: false, push: true })],
+      skipped: 0,
+      quotaAvailable: true,
+    };
+
+    const body = (await (await POST(request())).json()) as { sent: number; pushed: number };
+    expect(body).toMatchObject({ sent: 1, pushed: 1 });
+
+    const sent = rpc('mark_reminders_sent');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.args.p_message_id).toBe('push:1');
+  });
+
+  it('sends both when both are open', async () => {
+    subscribed();
+    claim = {
+      claimed: [delivery('daily_digest', 0, { email: true, push: true })],
+      skipped: 0,
+      quotaAvailable: true,
+    };
+
+    const body = (await (await POST(request())).json()) as { sent: number; pushed: number };
+    expect(body).toMatchObject({ sent: 1, pushed: 1 });
+    // The email answered first, so its receipt is the one on the row.
+    expect(rpc('mark_reminders_sent')[0]!.args.p_message_id).toBe('console:k1');
+  });
+
+  it('still settles the row when the email fails and the push lands', async () => {
+    // The rule this file exists for. A person who got the notification was
+    // reminded, and failing the row would have them reminded again tomorrow.
+    subscribed();
+    vi.stubEnv('EMAIL_MODE', 'live');
+    vi.stubEnv('EMAIL_ALLOW_LIVE', 'true');
+    vi.stubEnv('EMAIL_ALLOWED_DOMAINS', 'nowhere.test');
+    claim = {
+      claimed: [delivery('daily_digest', 0, { email: true, push: true })],
+      skipped: 0,
+      quotaAvailable: true,
+    };
+
+    const body = (await (await POST(request())).json()) as {
+      sent: number;
+      failed: number;
+      failures: string[];
+    };
+
+    expect(body).toMatchObject({ sent: 1, failed: 0 });
+    expect(rpc('mark_reminders_failed')).toHaveLength(0);
+    // Reported anyway. A half outcome that says nothing is how a broken channel
+    // stays broken for a month.
+    expect(body.failures[0]).toMatch(/^email: /);
+  });
+
+  it('fails the row when every channel fails', async () => {
+    subscribed();
+    pushBehaviour = 'throw';
+    vi.stubEnv('EMAIL_MODE', 'live');
+    vi.stubEnv('EMAIL_ALLOW_LIVE', 'true');
+    vi.stubEnv('EMAIL_ALLOWED_DOMAINS', 'nowhere.test');
+    claim = {
+      claimed: [delivery('daily_digest', 0, { email: true, push: true })],
+      skipped: 0,
+      quotaAvailable: true,
+    };
+
+    const body = (await (await POST(request())).json()) as { failed: number; failures: string[] };
+    expect(body.failed).toBe(1);
+    expect(rpc('mark_reminders_sent')).toHaveLength(0);
+    const reason = rpc('mark_reminders_failed')[0]!.args.p_error as string;
+    expect(reason).toMatch(/email: /);
+    expect(reason).toMatch(/push: /);
+  });
+
+  it('drops a subscription the push service says is gone', async () => {
+    subscribed();
+    pushBehaviour = 'gone';
+    claim = {
+      claimed: [delivery('daily_digest', 0, { email: false, push: true })],
+      skipped: 0,
+      quotaAvailable: true,
+    };
+
+    const body = (await (await POST(request())).json()) as { failed: number };
+    // 410 means that browser is never coming back, so the row goes rather than
+    // failing on every tick forever.
+    expect(deleted).toEqual(['s1']);
+    expect(body.failed).toBe(1);
+  });
+
+  it('sends no push and reports nothing when the deployment has no keys', async () => {
+    // Push is additive. An install with no VAPID pair has to behave exactly as it
+    // did before, which means an email-only claim and a clean summary.
+    subscriptions = [
+      { id: 's1', endpoint: 'https://push.example/1', p256dh: 'key', auth: 'secret', failures: 0 },
+    ];
+    claim = {
+      claimed: [delivery('daily_digest', 0, { email: true, push: true })],
+      skipped: 0,
+      quotaAvailable: true,
+    };
+
+    const body = (await (await POST(request())).json()) as {
+      sent: number;
+      pushed: number;
+      failures?: string[];
+    };
+    expect(body).toMatchObject({ sent: 1, pushed: 0 });
+    expect(body.failures).toBeUndefined();
   });
 });

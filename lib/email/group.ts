@@ -9,15 +9,39 @@ import type { ClaimedDelivery, EmailGroup } from './types';
  */
 export const COALESCE_WINDOW_MS = 10 * 60 * 1000;
 
+function groupOf(delivery: ClaimedDelivery): EmailGroup {
+  return {
+    kind: delivery.kind,
+    userId: delivery.userId,
+    email: delivery.email,
+    channels: delivery.channels,
+    timezone: delivery.timezone,
+    tokenVersion: delivery.tokenVersion,
+    deliveries: [delivery],
+  };
+}
+
 /**
- * Claimed deliveries arranged into the emails they will become.
+ * Claimed deliveries arranged into the notifications they will become.
  *
- * Task reminders for one address inside the window collapse into one email.
- * Everything else is already one per person per day by construction, so it maps
- * one to one and the grouping is only here to keep the route's loop uniform.
+ * Task reminders for one person inside the window collapse into one. Everything
+ * else is already one per person per day by construction, so it maps one to one
+ * and the grouping is only here to keep the route's loop uniform.
+ *
+ * Keyed on the user rather than the address. The address is a property of the
+ * account and can be absent on a push-only one, and a null key would collapse
+ * every such account into a single group, which is the worst possible bug in this
+ * function: one person's tasks in another person's notification.
  *
  * The window is measured from the first delivery in each group rather than from
  * the previous one, so a steady trickle cannot chain into one email an hour late.
+ *
+ * Channels are taken from the first delivery in a group. Everything that decides
+ * them is a property of the account and the moment, so deliveries claimed in the
+ * same batch for the same person agree, with one exception: the per-user email cap
+ * can close mid-batch. The group then carries the first row's answer and the cap
+ * is exceeded by at most the rest of one coalesced group, which is the same
+ * rounding the coalescing already accepts.
  */
 export function groupDeliveries(claimed: ClaimedDelivery[]): EmailGroup[] {
   const groups: EmailGroup[] = [];
@@ -29,33 +53,21 @@ export function groupDeliveries(claimed: ClaimedDelivery[]): EmailGroup[] {
 
   for (const delivery of ordered) {
     if (delivery.kind !== 'task_reminder') {
-      groups.push({
-        kind: delivery.kind,
-        email: delivery.email,
-        timezone: delivery.timezone,
-        tokenVersion: delivery.tokenVersion,
-        deliveries: [delivery],
-      });
+      groups.push(groupOf(delivery));
       continue;
     }
 
     const at = Date.parse(delivery.scheduledAt);
-    const existing = open.get(delivery.email);
+    const existing = open.get(delivery.userId);
 
     if (existing && at - existing.startedAt <= COALESCE_WINDOW_MS) {
       existing.group.deliveries.push(delivery);
       continue;
     }
 
-    const group: EmailGroup = {
-      kind: 'task_reminder',
-      email: delivery.email,
-      timezone: delivery.timezone,
-      tokenVersion: delivery.tokenVersion,
-      deliveries: [delivery],
-    };
+    const group = groupOf(delivery);
     groups.push(group);
-    open.set(delivery.email, { group, startedAt: at });
+    open.set(delivery.userId, { group, startedAt: at });
   }
 
   return groups;

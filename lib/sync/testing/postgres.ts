@@ -30,6 +30,7 @@ export const MIGRATIONS = [
   '0011_stale_digests',
   '0012_find_pg_net',
   '0013_richer_emails',
+  '0014_web_push',
 ];
 
 export function migrationSql(name: string): string {

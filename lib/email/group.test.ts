@@ -11,15 +11,22 @@ let count = 0;
 
 function delivery(over: {
   kind?: ReminderKind;
-  email?: string;
+  userId?: string;
+  email?: string | null;
+  channels?: { email: boolean; push: boolean };
   minutes?: number;
 }): ClaimedDelivery {
   count += 1;
   const base = Date.parse('2026-09-01T13:00:00Z');
+  const email = over.email === undefined ? 'a@example.com' : over.email;
   return {
     id: `d${count}`,
+    // Grouping keys on the user, so an unspecified one has to follow the address
+    // or every fixture in this file would collapse into one group.
+    userId: over.userId ?? `u:${email ?? 'none'}`,
     kind: over.kind ?? 'task_reminder',
-    email: over.email ?? 'a@example.com',
+    email,
+    channels: over.channels ?? { email: true, push: false },
     scheduledAt: new Date(base + (over.minutes ?? 0) * 60_000).toISOString(),
     dedupeKey: `k${count}`,
     attempts: 1,
@@ -74,7 +81,7 @@ describe('task reminders', () => {
     expect(COALESCE_WINDOW_MS).toBe(600_000);
   });
 
-  it('never mix two addresses', () => {
+  it('never mix two people', () => {
     const groups = groupDeliveries([
       delivery({ email: 'a@example.com' }),
       delivery({ email: 'b@example.com', minutes: 1 }),
@@ -85,6 +92,34 @@ describe('task reminders', () => {
       'a@example.com',
       'b@example.com',
     ]);
+  });
+
+  it('never mix two accounts that have no address', () => {
+    // The reason grouping keys on the user. Two push-only accounts both carry a
+    // null address, and keying on that would put one person's tasks in the other
+    // person's notification.
+    const groups = groupDeliveries([
+      delivery({ userId: 'u1', email: null, channels: { email: false, push: true } }),
+      delivery({
+        userId: 'u2',
+        email: null,
+        channels: { email: false, push: true },
+        minutes: 1,
+      }),
+    ]);
+
+    expect(groups).toHaveLength(2);
+    expect(groups.map((group) => group.userId)).toEqual(['u1', 'u2']);
+  });
+
+  it('carries the channels the claim decided', () => {
+    const groups = groupDeliveries([
+      delivery({ channels: { email: false, push: true } }),
+      delivery({ channels: { email: false, push: true }, minutes: 2 }),
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.channels).toEqual({ email: false, push: true });
   });
 });
 

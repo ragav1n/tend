@@ -75,10 +75,24 @@ export interface SummaryPayload {
 
 export type ReminderPayload = TaskReminderPayload | SummaryPayload;
 
+/**
+ * Which ways this delivery may go out, decided by the claim in 0014.
+ *
+ * At least one is always true: a row with both closed is cancelled in Postgres
+ * and never reaches the route.
+ */
+export interface Channels {
+  email: boolean;
+  push: boolean;
+}
+
 export interface ClaimedDelivery {
   id: string;
+  userId: string;
   kind: ReminderKind;
-  email: string;
+  /** Null only where the account has no address at all, which is push-only. */
+  email: string | null;
+  channels: Channels;
   scheduledAt: string;
   dedupeKey: string;
   attempts: number;
@@ -100,9 +114,19 @@ export interface ClaimResponse {
  * email with three lines, not three emails. That is the first line of defence on
  * a 100 a day allowance, and it is also what a person would rather receive.
  */
+/**
+ * One notification, on whatever channels its deliveries agreed on.
+ *
+ * Still called a group rather than renamed, because that is what it has always
+ * been: the set of deliveries that become one thing a person receives. What
+ * changed in 0014 is that "one thing" can now be an email, a push, or both.
+ */
 export interface EmailGroup {
   kind: ReminderKind;
-  email: string;
+  userId: string;
+  /** Null on a push-only group, so every read of it is guarded. */
+  email: string | null;
+  channels: Channels;
   timezone: string;
   tokenVersion: number;
   deliveries: ClaimedDelivery[];

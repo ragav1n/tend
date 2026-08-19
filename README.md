@@ -67,12 +67,35 @@ npm run build       # next build, then serwist build for the service worker
 Serwist has no Turbopack support yet and Next 16 makes Turbopack the default, so the worker
 is built by Serwist's own CLI rather than by a webpack plugin. See `serwist.config.mjs`.
 
+## Turning notifications on
+
+Two variables and one migration. The scheduling is the same pipeline the emails
+use, so there is nothing else to set up.
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Put the public key in `NEXT_PUBLIC_VAPID_PUBLIC_KEY` and the private one in
+`VAPID_PRIVATE_KEY`, apply `0014_web_push.sql`, and the toggle appears under
+Settings > This device. With the keys unset the toggle says the deployment has no
+push keys and the cron sends email exactly as it did before.
+
+**On iPhone the app has to be on the home screen first.** Safari gives a tab no
+`PushManager` at all, so there is nothing to enable until it is installed, and
+the settings row says so rather than showing a switch that cannot work.
+
+Turning notifications on is per device, and deliberately not a synced setting: a
+subscription row is the state, so switching it off on a laptop leaves a phone
+alone. Once any device is subscribed, turning email off keeps the reminders
+coming, and a hard bounce stops the mail without stopping the notification.
+
 ## Turning reminders on
 
 The scheduling lives in Postgres and the sending lives in Vercel, so both sides need
 one-time setup. Nothing below is in the repo, because all of it is a secret.
 
-**1. Apply the migrations.** `supabase/migrations/0001` through `0012`, in order.
+**1. Apply the migrations.** `supabase/migrations/0001` through `0014`, in order.
 
 **2. Enable the extensions**, from the Supabase dashboard or SQL:
 

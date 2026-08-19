@@ -7,7 +7,11 @@ import { Toggle } from '@/components/ui/Toggle';
 import { controlClass } from '@/components/ui/Field';
 import { ViewHeader } from '@/components/views/ViewHeader';
 import { usePrefs } from '@/hooks/use-prefs';
+import { toast } from 'sonner';
+import { useInstall } from '@/hooks/use-install';
+import { usePush } from '@/hooks/use-push';
 import { formatBytes, useStorageState } from '@/hooks/use-storage';
+import { useSyncState } from '@/hooks/use-sync';
 import { updatePrefs } from '@/lib/db/mutations';
 import { deviceTimezone, fromTimeInput, toTimeInput } from '@/lib/db/prefs';
 import type { PrefsPatch } from '@/lib/db/mutations';
@@ -364,6 +368,8 @@ function DeviceGroup() {
 
   return (
     <Group title="This device" icon={HardDrives}>
+      <NotificationRow />
+
       <Row
         label="Kept on this device"
         hint={
@@ -387,6 +393,89 @@ function DeviceGroup() {
         )}
       </Row>
     </Group>
+  );
+}
+
+/**
+ * Notifications, which are a per-device permission rather than a synced setting.
+ *
+ * Five states and only one of them is a switch, because none of the others can be
+ * fixed from here and pretending otherwise gives a control that does nothing.
+ *
+ * `unsupported` on an iPhone means the app is not on the home screen, and that is
+ * the one case where the hint is an instruction: iOS gives a Safari tab no
+ * PushManager at all, so installing is the entire fix. `blocked` can only be
+ * undone in browser settings, so it says so instead of asking again. Signed out
+ * has to be its own state as well: a subscription is a row on the server keyed to
+ * an account, so with no session the browser would subscribe, the POST would come
+ * back 401, and the switch would flick itself off with nothing said.
+ */
+function NotificationRow() {
+  const { ready, availability, subscribed, busy, enable, disable } = usePush();
+  const { method } = useInstall();
+  const { session } = useSyncState();
+  const id = useId();
+
+  const state = !session ? 'signed-out' : availability;
+
+  const hint =
+    state === 'signed-out'
+      ? 'Sign in first. A notification is sent from the server, so it needs an account to send to.'
+      : state === 'blocked'
+        ? 'Refused for this site. Your browser settings are the only way back.'
+        : state === 'unconfigured'
+          ? 'This deployment has no push keys set, so there is nothing to turn on.'
+          : state === 'unsupported'
+            ? method === 'manual-ios'
+              ? 'Add Tend to your home screen first. Safari gives a tab no way to receive one.'
+              : 'This browser cannot receive notifications.'
+            : 'A reminder on the lock screen of this device, alongside the email.';
+
+  async function set(next: boolean) {
+    if (!next) {
+      await disable();
+      return;
+    }
+    // A refusal at the permission dialog is an answer rather than a failure, and
+    // the browser has already shown its own dialog, so only a real failure to
+    // register is worth a toast.
+    if (!(await enable()) && Notification.permission === 'granted') {
+      toast('Could not turn notifications on', {
+        description: 'The subscription did not reach the server. Worth trying again.',
+      });
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-4 py-3.5">
+      <div className="min-w-0">
+        <label htmlFor={id} className="block text-sm text-text-hi">
+          Notifications
+        </label>
+        <p className="mt-0.5 text-xs leading-snug text-text-lo">{hint}</p>
+      </div>
+      <div className="flex shrink-0 items-center">
+        {ready && state === 'ready' ? (
+          <Toggle
+            id={id}
+            label="Notifications on this device"
+            checked={subscribed}
+            disabled={busy}
+            onChange={(next) => void set(next)}
+          />
+        ) : (
+          <span className="text-sm text-text-lo">
+            {!ready
+              ? '—'
+              : state === 'signed-out'
+                ? 'Signed out'
+                : state === 'blocked'
+                  ? 'Blocked'
+                  : 'Unavailable'}
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
 

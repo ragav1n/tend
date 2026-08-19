@@ -36,6 +36,10 @@ import { classify, type CacheRule } from '@/lib/pwa/cache-policy';
  * is midway through an IndexedDB upgrade, so the new worker waits and
  * `UpdatePrompt` asks first. The `message` handler below is how it says yes.
  *
+ * The `push` and `notificationclick` handlers at the bottom are the other half of
+ * the reminder pipeline. Postgres decides who to tell and when, the cron route
+ * sends, and this is where it lands.
+ *
  * Built by `serwist build serwist.config.mjs`, which runs after `next build` and
  * injects the precache manifest. Nothing here goes through Turbopack, which is
  * why it stays a build step of its own rather than a webpack plugin.
@@ -165,4 +169,89 @@ serwist.addEventListeners();
  */
 self.addEventListener('message', (event: ExtendableMessageEvent) => {
   if (event.data && event.data.type === 'SKIP_WAITING') void self.skipWaiting();
+});
+
+/**
+ * A reminder arriving from the push service.
+ *
+ * `userVisibleOnly` was true at subscribe time, which is a promise that every
+ * push shows a notification. A handler that decides not to spends the browser's
+ * patience: Chrome shows its own "this site has been updated in the background"
+ * after a few silent pushes and can revoke the permission. So the fallback text
+ * exists to be shown rather than to be correct: anything that arrives without a
+ * readable payload still gets a notification.
+ *
+ * `event.waitUntil` is not optional. Without it the worker can be killed between
+ * the handler returning and showNotification resolving, and the notification
+ * simply never appears.
+ */
+self.addEventListener('push', (event: PushEvent) => {
+  event.waitUntil(show(event.data));
+});
+
+interface Message {
+  title?: string;
+  body?: string;
+  url?: string;
+  tag?: string;
+}
+
+async function show(data: PushMessageData | null): Promise<void> {
+  let message: Message = {};
+  try {
+    message = (data?.json() ?? {}) as Message;
+  } catch {
+    // Not JSON. Anything that reaches here is either a bug in the sender or
+    // somebody else's push, and the promise above still has to be kept.
+  }
+
+  await self.registration.showNotification(message.title ?? 'Tend', {
+    body: message.body ?? 'Something needs doing.',
+    // Only the "any" icon: the launcher's mask does not apply here, so the
+    // maskable one would show as a full-bleed square with its ink pulled in.
+    icon: '/icons/icon-192.png',
+    badge: '/icons/maskable-192.png',
+    // Replaces rather than stacks, so a second digest updates the first.
+    tag: message.tag ?? 'tend',
+    // The tag alone replaces silently, and a reminder is worth a buzz. `renotify`
+    // is in the notifications spec and not in TypeScript's NotificationOptions,
+    // which is why this needs the cast rather than because anything here is
+    // dubious. Ignored where it is unsupported.
+    renotify: true,
+    data: { url: message.url ?? '/today' },
+  } as NotificationOptions & { renotify: boolean });
+}
+
+/**
+ * Tapping the notification.
+ *
+ * An already-open window is focused and navigated rather than a second one being
+ * opened, because the app is a single installed thing and two copies of it means
+ * two IndexedDB connections and a leader election that has to settle. `openWindow`
+ * is the fallback for a cold tap, which on a phone is the normal case.
+ */
+self.addEventListener('notificationclick', (event: NotificationEvent) => {
+  event.notification.close();
+  const target = (event.notification.data as { url?: string } | null)?.url ?? '/today';
+
+  event.waitUntil(
+    (async () => {
+      const url = new URL(target, self.location.origin);
+      const clients = await self.clients.matchAll({
+        type: 'window',
+        // Without this, a client the worker does not yet control is invisible
+        // here, and the app opens a second window over the one already showing.
+        includeUncontrolled: true,
+      });
+
+      for (const client of clients) {
+        if (new URL(client.url).origin !== url.origin) continue;
+        await client.focus();
+        if ('navigate' in client) await client.navigate(url.href);
+        return;
+      }
+
+      await self.clients.openWindow(url.href);
+    })(),
+  );
 });

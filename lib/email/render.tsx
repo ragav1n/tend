@@ -30,9 +30,17 @@ import { unsubscribeUrl } from './unsubscribe';
  * text part is what a screen reader and a plain-text client actually get.
  */
 export async function renderGroup(group: EmailGroup): Promise<RenderedEmail> {
+  // Guaranteed by the claim, which closes the email channel when the account has
+  // no address, and asserted here because the unsubscribe token is signed over
+  // the address and a group without one has no email to render.
+  if (!group.email) {
+    throw new Error('cannot render an email for a group with no address');
+  }
+
   const app = appUrl();
+  const address = group.email;
   const unsubscribe = unsubscribeUrl({
-    email: group.email,
+    email: address,
     kind: group.kind,
     version: group.tokenVersion,
   });

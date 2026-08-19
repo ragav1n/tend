@@ -45,6 +45,7 @@ describe('the migration directory', () => {
       '0011_stale_digests.sql',
       '0012_find_pg_net.sql',
       '0013_richer_emails.sql',
+      '0014_web_push.sql',
     ]);
   });
 

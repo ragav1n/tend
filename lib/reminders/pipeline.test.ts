@@ -495,6 +495,31 @@ describe('the weekly review', () => {
   });
 });
 
+interface Channels {
+  userId: string;
+  channels: { email: boolean; push: boolean };
+}
+
+/** A browser registered for notifications. The endpoint is its identity. */
+let endpoints = 0;
+async function subscribe(userId: string): Promise<void> {
+  endpoints += 1;
+  await pg.query(
+    `insert into public.push_subscriptions (id, user_id, endpoint, p256dh, auth)
+     values (gen_random_uuid(), $1, $2, 'key', 'secret')`,
+    [userId, `https://push.example/${endpoints}`],
+  );
+}
+
+/** Burns the whole account's allowance for today. */
+async function spendTheDaysQuota(): Promise<void> {
+  await pg.query(
+    `insert into public.email_quota_days (day, reserved)
+     values (current_date, public.email_daily_ceiling())
+     on conflict (day) do update set reserved = public.email_daily_ceiling()`,
+  );
+}
+
 describe('claiming a batch', () => {
   const claim = (limit = 25) =>
     one<{ claim_reminder_batch: { claimed: Record<string, unknown>[]; skipped: number; quotaAvailable: boolean } }>(
@@ -504,10 +529,11 @@ describe('claiming a batch', () => {
 
   beforeEach(async () => {
     // One claim is global by design, so every test here starts from an empty
-    // queue and an unspent day.
+    // queue, an unspent day and no notification subscriptions.
     await pg.query('delete from public.reminder_deliveries');
     await pg.query('delete from public.email_quota_days');
     await pg.query('delete from public.email_suppressions');
+    await pg.query('delete from public.push_subscriptions');
   });
 
   it('hands back the frozen payload and marks the row claimed', async () => {
@@ -616,11 +642,7 @@ describe('claiming a batch', () => {
 
   it('leaves work pending when the account is out of quota for the day', async () => {
     const user = await newUser();
-    await pg.query(
-      `insert into public.email_quota_days (day, reserved)
-       values (current_date, public.email_daily_ceiling())
-       on conflict (day) do update set reserved = public.email_daily_ceiling()`,
-    );
+    await spendTheDaysQuota();
     await dueDelivery(user);
 
     const answer = (await claim()).claim_reminder_batch;
@@ -629,6 +651,157 @@ describe('claiming a batch', () => {
     // Pending, not failed. Tomorrow's allowance carries it.
     const [row] = await deliveries(user, 'daily_digest');
     expect(row!.status).toBe('pending');
+  });
+});
+
+describe('choosing the channels, 0014', () => {
+  const claim = (limit = 25) =>
+    one<{
+      claim_reminder_batch: {
+        claimed: Channels[];
+        skipped: number;
+        quotaAvailable: boolean;
+      };
+    }>('select public.claim_reminder_batch($1) as claim_reminder_batch', [limit]);
+
+  beforeEach(async () => {
+    await pg.query('delete from public.reminder_deliveries');
+    await pg.query('delete from public.email_quota_days');
+    await pg.query('delete from public.email_suppressions');
+    await pg.query('delete from public.push_subscriptions');
+  });
+
+  it('opens the email channel and no other when there is no subscription', async () => {
+    const user = await newUser();
+    await dueDelivery(user);
+
+    const [claimed] = (await claim()).claim_reminder_batch.claimed;
+    expect(claimed!.channels).toEqual({ email: true, push: false });
+    expect(claimed!.userId).toBe(user);
+  });
+
+  it('opens both when there is one', async () => {
+    const user = await newUser();
+    await subscribe(user);
+    await dueDelivery(user);
+
+    const [claimed] = (await claim()).claim_reminder_batch.claimed;
+    expect(claimed!.channels).toEqual({ email: true, push: true });
+  });
+
+  it('still sends when email is off, on push alone', async () => {
+    // The behaviour this migration exists for. Before it, email off cancelled
+    // every delivery, so somebody who wanted notifications and no mail got
+    // nothing at all.
+    const user = await newUser({ email_enabled: false });
+    await subscribe(user);
+    await dueDelivery(user);
+
+    const answer = (await claim()).claim_reminder_batch;
+    expect(answer.claimed).toHaveLength(1);
+    expect(answer.claimed[0]!.channels).toEqual({ email: false, push: true });
+
+    const [row] = await deliveries(user, 'daily_digest');
+    expect(row!.status).toBe('claimed');
+    // The trail for "I got the notification and no mail".
+    expect(row!.reason).toBe('email off');
+  });
+
+  it('cancels when email is off and nothing else is on', async () => {
+    const user = await newUser({ email_enabled: false });
+    await dueDelivery(user);
+
+    const answer = (await claim()).claim_reminder_batch;
+    expect(answer.claimed).toHaveLength(0);
+    const [row] = await deliveries(user, 'daily_digest');
+    expect(row!.status).toBe('cancelled');
+    expect(row!.reason).toBe('email off');
+  });
+
+  it('keeps notifying an address that bounced', async () => {
+    // A hard bounce is a reason to stop writing to an address. It is not a
+    // reason to stop telling somebody their task is due.
+    const user = await newUser();
+    await subscribe(user);
+    await pg.query(
+      `insert into public.email_suppressions (email, reason) values ($1, 'hard bounce')`,
+      [`${user}@example.com`],
+    );
+    await dueDelivery(user);
+
+    const answer = (await claim()).claim_reminder_batch;
+    expect(answer.claimed).toHaveLength(1);
+    expect(answer.claimed[0]!.channels).toEqual({ email: false, push: true });
+    expect((await deliveries(user, 'daily_digest'))[0]!.reason).toBe('suppressed');
+  });
+
+  it('lets a push through over the per-user email cap', async () => {
+    const user = await newUser({ max_reminder_emails_per_day: 0 });
+    await subscribe(user);
+    const task = await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
+    await dueDelivery(user, 'task_reminder', task);
+
+    const answer = (await claim()).claim_reminder_batch;
+    expect(answer.claimed).toHaveLength(1);
+    expect(answer.claimed[0]!.channels).toEqual({ email: false, push: true });
+    expect((await deliveries(user, 'task_reminder'))[0]!.reason).toBe('over the daily cap');
+  });
+
+  it('does not let a push-only reminder eat the email cap', async () => {
+    // The cap counts what went out by mail. Counting push sends against it would
+    // have a phone throttling its own notifications.
+    const user = await newUser({ max_reminder_emails_per_day: 1, email_enabled: false });
+    await subscribe(user);
+    const first = await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
+    const second = await newTask(user, { dueDate: '2026-09-01', dueTime: '10:00' });
+    await dueDelivery(user, 'task_reminder', first);
+    await dueDelivery(user, 'task_reminder', second);
+
+    const answer = (await claim()).claim_reminder_batch;
+    expect(answer.claimed).toHaveLength(2);
+  });
+
+  it('lets a push through when the account quota is spent, and says so', async () => {
+    const user = await newUser();
+    await subscribe(user);
+    await spendTheDaysQuota();
+    await dueDelivery(user);
+
+    const answer = (await claim()).claim_reminder_batch;
+    expect(answer.claimed).toHaveLength(1);
+    expect(answer.claimed[0]!.channels).toEqual({ email: false, push: true });
+    expect(answer.quotaAvailable).toBe(false);
+    expect((await deliveries(user, 'daily_digest'))[0]!.reason).toBe('over the account quota');
+  });
+
+  it('does not spend the account quota on a push-only account', async () => {
+    const user = await newUser({ email_enabled: false });
+    await subscribe(user);
+    await dueDelivery(user);
+
+    await claim();
+    const reserved = await rows<{ reserved: number }>(
+      'select reserved from public.email_quota_days where day = current_date',
+    );
+    // No row at all, because nothing asked for a slot.
+    expect(reserved).toHaveLength(0);
+  });
+
+  it('stops rather than spending an email-only account for the day', async () => {
+    // Unchanged from before: with no push to fall back on, the loop leaves the
+    // rest pending for tomorrow's allowance.
+    const user = await newUser();
+    await spendTheDaysQuota();
+    await dueDelivery(user);
+    await dueDelivery(user, 'weekly_review');
+
+    const answer = (await claim()).claim_reminder_batch;
+    expect(answer.claimed).toHaveLength(0);
+    const pending = await rows<{ status: string }>(
+      `select status from public.reminder_deliveries where user_id = $1`,
+      [user],
+    );
+    expect(pending.map((row) => row.status)).toEqual(['pending', 'pending']);
   });
 });
 

@@ -4,7 +4,9 @@ import { groupDeliveries, groupIdempotencyKey } from '@/lib/email/group';
 import { describeMode, resolveMode } from '@/lib/email/mode';
 import { renderGroup } from '@/lib/email/render';
 import { sendEmail } from '@/lib/email/send';
-import type { ClaimResponse } from '@/lib/email/types';
+import type { ClaimResponse, EmailGroup } from '@/lib/email/types';
+import { pushMessage } from '@/lib/push/message';
+import { sendPush } from '@/lib/push/send';
 import { getAdminSupabase } from '@/lib/supabase/admin';
 
 /**
@@ -19,6 +21,13 @@ import { getAdminSupabase } from '@/lib/supabase/admin';
  *
  * The service-role client is used here and nowhere else. There is no session to
  * run under, and the claim has to see every user's deliveries.
+ *
+ * Since 0014 a claimed group says which channels are open for it, and this sends
+ * on the ones that are. A group is settled as sent if any channel carried it: an
+ * email that landed is a reminder delivered whatever a push service did with its
+ * copy, and the reverse holds for somebody who has email turned off. It is failed
+ * only when everything that was meant to carry it failed, and the row keeps every
+ * reason so a reminder that never arrived can be explained.
  */
 async function handle(request: Request) {
   if (!isCronRequest(request)) {
@@ -40,35 +49,55 @@ async function handle(request: Request) {
 
   let sent = 0;
   let failed = 0;
+  let pushed = 0;
   const failures: string[] = [];
 
   for (const group of groups) {
     const ids = group.deliveries.map((delivery) => delivery.id);
+    const reasons: string[] = [];
+    /** What to record as the provider id, from whichever channel answered. */
+    let receipt: string | null = null;
 
-    try {
-      const rendered = await renderGroup(group);
-      const outcome = await sendEmail({
-        ...rendered,
-        to: group.email,
-        // Derived from which deliveries are in this group, so a replay after a
-        // crash returns Resend's original result while a regenerated delivery is
-        // treated as the new send it is.
-        idempotencyKey: groupIdempotencyKey(group),
-      });
-
-      await supabase.rpc('mark_reminders_sent', {
-        p_ids: ids,
-        p_message_id: outcome.id ?? `${outcome.mode}:${group.deliveries[0]!.dedupeKey}`,
-      });
-      sent += ids.length;
-    } catch (thrown) {
-      const message = thrown instanceof Error ? thrown.message : String(thrown);
-      failures.push(message);
-      // Back to pending, or failed once the attempts are spent. Either way the row
-      // keeps the reason, so a delivery that never arrived can be explained.
-      await supabase.rpc('mark_reminders_failed', { p_ids: ids, p_error: message });
-      failed += ids.length;
+    if (group.channels.email) {
+      try {
+        receipt = await email(group);
+      } catch (thrown) {
+        reasons.push(`email: ${describe(thrown)}`);
+      }
     }
+
+    if (group.channels.push) {
+      try {
+        const outcome = await sendPush(supabase, group.userId, pushMessage(group));
+        pushed += outcome.delivered;
+        if (outcome.delivered > 0) {
+          receipt ??= `push:${outcome.delivered}`;
+        } else if (!outcome.disabled) {
+          // No VAPID pair is a configuration state rather than a failure, so it
+          // is not a reason. Zero subscriptions with keys present is: the claim
+          // said this channel was open, and by the time it ran it was not.
+          reasons.push(`push: nothing delivered to ${outcome.failed + outcome.removed} endpoints`);
+        }
+      } catch (thrown) {
+        reasons.push(`push: ${describe(thrown)}`);
+      }
+    }
+
+    if (receipt !== null) {
+      await supabase.rpc('mark_reminders_sent', { p_ids: ids, p_message_id: receipt });
+      sent += ids.length;
+      // Worth reporting even on success: a group that went out by push while its
+      // email failed is a half outcome, and silence here would hide it.
+      failures.push(...reasons);
+      continue;
+    }
+
+    const message = reasons.join('; ') || 'no channel carried it';
+    failures.push(message);
+    // Back to pending, or failed once the attempts are spent. Either way the row
+    // keeps the reason, so a delivery that never arrived can be explained.
+    await supabase.rpc('mark_reminders_failed', { p_ids: ids, p_error: message });
+    failed += ids.length;
   }
 
   const summary = {
@@ -76,6 +105,7 @@ async function handle(request: Request) {
     groups: groups.length,
     sent,
     failed,
+    pushed,
     skipped: claim.skipped ?? 0,
     quotaAvailable: claim.quotaAvailable ?? true,
     mode: describeMode(mode),
@@ -92,6 +122,26 @@ async function handle(request: Request) {
     // pg_net nothing it can act on, and the rows already carry the outcome.
     { status: 200 },
   );
+}
+
+/** Renders and sends one group as mail, answering with Resend's id. */
+async function email(group: EmailGroup): Promise<string> {
+  const rendered = await renderGroup(group);
+  const outcome = await sendEmail({
+    ...rendered,
+    // Non-null whenever the email channel is open, which the claim guarantees and
+    // renderGroup asserts.
+    to: group.email!,
+    // Derived from which deliveries are in this group, so a replay after a crash
+    // returns Resend's original result while a regenerated delivery is treated as
+    // the new send it is.
+    idempotencyKey: groupIdempotencyKey(group),
+  });
+  return outcome.id ?? `${outcome.mode}:${group.deliveries[0]!.dedupeKey}`;
+}
+
+function describe(thrown: unknown): string {
+  return thrown instanceof Error ? thrown.message : String(thrown);
 }
 
 export async function POST(request: Request) {

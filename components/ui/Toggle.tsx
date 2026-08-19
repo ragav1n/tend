@@ -22,12 +22,15 @@ export function Toggle({
   onChange,
   label,
   describedBy,
+  disabled = false,
 }: {
   id?: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
   label: string;
   describedBy?: string;
+  /** For a switch whose answer is still in flight, so it cannot be double tapped. */
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -37,11 +40,13 @@ export function Toggle({
       aria-checked={checked}
       aria-label={label}
       aria-describedby={describedBy}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
         'relative inline-flex h-6 w-10 shrink-0 items-center rounded-full border p-0.5',
         'transition-colors duration-200',
         'focus-visible:border-clay-400 focus-visible:outline-none',
+        'disabled:opacity-50',
         checked ? 'border-olive-400 bg-olive-600' : 'border-line bg-sunken',
       )}
       style={{ boxShadow: checked ? undefined : 'var(--shadow-sunken)' }}

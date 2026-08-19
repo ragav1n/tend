@@ -42,16 +42,22 @@ const summary = (over: Partial<SummaryPayload> = {}): SummaryPayload => ({
   ...over,
 });
 
+const CHANNELS = { email: true, push: false };
+
 function group(kind: ReminderKind, payloads: ClaimedDelivery['payload'][]): EmailGroup {
   return {
     kind,
+    userId: 'u1',
     email: 'me@example.com',
+    channels: CHANNELS,
     timezone: 'America/New_York',
     tokenVersion: 2,
     deliveries: payloads.map((payload, index) => ({
       id: `d${index}`,
+      userId: 'u1',
       kind,
       email: 'me@example.com',
+      channels: CHANNELS,
       scheduledAt: '2026-09-01T22:00:00Z',
       dedupeKey: `k${index}`,
       attempts: 1,
