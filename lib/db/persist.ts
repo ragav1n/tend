@@ -23,6 +23,27 @@ export type PersistenceOutcome =
 /** Remembers that the question was put, so Firefox is not asked twice. */
 const ASKED_KEY = 'tend.persist.asked';
 
+/**
+ * Asking is a side quest, and it runs on the path that opens the database. A
+ * throw here would surface as an unhandled rejection on every boot in a browser
+ * with storage disabled, which is the one place this least deserves attention.
+ */
+function asked(): boolean {
+  try {
+    return localStorage.getItem(ASKED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function noteAsked(): void {
+  try {
+    localStorage.setItem(ASKED_KEY, '1');
+  } catch {
+    // Then it gets asked again next time, which is the harmless direction.
+  }
+}
+
 /** Read-only, so settings can report the state without provoking a prompt. */
 export async function isPersisted(): Promise<boolean | null> {
   if (typeof navigator === 'undefined' || !navigator.storage?.persisted) return null;
@@ -37,8 +58,8 @@ export async function requestPersistence(): Promise<PersistenceOutcome> {
   // installed, and this sees that without prompting again.
   if (await navigator.storage.persisted()) return 'granted';
 
-  if (localStorage.getItem(ASKED_KEY) === '1') return 'denied';
-  localStorage.setItem(ASKED_KEY, '1');
+  if (asked()) return 'denied';
+  noteAsked();
 
   return (await navigator.storage.persist()) ? 'granted' : 'denied';
 }

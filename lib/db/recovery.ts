@@ -12,7 +12,9 @@ import type { OutboxRecord } from './types';
  *
  * The ladder, in order, because each rung costs more than the one above:
  *
- *   1. **Open it again.** A surprising share of failures are transient.
+ *   1. **Open it again.** A surprising share of failures are transient. Only an
+ *      outright rejection counts as a failure here: an open that is merely slow
+ *      answers `stalled` and stops, because the next rung deletes things.
  *   2. **Refuse to touch data the code is too old to understand.** A `VersionError`
  *      means the store on disk is newer than this bundle, which is not corruption
  *      and must never be answered by deleting it. Dexie handles the ordinary form
@@ -50,7 +52,11 @@ const RESCUE_KEY = 'tend.recovery.outbox';
 /** localStorage is a few megabytes across the whole origin. Do not fill it. */
 const RESCUE_MAX_BYTES = 2_000_000;
 
-/** An upgrade blocked by another tab never rejects, it just never resolves. */
+/**
+ * An upgrade blocked by another tab never rejects, it just never resolves, so the
+ * only way to notice is to stop waiting. Long enough that a slow device is not
+ * mistaken for a stuck one, and a stall is never treated as corruption anyway.
+ */
 const OPEN_TIMEOUT_MS = 10_000;
 
 export type OpenOutcome =
@@ -59,6 +65,12 @@ export type OpenOutcome =
   | { kind: 'rebuilt'; db: TendDb; rescued: number }
   /** Another tab holds an older version open. Closing it is the fix. */
   | { kind: 'blocked' }
+  /**
+   * It neither opened nor failed inside the timeout. Nothing is deleted for this:
+   * a slow phone, a big upgrade or a frozen background tab all look like this from
+   * here, and none of them is a reason to throw somebody's data away.
+   */
+  | { kind: 'stalled' }
   /** The stored data is newer than this code. Reloading is the fix. */
   | { kind: 'stale_code' }
   | { kind: 'failed'; message: string };
@@ -98,12 +110,21 @@ function messageOf(error: unknown): string {
 }
 
 /**
- * Opens, and reports a blocking tab rather than hanging on it.
+ * Opens, and reports a stall rather than hanging on it.
  *
  * Dexie surfaces a blocked upgrade as an event and leaves the promise pending
- * forever, so the timeout is the only way to tell "blocked" from "slow".
+ * forever, so the timeout is the only way to notice one.
+ *
+ * A stall is its own answer and never an exception, which is the whole point of
+ * this signature. Throwing here would send it to the caller's catch, where the
+ * next rung is deleting the database, and "took more than ten seconds" is not
+ * evidence of corruption: a large upgrade on a slow phone reads exactly like this,
+ * and so does a background tab the browser froze.
  */
-async function openOrTimeout(db: TendDb): Promise<'ok' | 'blocked'> {
+async function openOrStall(
+  db: TendDb,
+  timeoutMs: number,
+): Promise<'ok' | 'blocked' | 'stalled'> {
   let blocked = false;
   const noteBlocked = () => {
     blocked = true;
@@ -112,12 +133,11 @@ async function openOrTimeout(db: TendDb): Promise<'ok' | 'blocked'> {
 
   try {
     const timeout = new Promise<'timeout'>((resolve) =>
-      setTimeout(() => resolve('timeout'), OPEN_TIMEOUT_MS),
+      setTimeout(() => resolve('timeout'), timeoutMs),
     );
     const result = await Promise.race([db.open().then(() => 'ok' as const), timeout]);
     if (result === 'ok') return 'ok';
-    if (blocked) return 'blocked';
-    throw new Error('the database did not open and did not fail');
+    return blocked ? 'blocked' : 'stalled';
   } finally {
     db.on('blocked').unsubscribe(noteBlocked);
   }
@@ -228,19 +248,21 @@ async function restore(db: TendDb, records: OutboxRecord[]): Promise<number> {
 /**
  * The ladder. `client.ts` calls this instead of `open()`.
  *
- * `make` and `now` are seams for the tests, which have to induce an unopenable
- * database and reason about the rebuild cooldown without waiting an hour.
+ * `make`, `now` and `timeoutMs` are seams for the tests, which have to induce an
+ * unopenable database, reason about the rebuild cooldown without waiting an hour,
+ * and see a stall without waiting ten seconds for one.
  */
 export async function openWithRecovery(
   name: string,
   make: (name: string) => TendDb,
   now: number = Date.now(),
+  timeoutMs: number = OPEN_TIMEOUT_MS,
 ): Promise<OpenOutcome> {
   const db = make(name);
 
   try {
-    const first = await openOrTimeout(db);
-    if (first === 'blocked') return { kind: 'blocked' };
+    const first = await openOrStall(db, timeoutMs);
+    if (first !== 'ok') return { kind: first === 'blocked' ? 'blocked' : 'stalled' };
 
     // A rebuild that was interrupted between the delete and the restore left its
     // rescue behind. This is the only chance to put it back.
@@ -267,8 +289,8 @@ export async function openWithRecovery(
 
     const fresh = make(name);
     try {
-      const second = await openOrTimeout(fresh);
-      if (second === 'blocked') return { kind: 'blocked' };
+      const second = await openOrStall(fresh, timeoutMs);
+      if (second !== 'ok') return { kind: second === 'blocked' ? 'blocked' : 'stalled' };
     } catch (reopenError) {
       fresh.close();
       return { kind: 'failed', message: messageOf(reopenError) };

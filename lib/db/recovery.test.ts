@@ -32,6 +32,13 @@ function failingDb(name: string, errorName: string, message: string): TendDb {
 /** What corruption looks like from here: it simply will not open. */
 const unopenable = (name: string) => failingDb(name, 'UnknownError', 'disk I/O error');
 
+/** A handle whose open neither resolves nor rejects, which is what a stall is. */
+function stalledDb(name: string): TendDb {
+  const db = new TendDb(name);
+  db.open = () => new Dexie.Promise(() => {}) as PromiseExtended<Dexie>;
+  return db;
+}
+
 function outboxRecord(seq: number, entityId: string): OutboxRecord {
   return {
     seq,
@@ -208,5 +215,45 @@ describe('a rebuild interrupted halfway', () => {
     // Taken, not left to be restored again on every load.
     expect(localStorage.getItem('tend.recovery.outbox')).toBeNull();
     outcome.db.close();
+  });
+});
+
+describe('an open that is only slow', () => {
+  it('reports a stall and does not delete anything', async () => {
+    // The rung below this one deletes the database, and "took more than ten
+    // seconds" is not evidence of corruption: a large upgrade on a slow phone
+    // reads exactly like this, and so does a tab the browser froze. Answering
+    // stalled rather than throwing is what keeps it out of the catch.
+    await seedOutbox([outboxRecord(1, 'a')]);
+
+    // 50ms rather than the real ten seconds. What is under test is which rung a
+    // stall lands on, not how long the wait is.
+    const outcome = await openWithRecovery(dbName, stalledDb, Date.now(), 50);
+
+    expect(outcome.kind).toBe('stalled');
+    expect(await Dexie.exists(dbName)).toBe(true);
+    const survivor = new TendDb(dbName);
+    await survivor.open();
+    expect(await survivor.outbox.count()).toBe(1);
+    survivor.close();
+  });
+
+  it('leaves the rebuild cooldown untouched, so a real failure can still recover', async () => {
+    // A stall must not spend the one rebuild an hour allows, or a stall followed
+    // by genuine corruption would leave the app broken with no way out.
+    await seedOutbox([outboxRecord(1, 'a')]);
+    expect((await openWithRecovery(dbName, stalledDb, 1_000_000, 50)).kind).toBe('stalled');
+
+    let attempt = 0;
+    const outcome = await openWithRecovery(
+      dbName,
+      (name) => (++attempt === 1 ? unopenable(name) : new TendDb(name)),
+      1_000_000 + 1_000,
+    );
+    expect(outcome.kind).toBe('rebuilt');
+    if (outcome.kind === 'rebuilt') {
+      expect(outcome.rescued).toBe(1);
+      outcome.db.close();
+    }
   });
 });

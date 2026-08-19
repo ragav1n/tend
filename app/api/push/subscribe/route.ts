@@ -72,6 +72,17 @@ export async function POST(request: Request) {
   );
 
   if (error) {
+    // The endpoint is unique across the table, and RLS scopes the update half of
+    // an upsert to your own rows. So a browser already registered to a different
+    // account cannot be taken over, and the refusal arrives here as a policy
+    // violation rather than a conflict. Worth naming, because the alternative is
+    // a 500 on a toggle with no explanation.
+    if (error.code === '42501') {
+      return NextResponse.json(
+        { error: 'this browser is registered to another account' },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ error: error.message, code: error.code }, { status: 500 });
   }
 

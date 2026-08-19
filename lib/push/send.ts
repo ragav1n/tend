@@ -47,7 +47,10 @@ interface SubscriptionRow {
   failures: number;
 }
 
-const NONE: PushOutcome = { delivered: 0, failed: 0, removed: 0, disabled: false };
+/** A fresh object each time. A shared one gets mutated by the counting below. */
+function nothing(): PushOutcome {
+  return { delivered: 0, failed: 0, removed: 0, disabled: false };
+}
 
 /** 404 and 410 both mean the subscription will never work again. */
 function isGone(error: unknown): boolean {
@@ -60,7 +63,7 @@ export async function sendPush(
   message: PushMessage,
 ): Promise<PushOutcome> {
   const keys = vapid();
-  if (!keys) return { ...NONE, disabled: true };
+  if (!keys) return { ...nothing(), disabled: true };
 
   const { data, error } = await supabase
     .from('push_subscriptions')
@@ -70,12 +73,12 @@ export async function sendPush(
   if (error) throw new Error(`could not read subscriptions: ${error.message}`);
 
   const subscriptions = (data ?? []) as SubscriptionRow[];
-  if (subscriptions.length === 0) return NONE;
+  if (subscriptions.length === 0) return nothing();
 
   webpush.setVapidDetails(keys.subject, keys.publicKey, keys.privateKey);
   const body = JSON.stringify(message);
 
-  const outcome: PushOutcome = { ...NONE };
+  const outcome = nothing();
   const dead: string[] = [];
 
   await Promise.all(

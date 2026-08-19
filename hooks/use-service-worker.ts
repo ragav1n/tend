@@ -24,8 +24,9 @@ const SW_URL = '/sw.js';
 
 /**
  * The browser checks for a new worker on navigation, and an installed PWA can go
- * a week without one. This is the backstop, on a timer long enough that it never
- * competes with the sync engine's own triggers.
+ * a week without one. This is the backstop, and it is also the floor on how often
+ * coming back to the app may ask: browsers do not throttle an explicit `update()`,
+ * so an unguarded visibility handler turns every alt-tab into a request.
  */
 const UPDATE_CHECK_MS = 60 * 60 * 1000;
 
@@ -51,6 +52,7 @@ export function useServiceWorker(): ServiceWorkerHandle {
     const container = navigator.serviceWorker;
     let cancelled = false;
     let timer: ReturnType<typeof setInterval> | null = null;
+    let lastCheck = Date.now();
 
     /**
      * An installed worker only counts as an update when this page already has a
@@ -72,8 +74,16 @@ export function useServiceWorker(): ServiceWorkerHandle {
       window.location.reload();
     }
 
+    function checkForUpdate() {
+      lastCheck = Date.now();
+      void registration.current?.update();
+    }
+
     function onVisible() {
-      if (document.visibilityState === 'visible') void registration.current?.update();
+      if (document.visibilityState !== 'visible') return;
+      // Coming back to the app is worth one check, not one per alt-tab.
+      if (Date.now() - lastCheck < UPDATE_CHECK_MS) return;
+      checkForUpdate();
     }
 
     container.addEventListener('controllerchange', reload);
@@ -90,7 +100,7 @@ export function useServiceWorker(): ServiceWorkerHandle {
         watch(reg.waiting);
         watch(reg.installing);
         reg.addEventListener('updatefound', () => watch(reg.installing));
-        timer = setInterval(() => void reg.update(), UPDATE_CHECK_MS);
+        timer = setInterval(checkForUpdate, UPDATE_CHECK_MS);
       })
       .catch((error: unknown) => {
         // A failed registration costs the offline shell, not the app. Every read

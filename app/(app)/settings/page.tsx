@@ -425,11 +425,13 @@ function NotificationRow() {
         ? 'Refused for this site. Your browser settings are the only way back.'
         : state === 'unconfigured'
           ? 'This deployment has no push keys set, so there is nothing to turn on.'
-          : state === 'unsupported'
-            ? method === 'manual-ios'
-              ? 'Add Tend to your home screen first. Safari gives a tab no way to receive one.'
-              : 'This browser cannot receive notifications.'
-            : 'A reminder on the lock screen of this device, alongside the email.';
+          : state === 'no-worker'
+            ? 'The app has not registered its service worker here, so nothing could arrive. A reload usually fixes it.'
+            : state === 'unsupported'
+              ? method === 'manual-ios'
+                ? 'Add Tend to your home screen first. Safari gives a tab no way to receive one.'
+                : 'This browser cannot receive notifications.'
+              : 'A reminder on the lock screen of this device, alongside the email.';
 
   async function set(next: boolean) {
     if (!next) {

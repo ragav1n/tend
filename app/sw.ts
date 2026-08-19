@@ -140,7 +140,12 @@ const serwist = new Serwist({
   precacheOptions: { cleanupOutdatedCaches: true },
   skipWaiting: false,
   clientsClaim: false,
-  navigationPreload: true,
+  // Off, because every view is precached. Navigation preload starts a network
+  // request in parallel with the worker booting, which pays for itself only when
+  // the handler consults `event.preloadResponse`. The precache route answers
+  // navigations here and does not, so leaving this on would fire a request per
+  // navigation and throw the answer away.
+  navigationPreload: false,
   runtimeCaching,
   fallbacks: {
     entries: [
@@ -247,7 +252,18 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
       for (const client of clients) {
         if (new URL(client.url).origin !== url.origin) continue;
         await client.focus();
-        if ('navigate' in client) await client.navigate(url.href);
+        // `navigate` is only allowed on a client this worker controls, and
+        // `includeUncontrolled` above means some of them are not. Focusing
+        // already worked, so an uncontrolled client lands on whatever page it was
+        // showing, which beats letting the rejection escape and abandoning the
+        // tap after the window is already up.
+        if ('navigate' in client) {
+          try {
+            await client.navigate(url.href);
+          } catch {
+            // Focused but not steered. Nothing further to try.
+          }
+        }
         return;
       }
 

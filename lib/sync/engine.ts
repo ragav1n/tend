@@ -123,6 +123,12 @@ export class SyncEngine {
           message: 'Another tab is holding an older version open. Close it and reload.',
         });
         return;
+      case 'stalled':
+        this.dispatch({
+          type: 'db_failed',
+          message: 'The local database is taking too long to open. Reloading usually clears it.',
+        });
+        return;
       case 'stale_code':
         this.dispatch({
           type: 'db_failed',

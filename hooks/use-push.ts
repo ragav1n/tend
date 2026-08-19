@@ -28,7 +28,13 @@ export type PushAvailability =
   /** The build has no VAPID public key, so a subscription could never be used. */
   | 'unconfigured'
   /** Permission was refused. Only the person can reverse this. */
-  | 'blocked';
+  | 'blocked'
+  /**
+   * The browser can do this and no worker is registered, so there is nothing to
+   * deliver to. Always the case in `next dev`, where the worker is not built, and
+   * the honest answer in production when registration failed.
+   */
+  | 'no-worker';
 
 export interface PushState {
   /** False until the browser has been asked, so nothing renders a wrong answer. */
@@ -78,6 +84,15 @@ export function usePush(): PushState {
     async function look() {
       const state = availabilityNow();
       if (state !== 'ready') return { state, has: false };
+
+      // `getRegistration` before `ready`, because `ready` never settles when
+      // nothing is registered. Awaiting it first would leave this hook forever
+      // un-ready and the settings row on a dash with no explanation, which is
+      // every `next dev` session and any production load where registration
+      // failed.
+      const registered = await navigator.serviceWorker.getRegistration('/');
+      if (!registered) return { state: 'no-worker' as const, has: false };
+
       const registration = await navigator.serviceWorker.ready;
       return { state, has: (await registration.pushManager.getSubscription()) !== null };
     }

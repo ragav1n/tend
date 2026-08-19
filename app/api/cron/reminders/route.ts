@@ -74,9 +74,14 @@ async function handle(request: Request) {
           receipt ??= `push:${outcome.delivered}`;
         } else if (!outcome.disabled) {
           // No VAPID pair is a configuration state rather than a failure, so it
-          // is not a reason. Zero subscriptions with keys present is: the claim
-          // said this channel was open, and by the time it ran it was not.
-          reasons.push(`push: nothing delivered to ${outcome.failed + outcome.removed} endpoints`);
+          // is not a reason. Everything else here is: the claim said this channel
+          // was open, and by the time it ran nothing on it answered.
+          const tried = outcome.failed + outcome.removed;
+          reasons.push(
+            tried === 0
+              ? 'push: the last device unsubscribed after the claim'
+              : `push: nothing delivered, ${outcome.removed} device(s) gone and ${outcome.failed} failed`,
+          );
         }
       } catch (thrown) {
         reasons.push(`push: ${describe(thrown)}`);
