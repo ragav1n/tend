@@ -31,6 +31,10 @@ import { cn } from '@/lib/utils';
 
 const LENGTHS = [15, 25, 50];
 
+/** How far back the sweep for sessions still marked running looks. A session
+ *  left open overnight is the case that needs it, so today is not far enough. */
+const STALE_LOOKBACK_DAYS = 7;
+
 /** Local midnight, as the instant the log window starts at. */
 function startOfToday(): string {
   const start = new Date();
@@ -53,8 +57,9 @@ export default function FocusPage() {
   // A tab killed mid-session leaves a row that says it is still running. Nothing
   // else ever closes it, and an open session poisons every total that counts it.
   useEffect(() => {
+    const since = new Date(Date.now() - STALE_LOOKBACK_DAYS * 86_400_000).toISOString();
     void (async () => {
-      const stale = await unfinishedFocus(window.from, getDb());
+      const stale = await unfinishedFocus(since, getDb());
       for (const session of stale) {
         if (session.id === clock?.sessionId) continue;
         await updateFocusSession(session.id, {
@@ -64,7 +69,7 @@ export default function FocusPage() {
         });
       }
     })();
-  }, [window.from, clock?.sessionId]);
+  }, [clock?.sessionId]);
 
   const logged = focusSeconds(sessions.filter((s) => s.endedAt !== null));
   const finishedCount = sessions.filter((s) => s.endedAt !== null).length;
