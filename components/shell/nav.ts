@@ -3,6 +3,7 @@ import {
   Archive,
   CalendarBlank,
   CalendarDots,
+  ChartLineUp,
   CheckCircle,
   GearSix,
   Kanban,
@@ -46,6 +47,7 @@ export const TOOLS: NavItem[] = [
   { href: '/calendar', label: 'Calendar', icon: CalendarBlank, bar: true },
   { href: '/board', label: 'Board', icon: Kanban },
   { href: '/focus', label: 'Focus', icon: Timer },
+  { href: '/review', label: 'Review', icon: ChartLineUp },
 ];
 
 export const SETTINGS: NavItem = { href: '/settings', label: 'Settings', icon: GearSix };

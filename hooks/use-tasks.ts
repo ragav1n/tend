@@ -3,11 +3,13 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useStableLiveQuery } from './use-live';
 import {
+  completedBetween,
   dueBetween,
   focusBetween,
   inboxList,
   logbook,
   openTasks,
+  overdueList,
   projectOptions,
   searchTasks,
   seriesById,
@@ -119,6 +121,16 @@ export function useTags(): Tag[] {
 }
 
 const NO_SESSIONS: FocusSession[] = [];
+
+/** Tasks completed inside a window. Both bounds are instants. */
+export function useCompletedBetween(from: string, to: string): Task[] {
+  return useStableLiveQuery(() => completedBetween(from, to), [from, to], NO_TASKS);
+}
+
+/** Open work whose due date has passed. */
+export function useOverdue(): Task[] {
+  return useStableLiveQuery(() => overdueList(today()), [], NO_TASKS);
+}
 
 /** Focus sessions that began inside a window. Both bounds are instants. */
 export function useFocusBetween(from: string, to: string): FocusSession[] {

@@ -269,6 +269,30 @@ export async function logbook(limit = 100, db: TendDb = getDb()): Promise<Task[]
     .toArray();
 }
 
+/**
+ * Tasks completed inside a window, oldest first.
+ *
+ * Bounds are instants because `completedAt` is one. A cancelled task never
+ * appears: it carries no completion instant, so the index skips it, which is the
+ * right answer for a screen about what got done.
+ */
+export async function completedBetween(
+  from: Instant,
+  to: Instant,
+  db: TendDb = getDb(),
+): Promise<Task[]> {
+  return db.tasks
+    .where('[_del+_done+completedAt]')
+    .between([0, 1, from], [0, 1, to], true, true)
+    .toArray();
+}
+
+/** Open work whose due date has already passed. */
+export async function overdueList(day = today(), db: TendDb = getDb()): Promise<Task[]> {
+  const rows = await dueThrough(addDays(day, -1), db);
+  return rows.filter((t) => t.parentTaskId === NO_PARENT).sort(compareRank);
+}
+
 // ─── Focus ────────────────────────────────────────────────────────────────────
 
 /** Sessions that began inside a window, oldest first. Both bounds are instants. */

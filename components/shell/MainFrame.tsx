@@ -7,15 +7,17 @@ import { cn } from '@/lib/utils';
  * The content column.
  *
  * Lists read best at a book width and a month grid does not: at 42rem a
- * calendar cell is 90px wide and every task title truncates to three words. So
- * width is a property of the view rather than of the shell, decided here by
- * route so no page has to remember to wrap itself.
+ * calendar cell is 90px wide and every task title truncates to three words. The
+ * board wants the room for the same reason. Everything else, the review
+ * included, reads better narrow, since a chart stretched to 64rem is mostly
+ * whitespace. So width is a property of the view rather than of the shell,
+ * decided here by route so no page has to remember to wrap itself.
  *
  * A client component inside the server layout, which costs nothing: the sidebar
  * is already one, and `usePathname` resolves during the server render, so the
  * class is in the first HTML rather than applied a frame later.
  */
-const WIDE_VIEWS = new Set(['/calendar', '/board', '/review']);
+const WIDE_VIEWS = new Set(['/calendar', '/board']);
 
 export function MainFrame({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
