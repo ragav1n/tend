@@ -1,6 +1,7 @@
 'use client';
 
 import { Toaster } from 'sonner';
+import { InstallPrompt } from '@/components/shell/InstallPrompt';
 import { SyncBadge } from '@/components/shell/SyncBadge';
 import { UpdatePrompt } from '@/components/shell/UpdatePrompt';
 import { TaskDetailHost } from '@/components/task/TaskDetailHost';
@@ -31,9 +32,15 @@ export function AppOverlays() {
       {/* Registers the service worker as well as prompting, so it has to mount
           above the Toaster it fires into. */}
       <UpdatePrompt />
+      <InstallPrompt />
       <Toaster
         theme="dark"
         position="bottom-center"
+        // Expanded rather than stacked. A collapsed stack hides all but the
+        // newest, and two of the things that go in here are prompts that have to
+        // be readable to be answered: "install this" and "a new version is
+        // ready" can arrive together, and the second must not bury the first.
+        expand
         offset={{ bottom: '24px' }}
         mobileOffset={{ bottom: '96px', left: '16px', right: '16px' }}
         style={
