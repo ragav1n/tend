@@ -26,6 +26,10 @@ The full architecture plan lives at `~/.claude/plans/i-want-to-create-noble-flam
 - **`lib/db/derive.ts` is the only place derived index fields are computed** (`_del`, `_done`,
   `_dueDay`, `_tagIds`, `_words`). It runs on both the optimistic path and the server-apply
   path so the two cannot diverge.
+- **`lib/brand.ts` holds the only copy of the mark.** `components/brand/Mark.tsx` draws it,
+  and `node brand/gen-icons.mjs` rasterises the favicon, the Next icon conventions, the PWA
+  set and the email PNG from it, resolving its colours out of `app/globals.css`. Change the
+  paths there and re-run the script. Never hand-edit an icon, and never hardcode the hex.
 - **The sync cursor is `row_version`, never `updated_at`.** `updated_at` is assigned before
   commit, so concurrent transactions can commit out of timestamp order and a timestamp cursor
   skips rows permanently.

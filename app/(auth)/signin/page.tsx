@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { motion } from 'motion/react';
 import { ArrowRight, EnvelopeSimple, GoogleLogo } from '@phosphor-icons/react/dist/ssr';
 import { APP_NAME, APP_TAGLINE } from '@/lib/config';
+import { MarkTile } from '@/components/brand/Mark';
 import { getSupabase } from '@/lib/supabase/client';
 import { FADE, PRESS_DEPTH, QUICK_FADE } from '@/lib/motion';
 import { cn } from '@/lib/utils';
@@ -83,6 +84,7 @@ function SignInForm() {
       className="w-full max-w-sm"
     >
       <div className="mb-8 text-center">
+        <MarkTile size={44} className="mx-auto mb-4" />
         <h1 className="font-display text-4xl leading-none">{APP_NAME}</h1>
         <p className="label mt-2 !text-[0.5625rem]">{APP_TAGLINE}</p>
       </div>

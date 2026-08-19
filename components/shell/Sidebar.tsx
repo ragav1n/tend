@@ -12,6 +12,7 @@ import {
   Tray,
 } from '@phosphor-icons/react/dist/ssr';
 import { APP_NAME } from '@/lib/config';
+import { MarkTile } from '@/components/brand/Mark';
 import { SOFT } from '@/lib/motion';
 import { useSidebarCounts } from '@/hooks/use-tasks';
 import { cn } from '@/lib/utils';
@@ -53,7 +54,10 @@ export function Sidebar() {
       )}
     >
       <div className="hidden md:mb-6 md:block md:px-2">
-        <span className="font-display text-2xl text-text-hi">{APP_NAME}</span>
+        <span className="flex items-center gap-2.5">
+          <MarkTile size={26} />
+          <span className="font-display text-2xl text-text-hi">{APP_NAME}</span>
+        </span>
         <p className="label mt-1 !text-[0.5625rem]">Look after what needs doing</p>
       </div>
 

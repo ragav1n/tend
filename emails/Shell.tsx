@@ -4,6 +4,7 @@ import {
   Head,
   Hr,
   Html,
+  Img,
   Link,
   Preview,
   Section,
@@ -63,7 +64,19 @@ export function Shell({ preview, appUrl, unsubscribeUrl, reason, children }: She
                 letterSpacing: '0.02em',
               }}
             >
-              {APP_NAME}
+              {/* The mark ships with its corners already flattened onto white.
+                  A transparent PNG loses them against the background Outlook.com
+                  and the Gmail app invert to. Empty alt because the name sits
+                  right beside it, so a client with images off still reads Tend
+                  once rather than twice. */}
+              <Img
+                src={`${appUrl}/email/mark.png`}
+                width="28"
+                height="28"
+                alt=""
+                style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 9 }}
+              />
+              <span style={{ verticalAlign: 'middle' }}>{APP_NAME}</span>
             </Link>
           </Section>
 
