@@ -21,7 +21,7 @@ import type Dexie from 'dexie';
  * items or closed items, never a mix.
  */
 
-export const DATA_LAYER_VERSION = 2;
+export const DATA_LAYER_VERSION = 3;
 
 export function defineSchema(db: Dexie): void {
   db.version(1).stores({
@@ -77,5 +77,11 @@ export function defineSchema(db: Dexie): void {
   // the whole index set.
   db.version(2).stores({
     taskSeries: ['id', '_del', 'rowVersion'].join(', '),
+  });
+
+  // v3 adds the focus timer's log. Every read of it is a window of time newest
+  // first, so startedAt leads the one compound index.
+  db.version(3).stores({
+    focusSessions: ['id', '_del', 'rowVersion', '[_del+startedAt]'].join(', '),
   });
 }

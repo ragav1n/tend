@@ -1,7 +1,21 @@
 import type { TendDb } from '@/lib/db/client';
-import { deriveProject, deriveSeries, deriveTag, deriveTask } from '@/lib/db/derive';
+import {
+  deriveFocusSession,
+  deriveProject,
+  deriveSeries,
+  deriveTag,
+  deriveTask,
+} from '@/lib/db/derive';
 import { DEFAULT_PREFS, PREFS_ID } from '@/lib/db/prefs';
-import type { EntityTable, Prefs, Project, Tag, Task, TaskSeries } from '@/lib/db/types';
+import type {
+  EntityTable,
+  FocusSession,
+  Prefs,
+  Project,
+  Tag,
+  Task,
+  TaskSeries,
+} from '@/lib/db/types';
 import { LOCAL_TABLE, type PullRow, type WireTable } from './protocol';
 import { tagIdsOf, wireToLocal } from './mapping';
 
@@ -177,6 +191,34 @@ async function applySeries(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
   return result;
 }
 
+async function applyFocusSessions(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
+  const result: ApplyResult = { applied: 0, skipped: 0 };
+  const ids = rows.map((r) => String(r.row.id));
+  const current = new Map(
+    (await db.focusSessions.bulkGet(ids))
+      .filter((f): f is FocusSession => f !== undefined)
+      .map((f) => [f.id, f]),
+  );
+
+  const puts: FocusSession[] = [];
+  for (const { row } of rows) {
+    const id = String(row.id);
+    if (isStale(Number(row.row_version ?? 0), current.get(id)?.rowVersion)) {
+      result.skipped += 1;
+      continue;
+    }
+    const base = {
+      ...(current.get(id) ?? {}),
+      ...wireToLocal('focus_sessions', row),
+    } as FocusSession;
+    puts.push({ ...base, ...deriveFocusSession(base) });
+    result.applied += 1;
+  }
+
+  if (puts.length > 0) await db.focusSessions.bulkPut(puts);
+  return result;
+}
+
 /**
  * Settings, which are one row with no id on the wire.
  *
@@ -212,6 +254,7 @@ const APPLIERS: Partial<
   projects: applyProjects,
   tags: applyTags,
   task_series: applySeries,
+  focus_sessions: applyFocusSessions,
   user_settings: applyPrefs,
 };
 

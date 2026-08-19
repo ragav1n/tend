@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { localToWire, tagIdsOf, toCamelCase, toSnakeCase, wireToLocal } from './mapping';
@@ -122,14 +122,31 @@ describe('wire to local', () => {
   });
 });
 
+/**
+ * Every migration, joined, and the newest definition of a function.
+ *
+ * Reading one file was enough while the schema was one file. A table added in
+ * 0016 and an allowlist rewritten in 0007 both broke that: `create or replace`
+ * has no partial form, so the last definition is the only one that runs.
+ */
+const DIR = join(process.cwd(), 'supabase', 'migrations');
+const FILES = readdirSync(DIR).filter((f) => f.endsWith('.sql')).sort();
+const SQL = Object.fromEntries(FILES.map((f) => [f, readFileSync(join(DIR, f), 'utf8')]));
+const ALL = Object.values(SQL).join('\n');
+
+function newestDefinition(name: string): string {
+  const owner = FILES.filter((file) =>
+    SQL[file]!.includes(`create or replace function public.${name}`),
+  ).pop()!;
+  const source = SQL[owner]!;
+  const start = source.indexOf(`create or replace function public.${name}`);
+  return source.slice(start, source.indexOf('$$;', start));
+}
+
 describe('the table name map', () => {
   it('names only tables the migrations actually create', () => {
-    const sql = readFileSync(
-      join(process.cwd(), 'supabase', 'migrations', '0001_core_schema.sql'),
-      'utf8',
-    );
     for (const wire of Object.values(WIRE_TABLE)) {
-      expect(sql, wire).toContain(`create table public.${wire}`);
+      expect(ALL, wire).toContain(`create table public.${wire}`);
     }
   });
 
@@ -140,16 +157,21 @@ describe('the table name map', () => {
   });
 
   it('matches the tables the push RPC will accept', () => {
-    const sql = readFileSync(
-      join(process.cwd(), 'supabase', 'migrations', '0003_sync_rpc.sql'),
-      'utf8',
-    );
-    const writable = sql.slice(sql.indexOf('sync_writable_tables'));
-    // user_settings is pulled but only ever written through its own settings
-    // screen, so it is deliberately absent from the push allowlist for now.
+    // A table the client can name in a mutation but the server will not accept
+    // comes back 42501, which the client classifies as fatal: every mutation
+    // for that table dies in the deadletter rather than retrying.
+    const writable = newestDefinition('sync_writable_tables');
     for (const wire of Object.values(WIRE_TABLE)) {
-      if (wire === 'user_settings') continue;
       expect(writable, wire).toContain(`'${wire}'`);
+    }
+  });
+
+  it('is pulled by the RPC as well as pushed to it', () => {
+    // A local table with no arm in sync_pull syncs one way and looks fine
+    // until the second device.
+    const pull = newestDefinition('sync_pull');
+    for (const wire of Object.values(WIRE_TABLE)) {
+      expect(pull, wire).toContain(`from public.${wire}`);
     }
   });
 });

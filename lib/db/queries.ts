@@ -4,6 +4,8 @@ import {
   NO_DUE_DAY,
   NO_PARENT,
   NO_PROJECT,
+  type FocusSession,
+  type Instant,
   type PlainDate,
   type Project,
   type Tag,
@@ -265,6 +267,40 @@ export async function logbook(limit = 100, db: TendDb = getDb()): Promise<Task[]
     .reverse()
     .limit(limit)
     .toArray();
+}
+
+// ─── Focus ────────────────────────────────────────────────────────────────────
+
+/** Sessions that began inside a window, oldest first. Both bounds are instants. */
+export async function focusBetween(
+  from: Instant,
+  to: Instant,
+  db: TendDb = getDb(),
+): Promise<FocusSession[]> {
+  return db.focusSessions
+    .where('[_del+startedAt]')
+    .between([0, from], [0, to], true, true)
+    .toArray();
+}
+
+/** Seconds focused inside a window. */
+export function focusSeconds(sessions: readonly FocusSession[]): number {
+  return sessions.reduce((total, session) => total + session.focusedSeconds, 0);
+}
+
+/**
+ * Sessions still marked running.
+ *
+ * A tab that dies mid-session leaves one behind, and it stays open until
+ * something closes it. Bounded by the window rather than by a scan of the whole
+ * log, since anything older than that is already closed or lost.
+ */
+export async function unfinishedFocus(
+  since: Instant,
+  db: TendDb = getDb(),
+): Promise<FocusSession[]> {
+  const rows = await focusBetween(since, MAX_STR, db);
+  return rows.filter((session) => session.endedAt === null);
 }
 
 /** Counts for the sidebar badges. Uses key-only counts, so no rows deserialize. */

@@ -4,6 +4,8 @@ import { setDb, TendDb } from './client';
 import {
   clearTaskRecurrence,
   completeTask,
+  startFocusSession,
+  updateFocusSession,
   createProject,
   createTag,
   createTask,
@@ -17,7 +19,10 @@ import {
 } from './mutations';
 import {
   dueBetween,
+  focusBetween,
+  focusSeconds,
   inboxList,
+  unfinishedFocus,
   projectList,
   searchTasks,
   somedayList,
@@ -593,5 +598,75 @@ describe('undo of a delete', () => {
 
     const undeletes = (await db.outbox.toArray()).filter((r) => r.op === 'undelete');
     expect(undeletes).toHaveLength(2);
+  });
+});
+
+describe('focus sessions', () => {
+  it('writes the row when the timer starts, not when it ends', async () => {
+    const taskId = await createTask({ title: 'Write the deck' }, db);
+    const id = await startFocusSession(
+      { taskId, plannedMinutes: 25, startedAt: '2026-08-19T14:00:00.000Z' },
+      db,
+    );
+
+    const row = await db.focusSessions.get(id);
+    expect(row).toMatchObject({
+      taskId,
+      plannedMinutes: 25,
+      focusedSeconds: 0,
+      endedAt: null,
+      _del: 0,
+    });
+
+    const queued = await db.outbox.where('[table+entityId]').equals(['focusSessions', id]).toArray();
+    expect(queued).toHaveLength(1);
+    expect(queued[0]!.op).toBe('insert');
+    // Derived fields are local, so they never reach the server.
+    expect(queued[0]!.patch).not.toHaveProperty('_del');
+  });
+
+  it('banks what a pause measured without ending the session', async () => {
+    const id = await startFocusSession(
+      { plannedMinutes: 25, startedAt: '2026-08-19T14:00:00.000Z' },
+      db,
+    );
+    await updateFocusSession(id, { focusedSeconds: 300 }, db);
+
+    const row = await db.focusSessions.get(id);
+    expect(row!.focusedSeconds).toBe(300);
+    expect(row!.endedAt).toBeNull();
+    expect((await unfinishedFocus('2026-08-19T00:00:00.000Z', db)).map((s) => s.id)).toEqual([id]);
+  });
+
+  it('closes it on the write that carries an end', async () => {
+    const id = await startFocusSession(
+      { plannedMinutes: 25, startedAt: '2026-08-19T14:00:00.000Z' },
+      db,
+    );
+    await updateFocusSession(
+      id,
+      { focusedSeconds: 1500, endedAt: '2026-08-19T14:25:00.000Z' },
+      db,
+    );
+
+    expect(await unfinishedFocus('2026-08-19T00:00:00.000Z', db)).toEqual([]);
+    const window = await focusBetween('2026-08-19T00:00:00.000Z', '2026-08-19T23:59:59.999Z', db);
+    expect(focusSeconds(window)).toBe(1500);
+  });
+
+  it('leaves a session outside the window out of the total', async () => {
+    await startFocusSession({ plannedMinutes: 25, startedAt: '2026-08-18T09:00:00.000Z' }, db);
+    const today = await startFocusSession(
+      { plannedMinutes: 25, startedAt: '2026-08-19T09:00:00.000Z' },
+      db,
+    );
+
+    const window = await focusBetween('2026-08-19T00:00:00.000Z', '2026-08-19T23:59:59.999Z', db);
+    expect(window.map((s) => s.id)).toEqual([today]);
+  });
+
+  it('keeps a session with no task, since most have none', async () => {
+    const id = await startFocusSession({ plannedMinutes: 50 }, db);
+    expect((await db.focusSessions.get(id))!.taskId).toBe('');
   });
 });

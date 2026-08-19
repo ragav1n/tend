@@ -5,7 +5,14 @@ import {
   type RecurrenceRule,
 } from '@/lib/recurrence';
 import { getDb, LOCAL_USER_ID, type TendDb } from './client';
-import { deriveProject, deriveSeries, deriveTag, deriveTask, isClosed } from './derive';
+import {
+  deriveFocusSession,
+  deriveProject,
+  deriveSeries,
+  deriveTag,
+  deriveTask,
+  isClosed,
+} from './derive';
 import { newBatchId, newId, newMutationId } from './ids';
 import { DEFAULT_PREFS, PREFS_ID } from './prefs';
 import { today } from './queries';
@@ -16,6 +23,7 @@ import {
   NO_PARENT,
   NO_PROJECT,
   type EntityTable,
+  type FocusSession,
   type MutationOp,
   type OutboxRecord,
   type Prefs,
@@ -602,6 +610,68 @@ export async function clearTaskRecurrence(
     }
 
     await updateTask(taskId, { seriesId: '', occurrenceDate: null, occurrenceSeq: null }, db);
+  });
+}
+
+// ─── Focus ────────────────────────────────────────────────────────────────────
+
+/**
+ * Opens a session when the timer starts, not when it stops.
+ *
+ * A phone kills a backgrounded tab without warning, and a session that only
+ * exists in memory until it ends is a session that vanishes exactly when
+ * somebody focused for 40 minutes. The row is written first and finished later,
+ * so the worst case loses the last few minutes rather than all of them.
+ */
+export async function startFocusSession(
+  input: { taskId?: string; plannedMinutes: number; startedAt?: string },
+  db: TendDb = getDb(),
+): Promise<string> {
+  const id = newId();
+
+  await db.transaction('rw', [db.focusSessions, db.outbox], async () => {
+    const base = {
+      id,
+      userId: LOCAL_USER_ID,
+      taskId: input.taskId ?? '',
+      startedAt: input.startedAt ?? nowIso(),
+      endedAt: null,
+      plannedMinutes: input.plannedMinutes,
+      focusedSeconds: 0,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      deletedAt: null,
+      rowVersion: 0,
+    };
+    const row: FocusSession = { ...base, ...deriveFocusSession(base) };
+    await db.focusSessions.add(row);
+    await db.outbox.add(outboxRecord('focusSessions', id, 'insert', toInsertPatch(row), 0));
+  });
+
+  return id;
+}
+
+/**
+ * Records what the timer measured.
+ *
+ * Called on every pause as well as at the end, so a crash between two pauses
+ * costs one interval. `endedAt` is what makes a session finished, which is why
+ * a pause passes null for it.
+ */
+export async function updateFocusSession(
+  id: string,
+  patch: { focusedSeconds?: number; endedAt?: string | null },
+  db: TendDb = getDb(),
+): Promise<void> {
+  await db.transaction('rw', [db.focusSessions, db.outbox], async () => {
+    const current = await db.focusSessions.get(id);
+    if (!current) return;
+
+    const next = { ...current, ...patch, updatedAt: nowIso() };
+    await db.focusSessions.put({ ...next, ...deriveFocusSession(next) });
+    await db.outbox.add(
+      outboxRecord('focusSessions', id, 'update', { ...patch }, current.rowVersion),
+    );
   });
 }
 

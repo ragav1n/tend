@@ -32,6 +32,7 @@ export const MIGRATIONS = [
   '0013_richer_emails',
   '0014_web_push',
   '0015_notifiable',
+  '0016_focus_sessions',
 ];
 
 export function migrationSql(name: string): string {

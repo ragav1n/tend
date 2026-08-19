@@ -1,6 +1,7 @@
 import {
   NO_DUE_DAY,
   type DerivedTaskFields,
+  type FocusSession,
   type Project,
   type Tag,
   type Task,
@@ -97,4 +98,10 @@ export function deriveTag(tag: Omit<Tag, '_del'>): Pick<Tag, '_del'> {
 
 export function deriveSeries(series: Omit<TaskSeries, '_del'>): Pick<TaskSeries, '_del'> {
   return { _del: series.deletedAt ? 1 : 0 };
+}
+
+export function deriveFocusSession(
+  session: Omit<FocusSession, '_del'>,
+): Pick<FocusSession, '_del'> {
+  return { _del: session.deletedAt ? 1 : 0 };
 }

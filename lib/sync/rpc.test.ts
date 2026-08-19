@@ -525,3 +525,124 @@ describe('the settings row', () => {
     expect(row).not.toHaveProperty('id');
   });
 });
+
+describe('focus sessions', () => {
+  /**
+   * A synced table added long after the push path was written, which is the
+   * point of the test: 0016 adds the table and one name to
+   * sync_writable_tables(), and if the generic path really is generic that is
+   * all it should need.
+   */
+  const SESSION = '33333333-3333-4333-8333-333333333331';
+
+  const session = (patch: Record<string, unknown>, mutationId: string, op = 'insert') => ({
+    mutationId,
+    table: 'focus_sessions',
+    entityId: SESSION,
+    op,
+    patch,
+    baseVersion: 0,
+  });
+
+  it('lands a session opened against a task', async () => {
+    await asUser(USER);
+    const response = await push([
+      session(
+        localToWire('focus_sessions', {
+          id: SESSION,
+          userId: 'local',
+          taskId: '11111111-1111-4111-8111-111111111111',
+          startedAt: '2026-08-19T14:03:00.000Z',
+          endedAt: null,
+          plannedMinutes: 25,
+          focusedSeconds: 0,
+          createdAt: '2026-08-19T14:03:00.000Z',
+          deletedAt: null,
+        }),
+        'cccccccc-cccc-4ccc-8ccc-ccccccccccc1',
+      ),
+    ]);
+
+    expect(response.results[0]).toMatchObject({ status: 'applied' });
+
+    await asSuperuser();
+    const { rows } = await db.query<{ user_id: string; focused_seconds: number }>(
+      `select user_id, focused_seconds from focus_sessions where id = '${SESSION}'`,
+    );
+    // The client sent 'local' as the user, and the server ignores it.
+    expect(rows[0]).toEqual({ user_id: USER, focused_seconds: 0 });
+  });
+
+  it('finishes it with an update, which is what a pause and a stop both send', async () => {
+    await asUser(USER);
+    const response = await push([
+      session(
+        { focused_seconds: 1500, ended_at: '2026-08-19T14:28:00.000Z' },
+        'cccccccc-cccc-4ccc-8ccc-ccccccccccc2',
+        'update',
+      ),
+    ]);
+
+    expect(response.results[0]).toMatchObject({ status: 'applied' });
+
+    await asSuperuser();
+    const { rows } = await db.query<{ focused_seconds: number; ended_at: Date }>(
+      `select focused_seconds, ended_at from focus_sessions where id = '${SESSION}'`,
+    );
+    expect(rows[0]!.focused_seconds).toBe(1500);
+    expect(rows[0]!.ended_at).not.toBeNull();
+  });
+
+  it('sends it down the pull under its own table name', async () => {
+    await asUser(USER);
+    const page = await pull(0);
+    const row = page.rows.find((r) => r.table === 'focus_sessions')!.row;
+
+    expect(row.id).toBe(SESSION);
+    expect(row.focused_seconds).toBe(1500);
+    expect(row).not.toHaveProperty('user_id');
+  });
+
+  it('keeps a session with no task, since most of them have none', async () => {
+    const loose = '33333333-3333-4333-8333-333333333332';
+    await asUser(USER);
+    const response = await push([
+      {
+        mutationId: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc3',
+        table: 'focus_sessions',
+        entityId: loose,
+        op: 'insert',
+        // The client's '' sentinel has to arrive as a real null, or Postgres
+        // rejects it as a uuid and the whole table stops syncing.
+        patch: localToWire('focus_sessions', {
+          id: loose,
+          taskId: '',
+          startedAt: '2026-08-19T15:00:00.000Z',
+          plannedMinutes: 50,
+          focusedSeconds: 0,
+          createdAt: '2026-08-19T15:00:00.000Z',
+          deletedAt: null,
+        }),
+        baseVersion: 0,
+      },
+    ]);
+
+    expect(response.results[0]).toMatchObject({ status: 'applied' });
+
+    await asSuperuser();
+    const { rows } = await db.query<{ task_id: string | null }>(
+      `select task_id from focus_sessions where id = '${loose}'`,
+    );
+    expect(rows[0]!.task_id).toBeNull();
+  });
+
+  it('refuses one written against another account', async () => {
+    await asUser(OTHER);
+    await expect(
+      db.query(
+        `insert into focus_sessions (id, user_id, started_at)
+         values ('33333333-3333-4333-8333-333333333333', '${USER}', now())`,
+      ),
+    ).rejects.toThrow();
+  });
+});

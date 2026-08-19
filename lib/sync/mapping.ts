@@ -1,6 +1,7 @@
 import {
   NO_PARENT,
   NO_PROJECT,
+  type FocusSession,
   type Task,
   type Tag,
   type Project,
@@ -41,6 +42,7 @@ import type { WireTable } from './protocol';
 const SENTINEL_COLUMNS: Partial<Record<WireTable, string[]>> = {
   tasks: ['project_id', 'parent_task_id', 'series_id'],
   projects: ['area_id'],
+  focus_sessions: ['task_id'],
 };
 
 export function toSnakeCase(key: string): string {
@@ -115,7 +117,7 @@ export function isCompleteTask(row: Record<string, unknown>): row is Partial<Tas
   return typeof row.id === 'string' && typeof row.title === 'string';
 }
 
-export type SyncedLocalRow = Task | Project | Tag | TaskSeries;
+export type SyncedLocalRow = Task | Project | Tag | TaskSeries | FocusSession;
 
 /** Sentinel defaults for a task row that arrived without them. */
 export const TASK_SENTINEL_DEFAULTS = {

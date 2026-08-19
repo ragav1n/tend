@@ -166,6 +166,28 @@ export interface TaskSeries extends SyncedRow {
   _del: 0 | 1;
 }
 
+/**
+ * One run of the focus timer.
+ *
+ * Written when the timer starts, finished when it stops, so a tab that dies
+ * mid-session still leaves a record of the part that happened. `focusedSeconds`
+ * is accumulated by the client with paused time excluded, which is why it is
+ * stored rather than derived from the two instants.
+ *
+ * These are the only absolute instants in a local row. A task due 9am is due at
+ * 9am wherever you stand; a session that began at 14:03 began once.
+ */
+export interface FocusSession extends SyncedRow {
+  /** '' when the session is not about one task. */
+  taskId: string;
+  startedAt: Instant;
+  /** Null while it is still running. */
+  endedAt: Instant | null;
+  plannedMinutes: number;
+  focusedSeconds: number;
+  _del: 0 | 1;
+}
+
 /** Join rows are hard-deleted rather than tombstoned. The sync layer treats
  *  "the tag set for task X" as a replaceable set keyed by taskId, which avoids
  *  needing tombstones on a three-column table. */
@@ -212,7 +234,14 @@ export interface Prefs {
 
 // ─── Outbox ───────────────────────────────────────────────────────────────────
 
-export type EntityTable = 'tasks' | 'projects' | 'tags' | 'taskTags' | 'taskSeries' | 'prefs';
+export type EntityTable =
+  | 'tasks'
+  | 'projects'
+  | 'tags'
+  | 'taskTags'
+  | 'taskSeries'
+  | 'focusSessions'
+  | 'prefs';
 export type MutationOp = 'insert' | 'update' | 'delete' | 'undelete';
 export type OutboxState = 'pending' | 'inflight' | 'failed' | 'dead';
 

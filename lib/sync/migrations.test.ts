@@ -47,6 +47,7 @@ describe('the migration directory', () => {
       '0013_richer_emails.sql',
       '0014_web_push.sql',
       '0015_notifiable.sql',
+      '0016_focus_sessions.sql',
     ]);
   });
 

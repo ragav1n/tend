@@ -4,6 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useStableLiveQuery } from './use-live';
 import {
   dueBetween,
+  focusBetween,
   inboxList,
   logbook,
   openTasks,
@@ -20,7 +21,7 @@ import {
   todayProgress,
   upcomingList,
 } from '@/lib/db/queries';
-import type { Project, Tag, Task, TaskSeries } from '@/lib/db/types';
+import type { FocusSession, Project, Tag, Task, TaskSeries } from '@/lib/db/types';
 
 /** Module-scope so the reference is stable and never triggers a re-render. */
 const NO_TASKS: Task[] = [];
@@ -115,4 +116,11 @@ export function useProjects(): Project[] {
 
 export function useTags(): Tag[] {
   return useStableLiveQuery(() => tagOptions(), [], NO_TAGS);
+}
+
+const NO_SESSIONS: FocusSession[] = [];
+
+/** Focus sessions that began inside a window. Both bounds are instants. */
+export function useFocusBetween(from: string, to: string): FocusSession[] {
+  return useStableLiveQuery(() => focusBetween(from, to), [from, to], NO_SESSIONS);
 }
