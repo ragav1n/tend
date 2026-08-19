@@ -9,8 +9,29 @@
 
 export type ReminderKind = 'task_reminder' | 'daily_digest' | 'overdue_nudge' | 'weekly_review';
 
+/** How far a task's subtasks have got. Absent when it has none. */
+export interface SubtaskProgress {
+  done: number;
+  total: number;
+}
+
+/**
+ * What every task carries beyond its title, added in 0013.
+ *
+ * Optional to a field, because a delivery claimed before that migration and
+ * retried after it renders from a payload that predates all of this.
+ */
+export interface TaskDetail {
+  projectColor?: string | null;
+  waiting?: boolean;
+  repeats?: boolean;
+  estimate?: number | null;
+  tags?: string[];
+  subtasks?: SubtaskProgress | null;
+}
+
 /** One line in a list. `dueTime` is wall clock, already local to the reader. */
-export interface DigestItem {
+export interface DigestItem extends TaskDetail {
   id: string;
   title: string;
   dueDate: string | null;
@@ -22,7 +43,7 @@ export interface DigestItem {
 
 export interface TaskReminderPayload {
   kind: 'task_reminder';
-  task: {
+  task: TaskDetail & {
     id: string;
     title: string;
     notes: string;
@@ -33,6 +54,12 @@ export interface TaskReminderPayload {
   };
 }
 
+/** One column of the weekly chart. `date` is a local calendar day. */
+export interface DayCount {
+  date: string;
+  count: number;
+}
+
 export interface SummaryPayload {
   kind: 'daily_digest' | 'overdue_nudge' | 'weekly_review';
   localDate: string;
@@ -41,6 +68,9 @@ export interface SummaryPayload {
   dueSoon: DigestItem[];
   completedThisWeek: number;
   openTotal: number;
+  completedToday?: number;
+  completedByDay?: DayCount[];
+  streak?: number;
 }
 
 export type ReminderPayload = TaskReminderPayload | SummaryPayload;

@@ -179,6 +179,155 @@ describe('the nudge and the review', () => {
   });
 });
 
+describe('what 0013 added to the payload', () => {
+  const week = [
+    { date: '2026-08-26', count: 2 },
+    { date: '2026-08-27', count: 0 },
+    { date: '2026-08-28', count: 5 },
+    { date: '2026-08-29', count: 1 },
+    { date: '2026-08-30', count: 3 },
+    { date: '2026-08-31', count: 4 },
+    { date: '2026-09-01', count: 3 },
+  ];
+
+  it('puts the day in a band of numbers', async () => {
+    const email = await renderGroup(
+      group('daily_digest', [
+        summary({
+          today: [item({ estimate: 45 }), item({ id: 'b', estimate: 120 })],
+          overdue: [item({ id: 'c', dueDate: '2026-08-28' })],
+        }),
+      ]),
+    );
+
+    expect(email.html).toContain('2h 45m');
+    expect(email.html).toContain('planned');
+    expect(email.text).toContain('2h 45m planned.');
+  });
+
+  it('counts the backlog instead when nothing carries an estimate', async () => {
+    const email = await renderGroup(
+      group('daily_digest', [summary({ today: [item()], openTotal: 17 })]),
+    );
+
+    // Nobody fills in an estimate on an empty afternoon, and a stat that reads
+    // 0m every morning is worse than no stat.
+    expect(email.html).toContain('>17<');
+    expect(email.html).toContain('open');
+    expect(email.text).not.toContain('planned.');
+  });
+
+  it('says everything the app says about a task, in one line under the title', async () => {
+    const email = await renderGroup(
+      group('daily_digest', [
+        summary({
+          today: [
+            item({
+              project: 'Flat',
+              projectColor: '#7A6A55',
+              waiting: true,
+              estimate: 90,
+              tags: ['money', 'slow'],
+              subtasks: { done: 1, total: 4 },
+            }),
+          ],
+        }),
+      ]),
+    );
+
+    expect(email.html).toContain('waiting · Flat · 1 of 4 done · 1h 30m · #money · #slow');
+    // The dot is the project's colour, which is the only colour in the row.
+    expect(email.html).toContain('#7A6A55');
+    expect(email.text).toContain(
+      '- Water the plants (waiting, Flat, 1 of 4 done, 1h 30m, #money, #slow) — today, 6:00 pm',
+    );
+  });
+
+  it('scales the review chart against its own best day', async () => {
+    const email = await renderGroup(
+      group('weekly_review', [
+        summary({ kind: 'weekly_review', completedThisWeek: 18, completedByDay: week, streak: 5 }),
+      ]),
+    );
+
+    // Five on Friday is the peak, so Friday is full height and the rest are
+    // measured against it.
+    expect(email.html).toContain('height:64px');
+    // A day nobody finished anything still gets a stub, or the week reads as a
+    // missing column rather than a quiet Thursday.
+    expect(email.html).toContain('height:3px');
+    for (const label of ['Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue']) {
+      expect(email.html).toContain(label);
+    }
+    expect(email.html).toContain('day streak');
+    expect(email.text).toContain('5 days in a row.');
+  });
+
+  it('keeps a one day streak to itself', async () => {
+    const email = await renderGroup(
+      group('weekly_review', [summary({ kind: 'weekly_review', streak: 1, today: [item()] })]),
+    );
+
+    // A one day streak is a day.
+    expect(email.html).not.toContain('day streak');
+    expect(email.text).not.toContain('in a row');
+  });
+
+  it('counts what got done today in the evening nudge', async () => {
+    const email = await renderGroup(
+      group('overdue_nudge', [
+        summary({ kind: 'overdue_nudge', overdue: [item()], completedToday: 4, openTotal: 9 }),
+      ]),
+    );
+
+    expect(email.html).toContain('done today');
+    expect(email.text).toContain('4 done today, 9 tasks open');
+  });
+
+  it('renders a payload frozen before any of this existed', async () => {
+    // A delivery claimed before 0013 and retried after it. Every new field is
+    // absent rather than empty, which is the case the optional types are for.
+    const old = {
+      kind: 'daily_digest' as const,
+      localDate: '2026-09-01',
+      today: [
+        {
+          id: 'a',
+          title: 'Water the plants',
+          dueDate: '2026-09-01',
+          dueTime: '18:00:00',
+          priority: 0,
+          project: 'Garden',
+          planned: false,
+        },
+      ],
+      overdue: [],
+      dueSoon: [],
+      completedThisWeek: 3,
+      openTotal: 4,
+    };
+
+    const email = await renderGroup(group('daily_digest', [old]));
+
+    expect(email.subject).toBe('Today: 1 task');
+    expect(email.html).toContain('Water the plants');
+    expect(email.html).toContain('Garden');
+    // No project colour in that payload, so the dot falls back to the neutral one.
+    expect(email.html).toContain('#CDC3B4');
+  });
+
+  it('describes a single task reminder as fully as a list line', async () => {
+    const email = await renderGroup(
+      group('task_reminder', [
+        task({ estimate: 20, tags: ['calls'], subtasks: { done: 0, total: 2 } }),
+      ]),
+    );
+
+    expect(email.html).toContain('0 of 2 done · 20m · #calls');
+    expect(email.text).toContain('(Garden, 0 of 2 done, 20m, #calls)');
+  });
+});
+
 describe('every email', () => {
   it('carries a preheader, so the inbox preview is not the first link', async () => {
     const email = await renderGroup(group('daily_digest', [summary({ today: [item()] })]));

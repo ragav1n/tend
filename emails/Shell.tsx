@@ -1,5 +1,6 @@
 import {
   Body,
+  Column,
   Container,
   Head,
   Hr,
@@ -7,6 +8,7 @@ import {
   Img,
   Link,
   Preview,
+  Row,
   Section,
   Text,
 } from '@react-email/components';
@@ -96,6 +98,59 @@ export function Shell({ preview, appUrl, unsubscribeUrl, reason, children }: She
         </Container>
       </Body>
     </Html>
+  );
+}
+
+/**
+ * The numbers, in a beige band across the top.
+ *
+ * Beige is a background here and nowhere else: it measures 2.1:1 on white, which
+ * is unusable for text and right for a panel. Equal width cells rather than
+ * anything that has to measure itself, because Word's engine does not.
+ */
+export function Stats({ items }: { items: { value: string; label: string }[] }) {
+  const width = `${Math.round(100 / items.length)}%`;
+
+  return (
+    <Section style={{ backgroundColor: email.surface, paddingTop: 18 }}>
+      <Row style={{ backgroundColor: email.tint, borderRadius: 4 }}>
+        {items.map((stat) => (
+          <Column
+            key={stat.label}
+            style={{
+              backgroundColor: email.tint,
+              padding: '14px 16px',
+              verticalAlign: 'top',
+              width,
+            }}
+          >
+            <Text
+              style={{
+                fontFamily: fonts.serif,
+                fontSize: 24,
+                lineHeight: '28px',
+                color: email.heading,
+                margin: 0,
+              }}
+            >
+              {stat.value}
+            </Text>
+            <Text
+              style={{
+                fontSize: 11,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                lineHeight: '16px',
+                color: email.textSoft,
+                margin: '2px 0 0',
+              }}
+            >
+              {stat.label}
+            </Text>
+          </Column>
+        ))}
+      </Row>
+    </Section>
   );
 }
 

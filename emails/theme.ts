@@ -21,6 +21,9 @@ export const email = {
   chip: '#C29B72',
   action: '#8D321F',
   actionText: '#FFF8F0',
+  // The band behind the numbers, and the colour a task with no project gets.
+  tint: '#F5F0E7',
+  dot: '#CDC3B4',
 } as const;
 
 /**

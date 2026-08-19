@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { formatDay, formatRelativeDay, formatTime, formatWhen, plural } from './format';
+import {
+  formatDay,
+  formatDuration,
+  formatRelativeDay,
+  formatTime,
+  formatWhen,
+  plural,
+  taskMeta,
+  weekdayInitial,
+} from './format';
 
 /**
  * Formatting for email, which is all wall clock.
@@ -46,5 +55,51 @@ describe('counting', () => {
     expect(plural(1, 'task')).toBe('1 task');
     expect(plural(3, 'task')).toBe('3 tasks');
     expect(plural(0, 'task')).toBe('0 tasks');
+  });
+
+  it('reads a duration in hours once it stops being minutes', () => {
+    expect(formatDuration(45)).toBe('45m');
+    expect(formatDuration(60)).toBe('1h');
+    expect(formatDuration(90)).toBe('1h 30m');
+    expect(formatDuration(150)).toBe('2h 30m');
+  });
+
+  it('names the weekday for a chart column', () => {
+    expect(weekdayInitial('2026-09-01')).toBe('Tue');
+    expect(weekdayInitial('2026-08-30')).toBe('Sun');
+  });
+});
+
+describe('the small print under a title', () => {
+  const task = {
+    project: 'Garden',
+    waiting: true,
+    repeats: true,
+    estimate: 90,
+    tags: ['home', 'slow'],
+    subtasks: { done: 1, total: 4 },
+  };
+
+  it('orders it the way it reads', () => {
+    expect(taskMeta(task)).toEqual([
+      'waiting',
+      'Garden',
+      '1 of 4 done',
+      '1h 30m',
+      'repeats',
+      '#home',
+      '#slow',
+    ]);
+  });
+
+  it('says nothing about a task that has nothing to say', () => {
+    // A payload frozen before 0013 has none of these fields, and the template
+    // drops the line rather than printing a lonely separator.
+    expect(taskMeta({ project: null })).toEqual([]);
+  });
+
+  it('leaves out a subtask count nobody has started counting', () => {
+    expect(taskMeta({ project: null, subtasks: { done: 0, total: 0 } })).toEqual([]);
+    expect(taskMeta({ project: null, estimate: 0 })).toEqual([]);
   });
 });

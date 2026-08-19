@@ -44,6 +44,7 @@ describe('the migration directory', () => {
       '0010_digest_no_repeats.sql',
       '0011_stale_digests.sql',
       '0012_find_pg_net.sql',
+      '0013_richer_emails.sql',
     ]);
   });
 

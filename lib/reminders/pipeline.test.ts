@@ -65,13 +65,18 @@ async function newTask(
     dueTime?: string | null;
     plannedFor?: string | null;
     status?: string;
+    projectId?: string | null;
+    parentId?: string | null;
+    estimateMinutes?: number | null;
   } = {},
 ) {
   tasks += 1;
   const id = `11111111-0000-4000-8000-${String(tasks).padStart(12, '0')}`;
   await pg.query(
-    `insert into public.tasks (id, user_id, title, status, due_date, due_time, planned_for, sort_key)
-     values ($1, $2, $3, $4, $5, $6, $7, 'a0')`,
+    `insert into public.tasks
+       (id, user_id, title, status, due_date, due_time, planned_for,
+        project_id, parent_task_id, depth, estimate_minutes, sort_key)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, case when $9::uuid is null then 0 else 1 end, $10, 'a0')`,
     [
       id,
       userId,
@@ -80,9 +85,63 @@ async function newTask(
       over.dueDate ?? null,
       over.dueTime ?? null,
       over.plannedFor ?? null,
+      over.projectId ?? null,
+      over.parentId ?? null,
+      over.estimateMinutes ?? null,
     ],
   );
   return id;
+}
+
+let projects = 0;
+
+async function newProject(userId: string, name: string, color = '#7A6A55') {
+  projects += 1;
+  const id = `33333333-0000-4000-8000-${String(projects).padStart(12, '0')}`;
+  await pg.query(
+    `insert into public.projects (id, user_id, name, color, sort_key) values ($1, $2, $3, $4, 'a0')`,
+    [id, userId, name, color],
+  );
+  return id;
+}
+
+let tags = 0;
+
+async function tagTask(userId: string, taskId: string, name: string) {
+  tags += 1;
+  const id = `44444444-0000-4000-8000-${String(tags).padStart(12, '0')}`;
+  await pg.query(
+    `insert into public.tags (id, user_id, name, sort_key) values ($1, $2, $3, $4)`,
+    [id, userId, name, `a${tags}`],
+  );
+  await pg.query('insert into public.task_tags (task_id, tag_id, user_id) values ($1, $2, $3)', [
+    taskId,
+    id,
+    userId,
+  ]);
+  return id;
+}
+
+/**
+ * A task finished at noon on a given local day.
+ *
+ * `derive_task_columns` owns `completed_at` and overwrites whatever is handed to
+ * it, which is right everywhere except here: a streak needs history, and history
+ * is the one thing that cannot be made by running the app for a week. The trigger
+ * comes off for the backdate and goes straight back on.
+ */
+async function completeOn(userId: string, taskId: string, localDay: string) {
+  await pg.query(`update public.tasks set status = 'done' where id = $1`, [taskId]);
+  await pg.exec('alter table public.tasks disable trigger tasks_derive');
+  await pg.query(
+    `update public.tasks
+        set completed_at = ($2::date)::timestamp
+              at time zone (select timezone from public.user_settings where user_id = $3)
+              + interval '12 hours'
+      where id = $1`,
+    [taskId, localDay, userId],
+  );
+  await pg.exec('alter table public.tasks enable trigger tasks_derive');
 }
 
 interface Delivery {
@@ -641,13 +700,36 @@ describe('settling a batch', () => {
 });
 
 describe('what a digest says', () => {
+  interface Item {
+    id: string;
+    title: string;
+    project: string | null;
+    projectColor: string | null;
+    planned: boolean;
+    waiting: boolean;
+    repeats: boolean;
+    estimate: number | null;
+    tags: string[];
+    subtasks: { done: number; total: number } | null;
+  }
+
+  interface Summary {
+    today: Item[];
+    overdue: Item[];
+    dueSoon: Item[];
+    completedToday: number;
+    completedThisWeek: number;
+    completedByDay: { date: string; count: number }[];
+    streak: number;
+    openTotal: number;
+  }
+
   const payloadFor = async (id: string) =>
     (
-      await one<{ reminder_payload: {
-        today: { id: string; title: string }[];
-        overdue: { id: string; title: string }[];
-        dueSoon: { id: string; title: string }[];
-      } }>('select public.reminder_payload($1) as reminder_payload', [id])
+      await one<{ reminder_payload: Summary }>(
+        'select public.reminder_payload($1) as reminder_payload',
+        [id],
+      )
     ).reminder_payload;
 
   it('lists a task once, under the first heading that claims it', async () => {
@@ -736,6 +818,145 @@ describe('what a digest says', () => {
     expect(payload.today).toEqual([]);
     expect(payload.overdue).toEqual([]);
     expect(payload.dueSoon).toEqual([]);
+  });
+
+  it('describes a task the way the app does', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+    const project = await newProject(user, 'Garden', '#5C6B3F');
+    const task = await newTask(user, {
+      title: 'Repot the ficus',
+      plannedFor: today,
+      projectId: project,
+      estimateMinutes: 45,
+    });
+    await tagTask(user, task, 'home');
+    await newTask(user, { title: 'Buy soil', parentId: task, status: 'done' });
+    await newTask(user, { title: 'Find the trowel', parentId: task });
+
+    const [item] = (await payloadFor(await dueDelivery(user))).today;
+
+    expect(item!.project).toBe('Garden');
+    expect(item!.projectColor).toBe('#5C6B3F');
+    expect(item!.estimate).toBe(45);
+    expect(item!.tags).toEqual(['home']);
+    expect(item!.subtasks).toEqual({ done: 1, total: 2 });
+    expect(item!.waiting).toBe(false);
+    expect(item!.repeats).toBe(false);
+  });
+
+  it('leaves subtasks null for a task that has none', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+    await newTask(user, { plannedFor: today });
+
+    const [item] = (await payloadFor(await dueDelivery(user))).today;
+
+    // Null rather than a zero pair, because the template asks whether there is
+    // progress to show and `0 of 0` answers yes.
+    expect(item!.subtasks).toBeNull();
+    expect(item!.tags).toEqual([]);
+  });
+
+  it('takes three tags and leaves the rest', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+    const task = await newTask(user, { plannedFor: today });
+    for (const name of ['admin', 'errand', 'home', 'slow']) await tagTask(user, task, name);
+
+    const [item] = (await payloadFor(await dueDelivery(user))).today;
+
+    expect(item!.tags).toEqual(['admin', 'errand', 'home']);
+  });
+
+  it('looks a week ahead for a review and three days for a digest', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+    await newTask(user, { title: 'Renew the lease', dueDate: shiftDay(today, 5) });
+
+    const digest = await payloadFor(await dueDelivery(user));
+    expect(digest.dueSoon).toEqual([]);
+
+    const review = await payloadFor(await dueDelivery(user, 'weekly_review'));
+    expect(review.dueSoon.map((item) => item.title)).toEqual(['Renew the lease']);
+  });
+
+  it('counts the run of days ending at the last thing finished', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+
+    // Three in a row through yesterday, then a gap, then an older day. The
+    // digest goes out at 07:00 before anything is done, so anchoring the streak
+    // on today would report zero every morning of a run.
+    for (const back of [1, 2, 3, 5]) {
+      const task = await newTask(user, { title: `Day ${back}` });
+      await completeOn(user, task, shiftDay(today, -back));
+    }
+
+    const payload = await payloadFor(await dueDelivery(user));
+
+    expect(payload.streak).toBe(3);
+    expect(payload.completedToday).toBe(0);
+    expect(payload.completedThisWeek).toBe(4);
+  });
+
+  it('drops the streak once the run is older than yesterday', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+    const task = await newTask(user);
+    await completeOn(user, task, shiftDay(today, -2));
+
+    expect((await payloadFor(await dueDelivery(user))).streak).toBe(0);
+  });
+
+  it('gives the week seven days whether or not anything happened on them', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+    const task = await newTask(user);
+    await completeOn(user, task, shiftDay(today, -2));
+
+    const payload = await payloadFor(await dueDelivery(user));
+
+    expect(payload.completedByDay).toHaveLength(7);
+    expect(payload.completedByDay[0]!.date).toBe(shiftDay(today, -6));
+    expect(payload.completedByDay[6]!.date).toBe(today);
+    expect(payload.completedByDay.map((entry) => entry.count)).toEqual([0, 0, 0, 0, 1, 0, 0]);
+  });
+
+  it('describes a single task reminder as fully as a list line', async () => {
+    const user = await newUser();
+    const project = await newProject(user, 'Flat', '#7A6A55');
+    const task = await newTask(user, {
+      title: 'Call the plumber',
+      dueDate: await localToday(user),
+      dueTime: '09:00',
+      projectId: project,
+      estimateMinutes: 20,
+      status: 'waiting',
+    });
+    await tagTask(user, task, 'calls');
+
+    const payload = (
+      await one<{
+        reminder_payload: {
+          task: {
+            project: string;
+            projectColor: string;
+            estimate: number;
+            waiting: boolean;
+            tags: string[];
+          };
+        };
+      }>('select public.reminder_payload($1) as reminder_payload', [
+        await dueDelivery(user, 'task_reminder', task),
+      ])
+    ).reminder_payload;
+
+    expect(payload.task.project).toBe('Flat');
+    expect(payload.task.projectColor).toBe('#7A6A55');
+    expect(payload.task.estimate).toBe(20);
+    expect(payload.task.waiting).toBe(true);
+    expect(payload.task.tags).toEqual(['calls']);
   });
 });
 

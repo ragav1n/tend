@@ -1,10 +1,18 @@
 import { render } from '@react-email/render';
-import { DigestEmail } from '@/emails/DigestEmail';
+import { DigestEmail, plannedMinutes } from '@/emails/DigestEmail';
 import { NudgeEmail } from '@/emails/NudgeEmail';
 import { ReminderEmail } from '@/emails/ReminderEmail';
 import { ReviewEmail } from '@/emails/ReviewEmail';
 import { appUrl } from './env';
-import { formatDay, formatRelativeDay, formatTime, formatWhen, plural } from './format';
+import {
+  formatDay,
+  formatDuration,
+  formatRelativeDay,
+  formatTime,
+  formatWhen,
+  plural,
+  taskMeta,
+} from './format';
 import type {
   DigestItem,
   EmailGroup,
@@ -49,19 +57,31 @@ export async function renderGroup(group: EmailGroup): Promise<RenderedEmail> {
     return {
       subject: `${plural(payload.overdue.length, 'task')} past due`,
       html: await render(<NudgeEmail payload={payload} {...links} />),
-      text: summaryText(`${plural(payload.overdue.length, 'task')} past due`, payload, [
-        ['Late', payload.overdue],
-      ], app, unsubscribe),
+      text: summaryText(
+        [
+          `${plural(payload.overdue.length, 'task')} past due`,
+          `${payload.completedToday ?? 0} done today, ${plural(payload.openTotal, 'task')} open`,
+        ],
+        payload,
+        [['Late', payload.overdue]],
+        app,
+        unsubscribe,
+      ),
       unsubscribeUrl: unsubscribe,
     };
   }
 
   if (group.kind === 'weekly_review') {
+    const streak = payload.streak ?? 0;
+
     return {
       subject: `Last week: ${plural(payload.completedThisWeek, 'task')} done`,
       html: await render(<ReviewEmail payload={payload} {...links} />),
       text: summaryText(
-        `${plural(payload.completedThisWeek, 'task')} done, ${plural(payload.openTotal, 'task')} open`,
+        [
+          `${plural(payload.completedThisWeek, 'task')} done, ${plural(payload.openTotal, 'task')} open`,
+          ...(streak >= 2 ? [`${streak} days in a row.`] : []),
+        ],
         payload,
         [
           ['Carried over', payload.overdue],
@@ -74,11 +94,16 @@ export async function renderGroup(group: EmailGroup): Promise<RenderedEmail> {
     };
   }
 
+  const planned = plannedMinutes(payload.today);
+
   return {
     subject: digestSubject(payload),
     html: await render(<DigestEmail payload={payload} {...links} />),
     text: summaryText(
-      formatDay(payload.localDate),
+      [
+        formatDay(payload.localDate),
+        ...(planned > 0 ? [`${formatDuration(planned)} planned.`] : []),
+      ],
       payload,
       [
         ['Late', payload.overdue],
@@ -117,8 +142,9 @@ function line(item: DigestItem, localDate: string): string {
   const when = item.dueDate
     ? formatRelativeDay(item.dueDate, localDate) + (item.dueTime ? `, ${formatTime(item.dueTime)}` : '')
     : 'planned';
-  const project = item.project ? ` (${item.project})` : '';
-  return `- ${item.title}${project} — ${when}`;
+  const meta = taskMeta(item);
+  const detail = meta.length > 0 ? ` (${meta.join(', ')})` : '';
+  return `- ${item.title}${detail} — ${when}`;
 }
 
 function footer(app: string, unsubscribe: string): string {
@@ -126,13 +152,14 @@ function footer(app: string, unsubscribe: string): string {
 }
 
 function summaryText(
-  heading: string,
+  intro: string[],
   payload: SummaryPayload,
   sections: [string, DigestItem[]][],
   app: string,
   unsubscribe: string,
 ): string {
-  const lines = [heading, ''];
+  const lines = [...intro, ''];
+  const before = lines.length;
 
   for (const [title, items] of sections) {
     if (items.length === 0) continue;
@@ -141,7 +168,7 @@ function summaryText(
     lines.push('');
   }
 
-  if (lines.length === 2) lines.push('Nothing due and nothing late.', '');
+  if (lines.length === before) lines.push('Nothing due and nothing late.', '');
   return lines.join('\n').trimEnd() + footer(app, unsubscribe);
 }
 
@@ -154,7 +181,9 @@ function reminderText(
 
   for (const task of tasks) {
     const when = formatWhen(task.dueDate, task.dueTime);
-    lines.push(`- ${task.title}${when ? ` — ${when}` : ''}${task.project ? ` (${task.project})` : ''}`);
+    const meta = taskMeta(task);
+    const detail = meta.length > 0 ? ` (${meta.join(', ')})` : '';
+    lines.push(`- ${task.title}${when ? ` — ${when}` : ''}${detail}`);
     if (tasks.length === 1 && task.notes) lines.push('', task.notes);
   }
 
