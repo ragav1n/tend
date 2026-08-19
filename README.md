@@ -66,7 +66,7 @@ npm run lint
 The scheduling lives in Postgres and the sending lives in Vercel, so both sides need
 one-time setup. Nothing below is in the repo, because all of it is a secret.
 
-**1. Apply the migrations.** `supabase/migrations/0001` through `0009`, in order.
+**1. Apply the migrations.** `supabase/migrations/0001` through `0011`, in order.
 
 **2. Enable the extensions**, from the Supabase dashboard or SQL:
 
@@ -77,7 +77,15 @@ create extension if not exists pg_net;
 
 `0008` schedules `notifications_tick()` every minute and `0009` schedules the nightly repair,
 both the moment `pg_cron` exists and both skipped where it does not, which is what lets the
-whole schema run in the test harness.
+whole schema run in the test harness. **Enable the extensions before applying those two, or
+run the two `cron.schedule` calls by hand afterwards:**
+
+```sql
+select cron.schedule('tend-notifications-tick', '* * * * *',
+  $$select public.notifications_tick()$$);
+select cron.schedule('tend-reconcile-notifications', '17 3 * * *',
+  $$select public.reconcile_notifications()$$);
+```
 
 **3. Put the URL and the shared secret in Vault**, not in the cron command:
 `cron.job.command` is readable by anybody who can read the `cron` schema.

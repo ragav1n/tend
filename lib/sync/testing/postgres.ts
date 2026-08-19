@@ -27,6 +27,7 @@ export const MIGRATIONS = [
   '0008_reminders',
   '0009_reconcile_notifications',
   '0010_digest_no_repeats',
+  '0011_stale_digests',
 ];
 
 export function migrationSql(name: string): string {

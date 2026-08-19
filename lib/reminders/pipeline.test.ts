@@ -523,6 +523,38 @@ describe('claiming a batch', () => {
     expect(row!.reason).toBe('over the daily cap');
   });
 
+  it('cancels a digest that is no longer about today', async () => {
+    const user = await newUser();
+    const yesterday = shiftDay(await localToday(user), -1);
+    const id = await dueDelivery(user);
+    await pg.query(`update public.reminder_deliveries set local_date = $2 where id = $1`, [
+      id,
+      yesterday,
+    ]);
+
+    const answer = (await claim()).claim_reminder_batch;
+
+    // Three days unreachable used to mean three "here is your day" emails at
+    // once, each describing a day that had passed.
+    expect(answer.claimed).toHaveLength(0);
+    const [row] = await deliveries(user, 'daily_digest');
+    expect(row!.status).toBe('cancelled');
+    expect(row!.reason).toBe('too late to be true');
+  });
+
+  it('still sends a weekly review a day late, because it is about a week', async () => {
+    const user = await newUser();
+    const yesterday = shiftDay(await localToday(user), -1);
+    const id = await dueDelivery(user, 'weekly_review');
+    await pg.query(`update public.reminder_deliveries set local_date = $2 where id = $1`, [
+      id,
+      yesterday,
+    ]);
+
+    const answer = (await claim()).claim_reminder_batch;
+    expect(answer.claimed).toHaveLength(1);
+  });
+
   it('leaves work pending when the account is out of quota for the day', async () => {
     const user = await newUser();
     await pg.query(
