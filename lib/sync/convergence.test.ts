@@ -314,6 +314,47 @@ describe('interleaved writes', () => {
   });
 });
 
+describe('two devices inventing the same tag', () => {
+  it('keeps one tag and leaves neither queue stuck', async () => {
+    const a = await device('a');
+    const b = await device('b');
+
+    const taskId = await createTask({ title: 'Sharpen the shears' }, a.db);
+    await cycle(a);
+    await cycle(b);
+
+    // Both type #tools offline, so ensureTag finds nothing locally and both create
+    // one. Live tag names are unique per user, case insensitively, so only one can
+    // land, and the loser is holding a tag its join row points at.
+    const onA = await createTag({ name: 'tools' }, a.db);
+    await setTaskTags(taskId, [onA], a.db);
+    const onB = await createTag({ name: 'Tools' }, b.db);
+    await setTaskTags(taskId, [onB], b.db);
+
+    await cycle(a);
+    await cycle(b);
+    await cycle(a);
+
+    // B's tag lost the unique index and was superseded, and the join row that
+    // pointed at it came back missing rather than failing the batch. Before 0005
+    // the 23505 rolled the whole batch back and every mutation in it died.
+    expect(await b.db.tags.get(onB)).toBeUndefined();
+    expect((await b.db.tags.get(onA))?.name).toBe('tools');
+    // The join row B queued pointed at the tag that lost, so B ends up wearing
+    // the surviving one rather than a dangling id.
+    for (const target of [a, b]) {
+      expect((await target.db.taskTags.toArray()).map((row) => row.tagId)).toEqual([onA]);
+    }
+    await expectConverged(a, b);
+
+    await asSuperuser(pg);
+    const { rows } = await pg.query<{ n: number }>(
+      'select count(*)::int as n from public.tags where deleted_at is null',
+    );
+    expect(rows[0]!.n).toBe(1);
+  });
+});
+
 describe('settings', () => {
   it('carry a change from one device to the other', async () => {
     const a = await device('a');
