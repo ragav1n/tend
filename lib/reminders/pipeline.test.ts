@@ -602,6 +602,93 @@ describe('settling a batch', () => {
   });
 });
 
+describe('the nightly repair', () => {
+  const reconcile = () =>
+    one<{ reconcile_notifications: { rebuilt: number; cancelled: number } }>(
+      'select public.reconcile_notifications() as reconcile_notifications',
+    );
+
+  it('rebuilds a reminder whose mark the queue lost', async () => {
+    const user = await newUser();
+    const task = await newTask(user, {
+      dueDate: day(new Date(Date.now() + 86_400_000))!,
+      dueTime: '09:00',
+    });
+
+    // An unlogged table is truncated by an unclean restart, which is exactly this:
+    // the mark is gone and nothing else knows the task changed.
+    await pg.query('delete from public.notification_recompute_queue');
+    await pg.query('select public.drain_notification_recompute(500)');
+    expect(await deliveries(user, 'task_reminder')).toHaveLength(0);
+
+    const answer = await reconcile();
+    expect(answer.reconcile_notifications.rebuilt).toBeGreaterThan(0);
+    expect(await deliveries(user, 'task_reminder')).toHaveLength(1);
+    void task;
+  });
+
+  it('cancels a pending reminder for work that is already done', async () => {
+    const user = await newUser();
+    const task = await newTask(user, {
+      dueDate: day(new Date(Date.now() + 86_400_000))!,
+      dueTime: '09:00',
+    });
+    await pg.query('select public.drain_notification_recompute(500)');
+    expect(await deliveries(user, 'task_reminder')).toHaveLength(1);
+
+    // Completed with the queue emptied behind it, so the trigger's mark is lost.
+    await pg.query(`update public.tasks set status = 'done' where id = $1`, [task]);
+    await pg.query('delete from public.notification_recompute_queue');
+
+    await reconcile();
+    const [row] = await deliveries(user, 'task_reminder');
+    expect(row!.status).toBe('cancelled');
+    expect(row!.reason).toBe('task closed');
+  });
+
+  it('lands on the same schedule when run twice', async () => {
+    const user = await newUser();
+    await newTask(user, {
+      dueDate: day(new Date(Date.now() + 86_400_000))!,
+      dueTime: '09:00',
+    });
+    await reconcile();
+    const before = await deliveries(user, 'task_reminder');
+    await reconcile();
+    const after = await deliveries(user, 'task_reminder');
+
+    // The row itself is rebuilt rather than left alone, because a pending row is
+    // deleted and re-derived: a cancelled one would keep its dedupe_key and block
+    // the identical row. What has to hold is the schedule, and that a second run
+    // cannot turn one reminder into two.
+    expect(after).toHaveLength(1);
+    expect(after[0]!.dedupe_key).toBe(before[0]!.dedupe_key);
+    expect(at(after[0]!)).toBe(at(before[0]!));
+  });
+
+  it('leaves a claimed row alone rather than resurrecting it as pending', async () => {
+    const user = await newUser();
+    await newTask(user, {
+      dueDate: day(new Date(Date.now() + 86_400_000))!,
+      dueTime: '09:00',
+    });
+    await reconcile();
+    const [row] = await deliveries(user, 'task_reminder');
+    await pg.query(
+      `update public.reminder_deliveries set status = 'sent', sent_at = now() where id = $1`,
+      [row!.id],
+    );
+
+    await reconcile();
+
+    // The email has gone. The dedupe_key is what stops the rebuild sending it
+    // again, which is the whole reason the key is derived from inputs.
+    const found = await deliveries(user, 'task_reminder');
+    expect(found).toHaveLength(1);
+    expect(found[0]!.status).toBe('sent');
+  });
+});
+
 describe('the tick', () => {
   it('reports what it did and leaves a heartbeat', async () => {
     const user = await newUser({ digest_time: '04:00' });

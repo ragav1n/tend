@@ -40,6 +40,7 @@ describe('the migration directory', () => {
       '0006_base_version_zero.sql',
       '0007_settings_sync.sql',
       '0008_reminders.sql',
+      '0009_reconcile_notifications.sql',
     ]);
   });
 
