@@ -146,6 +146,18 @@
     color: var(--color-text-lo);
   }
 
+  /* cmdk marks its parts with attributes rather than classes, which is the half
+     of its API that survives a version bump. The palette's group headings are
+     styled once here instead of a dozen arbitrary variants on the component. */
+  [cmdk-group-heading] {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-text-lo);
+    padding: 0.5rem 0.625rem 0.25rem;
+  }
+
   ::selection {
     background-color: var(--color-clay-600);
     color: var(--color-text-hi);

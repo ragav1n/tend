@@ -11,6 +11,7 @@ import {
 } from 'motion/react';
 import { X } from '@phosphor-icons/react/dist/ssr';
 import { MD_QUERY, useMediaQuery } from '@/hooks/use-media-query';
+import { useScrollLock } from '@/hooks/use-scroll-lock';
 import { QUICK_FADE, SHEET } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 
@@ -56,20 +57,7 @@ function SheetPanel({ onClose, label, children }: Omit<SheetProps, 'open'>) {
   const dragControls = useDragControls();
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Page scroll is locked while the sheet is up. The padding compensation keeps
-  // a desktop scrollbar's width reserved, so the page underneath does not jump
-  // sideways as the overlay appears.
-  useEffect(() => {
-    const body = document.body;
-    const { overflow, paddingRight } = body.style;
-    const gap = window.innerWidth - document.documentElement.clientWidth;
-    body.style.overflow = 'hidden';
-    if (gap > 0) body.style.paddingRight = `${gap}px`;
-    return () => {
-      body.style.overflow = overflow;
-      body.style.paddingRight = paddingRight;
-    };
-  }, []);
+  useScrollLock();
 
   // Focus moves in on open and goes back where it came from on close, which is
   // what makes the sheet usable from a keyboard and survivable with a screen

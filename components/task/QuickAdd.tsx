@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { CalendarBlank, Flag, Hash, Plus, FolderSimple } from '@phosphor-icons/react/dist/ssr';
 import { parseQuickAdd, type TokenKind } from '@/lib/parse';
-import { createTask, ensureProject, ensureTag } from '@/lib/db/mutations';
+import { quickCreate } from '@/lib/db/quick-create';
 import { PRESS_DEPTH, QUICK_FADE, SNAPPY } from '@/lib/motion';
+import { useUiStore } from '@/hooks/use-ui';
 import { cn } from '@/lib/utils';
 
 /**
@@ -42,33 +43,21 @@ export function QuickAdd({ defaults, placeholder = 'Add a task' }: QuickAddProps
   const parsed = useMemo(() => parseQuickAdd(value), [value]);
   const canSubmit = parsed.title.length > 0 && !busy;
 
+  // A shortcut asked for this field from a view that had none, so it arrived
+  // here by navigation and the flag is what survived the trip.
+  const wanted = useUiStore((state) => state.quickAddWanted);
+  const clearQuickAdd = useUiStore((state) => state.clearQuickAdd);
+  useEffect(() => {
+    if (!wanted) return;
+    inputRef.current?.focus();
+    clearQuickAdd();
+  }, [wanted, clearQuickAdd]);
+
   async function submit() {
     if (!canSubmit) return;
     setBusy(true);
     try {
-      // Tags and the project are resolved to ids first, so the task and its join
-      // rows land in one batch rather than the task appearing unfiled for a beat.
-      const tagIds = await Promise.all(parsed.tagNames.map((name) => ensureTag(name)));
-      // A typed @project wins over the view default: it is the more specific
-      // instruction, and the chip already promised it would be applied.
-      const projectId = parsed.projectName
-        ? await ensureProject(parsed.projectName)
-        : defaults?.projectId;
-
-      // A typed date wins over the view's, for the same reason a typed project
-      // does: it is the more specific instruction and the chip already showed it.
-      const dueDate = parsed.dueDate ?? defaults?.dueDate ?? null;
-
-      await createTask({
-        title: parsed.title,
-        dueDate,
-        dueTime: parsed.dueTime,
-        priority: parsed.priority,
-        plannedFor: dueDate === null ? (defaults?.plannedFor ?? null) : null,
-        ...(projectId ? { projectId } : {}),
-        tagIds,
-      });
-
+      await quickCreate(value, defaults);
       setValue('');
       // Keep focus so several tasks can be typed in a row, which is how anyone
       // actually does a brain dump.
@@ -90,6 +79,8 @@ export function QuickAdd({ defaults, placeholder = 'Add a task' }: QuickAddProps
         <Plus size={17} className="shrink-0 text-text-lo" aria-hidden />
         <input
           ref={inputRef}
+          // How a keyboard shortcut finds this field on whichever view renders it.
+          data-quick-add
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {

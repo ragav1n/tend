@@ -4,13 +4,16 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion } from 'motion/react';
-import { DotsThree } from '@phosphor-icons/react/dist/ssr';
+import { DotsThree, MagnifyingGlass } from '@phosphor-icons/react/dist/ssr';
 import { APP_NAME } from '@/lib/config';
 import { MarkTile } from '@/components/brand/Mark';
 import { MoreMenu } from '@/components/shell/MoreMenu';
 import { BAR_ITEMS, LISTS, MORE_ITEMS, SETTINGS, TOOLS, type NavItem } from '@/components/shell/nav';
+import { CHORD_FOR } from '@/components/shell/keymap';
+import { Chord } from '@/components/ui/Kbd';
 import { SOFT } from '@/lib/motion';
 import { useSidebarCounts } from '@/hooks/use-tasks';
+import { useUiStore } from '@/hooks/use-ui';
 import { cn } from '@/lib/utils';
 
 /**
@@ -66,6 +69,7 @@ function RailLink({ item, active, count }: { item: NavItem; active: boolean; cou
 export function Sidebar() {
   const pathname = usePathname();
   const counts = useSidebarCounts();
+  const openPalette = useUiStore((state) => state.openPalette);
   const [moreOpen, setMoreOpen] = useState(false);
   const moreActive = MORE_ITEMS.some((item) => item.href === pathname);
 
@@ -89,6 +93,23 @@ export function Sidebar() {
           </span>
           <p className="label mt-1 !text-[0.5625rem]">Look after what needs doing</p>
         </div>
+
+        {/* The palette's only pointer entry. It is drawn as a field because that
+            is what people click when they want to search, and the cap says the
+            shortcut once rather than hiding it in a help screen. */}
+        <button
+          type="button"
+          onClick={() => openPalette('search')}
+          className={cn(
+            'mb-4 flex items-center gap-2.5 rounded-md border border-line bg-sunken',
+            'px-3 py-2 text-left text-sm text-text-lo hover:border-line-bright hover:text-text-mid',
+          )}
+          style={{ boxShadow: 'var(--shadow-sunken)' }}
+        >
+          <MagnifyingGlass size={16} aria-hidden />
+          <span className="flex-1">Search</span>
+          <Chord chord={CHORD_FOR.get('palette') ?? 'mod+k'} />
+        </button>
 
         {LISTS.map((item) => (
           <RailLink

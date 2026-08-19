@@ -2,9 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { MagnifyingGlass } from '@phosphor-icons/react/dist/ssr';
 import { Sheet } from '@/components/ui/Sheet';
 import { MORE_ITEMS } from '@/components/shell/nav';
 import { useSidebarCounts } from '@/hooks/use-tasks';
+import { useUiStore } from '@/hooks/use-ui';
 import { cn } from '@/lib/utils';
 
 /**
@@ -17,10 +19,28 @@ import { cn } from '@/lib/utils';
 export function MoreMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
   const counts = useSidebarCounts();
+  const openPalette = useUiStore((state) => state.openPalette);
 
   return (
     <Sheet open={open} onClose={onClose} label="More views">
       <div className="pt-1">
+        {/* A phone has no ⌘K, so this is the only way to reach search there. */}
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            openPalette('search');
+          }}
+          className={cn(
+            'mb-5 flex w-full items-center gap-3 rounded-lg border border-line bg-sunken',
+            'px-3 py-3 text-left text-[0.9375rem] text-text-lo',
+          )}
+          style={{ boxShadow: 'var(--shadow-sunken)' }}
+        >
+          <MagnifyingGlass size={20} aria-hidden />
+          Search tasks
+        </button>
+
         <p className="label mb-2 px-1">Go to</p>
         <ul className="space-y-1">
           {MORE_ITEMS.map((item) => {

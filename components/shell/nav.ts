@@ -31,26 +31,29 @@ export interface NavItem {
   count?: CountKey;
   /** On the phone's bottom bar rather than behind More. */
   bar?: boolean;
+  /** The letter that follows `g` to come here. Owned by this list for the same
+   *  reason `href` is: a second list of the same shortcuts would drift. */
+  key?: string;
 }
 
 /** What is on the plate. */
 export const LISTS: NavItem[] = [
-  { href: '/today', label: 'Today', icon: Sun, count: 'today', bar: true },
-  { href: '/upcoming', label: 'Upcoming', icon: CalendarDots, count: 'upcoming', bar: true },
-  { href: '/inbox', label: 'Inbox', icon: Tray, count: 'inbox', bar: true },
-  { href: '/someday', label: 'Someday', icon: Archive },
-  { href: '/logbook', label: 'Logbook', icon: CheckCircle },
+  { href: '/today', label: 'Today', icon: Sun, count: 'today', bar: true, key: 't' },
+  { href: '/upcoming', label: 'Upcoming', icon: CalendarDots, count: 'upcoming', bar: true, key: 'u' },
+  { href: '/inbox', label: 'Inbox', icon: Tray, count: 'inbox', bar: true, key: 'i' },
+  { href: '/someday', label: 'Someday', icon: Archive, key: 's' },
+  { href: '/logbook', label: 'Logbook', icon: CheckCircle, key: 'l' },
 ];
 
 /** Ways of working through it. */
 export const TOOLS: NavItem[] = [
-  { href: '/calendar', label: 'Calendar', icon: CalendarBlank, bar: true },
-  { href: '/board', label: 'Board', icon: Kanban },
-  { href: '/focus', label: 'Focus', icon: Timer },
-  { href: '/review', label: 'Review', icon: ChartLineUp },
+  { href: '/calendar', label: 'Calendar', icon: CalendarBlank, bar: true, key: 'c' },
+  { href: '/board', label: 'Board', icon: Kanban, key: 'b' },
+  { href: '/focus', label: 'Focus', icon: Timer, key: 'f' },
+  { href: '/review', label: 'Review', icon: ChartLineUp, key: 'r' },
 ];
 
-export const SETTINGS: NavItem = { href: '/settings', label: 'Settings', icon: GearSix };
+export const SETTINGS: NavItem = { href: '/settings', label: 'Settings', icon: GearSix, key: ',' };
 
 export const ALL_ITEMS: NavItem[] = [...LISTS, ...TOOLS, SETTINGS];
 

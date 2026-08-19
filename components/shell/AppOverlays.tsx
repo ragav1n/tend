@@ -1,17 +1,21 @@
 'use client';
 
 import { Toaster } from 'sonner';
+import { CommandPalette } from '@/components/shell/CommandPalette';
+import { Hotkeys } from '@/components/shell/Hotkeys';
 import { InstallPrompt } from '@/components/shell/InstallPrompt';
 import { RecoveryNotice } from '@/components/shell/RecoveryNotice';
+import { ShortcutsOverlay } from '@/components/shell/ShortcutsOverlay';
 import { SyncBadge } from '@/components/shell/SyncBadge';
 import { UpdatePrompt } from '@/components/shell/UpdatePrompt';
 import { TaskDetailHost } from '@/components/task/TaskDetailHost';
 import { useAdoptDeviceTimezone } from '@/hooks/use-prefs';
 
 /**
- * Everything that floats above the views: the detail sheet, the sync badge
- * and toasts. The badge is what starts the sync engine, since this component
- * mounts once for the whole authenticated shell.
+ * Everything that floats above the views: the detail sheet, the command
+ * palette, the sync badge and toasts. The badge is what starts the sync engine,
+ * and Hotkeys is the app's only key listener, since this component mounts once
+ * for the whole authenticated shell.
  *
  * Sonner is re-skinned through its own CSS variables rather than by overriding
  * its classes, because the variables are the part of its API that is stable
@@ -28,7 +32,10 @@ export function AppOverlays() {
 
   return (
     <>
+      <Hotkeys />
       <TaskDetailHost />
+      <CommandPalette />
+      <ShortcutsOverlay />
       <SyncBadge />
       {/* Registers the service worker as well as prompting, so it has to mount
           above the Toaster it fires into. */}
