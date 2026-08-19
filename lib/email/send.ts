@@ -6,14 +6,16 @@ import type { RenderedEmail } from './types';
 /**
  * One send, through whichever mode this environment is in.
  *
- * The idempotency key is the delivery's dedupe_key, so a retry after a crash
- * between "Resend accepted it" and "the row said sent" returns the original
- * result rather than mailing somebody twice. That window is the whole reason the
- * key exists.
+ * The idempotency key covers the window between "Resend accepted it" and "the row
+ * says sent". A retry in there returns the original result rather than mailing
+ * somebody twice. It comes from the group's membership rather than from the
+ * delivery's dedupe_key: same ids, same frozen payloads, same bytes, so Resend
+ * replays instead of refusing the way it does when a key repeats with a changed
+ * body.
  */
 export interface Outgoing extends RenderedEmail {
   to: string;
-  /** The delivery's dedupe_key. Deterministic, which is what makes it usable. */
+  /** From `groupIdempotencyKey`. Stable for the same group, new for a new one. */
   idempotencyKey: string;
 }
 

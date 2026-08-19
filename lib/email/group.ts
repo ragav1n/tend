@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { ClaimedDelivery, EmailGroup } from './types';
 
 /**
@@ -58,4 +59,29 @@ export function groupDeliveries(claimed: ClaimedDelivery[]): EmailGroup[] {
   }
 
   return groups;
+}
+
+/**
+ * The idempotency key for one send.
+ *
+ * Derived from which deliveries are in the group, and nothing else. Two different
+ * jobs were being done by one value before this: `dedupe_key` stops a second row
+ * existing for the same user and day, and an idempotency key stops a second send
+ * of the same row. Using the first for the second broke as soon as a row was
+ * deleted and regenerated, because the key repeats while the rendered body does
+ * not, and Resend answers `invalid_idempotent_request` rather than replaying the
+ * original. The retry then fails identically until the attempts run out, so a
+ * person gets no digest at all and the row explains why in a language nobody
+ * reads.
+ *
+ * Membership is the right input because payloads are frozen at claim time: the
+ * same ids render the same bytes, so a retry after a crash still collapses into
+ * one email, while a regenerated row is a new row and gets a new send.
+ *
+ * Sorted before hashing, so the order the claim happened to return does not
+ * change the key.
+ */
+export function groupIdempotencyKey(group: EmailGroup): string {
+  const ids = group.deliveries.map((delivery) => delivery.id).sort();
+  return createHash('sha256').update(`${group.kind}:${ids.join(',')}`).digest('hex').slice(0, 48);
 }

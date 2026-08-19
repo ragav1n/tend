@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isCronRequest } from '@/lib/email/authorize';
-import { groupDeliveries } from '@/lib/email/group';
+import { groupDeliveries, groupIdempotencyKey } from '@/lib/email/group';
 import { describeMode, resolveMode } from '@/lib/email/mode';
 import { renderGroup } from '@/lib/email/render';
 import { sendEmail } from '@/lib/email/send';
@@ -50,10 +50,10 @@ async function handle(request: Request) {
       const outcome = await sendEmail({
         ...rendered,
         to: group.email,
-        // The first delivery's key stands for the group. It is deterministic, so a
-        // replay after a crash returns Resend's original result rather than a
-        // second email.
-        idempotencyKey: group.deliveries[0]!.dedupeKey,
+        // Derived from which deliveries are in this group, so a replay after a
+        // crash returns Resend's original result while a regenerated delivery is
+        // treated as the new send it is.
+        idempotencyKey: groupIdempotencyKey(group),
       });
 
       await supabase.rpc('mark_reminders_sent', {

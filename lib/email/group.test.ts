@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COALESCE_WINDOW_MS, groupDeliveries } from './group';
+import { COALESCE_WINDOW_MS, groupDeliveries, groupIdempotencyKey } from './group';
 import type { ClaimedDelivery, ReminderKind } from './types';
 
 /**
@@ -101,5 +101,31 @@ describe('everything else', () => {
       'overdue_nudge',
       'weekly_review',
     ]);
+  });
+});
+
+describe('the idempotency key', () => {
+  it('is the same for the same group, whatever order the claim returned', () => {
+    const [group] = groupDeliveries([delivery({ minutes: 0 }), delivery({ minutes: 2 })]);
+    const reversed = { ...group!, deliveries: [...group!.deliveries].reverse() };
+
+    expect(groupIdempotencyKey(group!)).toBe(groupIdempotencyKey(reversed));
+  });
+
+  it('changes when the group does', () => {
+    const [one] = groupDeliveries([delivery({ minutes: 0 })]);
+    const [two] = groupDeliveries([delivery({ minutes: 0 }), delivery({ minutes: 1 })]);
+
+    // Resend refuses a repeated key whose body changed, so a group that grew has
+    // to present a new key rather than the old one.
+    expect(groupIdempotencyKey(one!)).not.toBe(groupIdempotencyKey(two!));
+  });
+
+  it('is not the dedupe key, which repeats for the same user and day', () => {
+    const [group] = groupDeliveries([delivery({ kind: 'daily_digest' })]);
+
+    // A digest row deleted and regenerated keeps its dedupe_key and gets a new id.
+    // The send has to follow the id, or Resend rejects every attempt for 24 hours.
+    expect(groupIdempotencyKey(group!)).not.toContain(group!.deliveries[0]!.dedupeKey);
   });
 });
