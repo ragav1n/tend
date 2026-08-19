@@ -145,3 +145,13 @@ describe('peak', () => {
     ).toBe(4);
   });
 });
+
+describe('a streak read at a past date', () => {
+  it('answers what it was then, not what it is now', () => {
+    // The review screen passes the last day of the week being looked at, so
+    // March's totals are not captioned with today's streak.
+    const tasks = [done('2026-08-10'), done('2026-08-09'), done('2026-08-08')];
+    expect(streakLength(tasks, '2026-08-10')).toBe(3);
+    expect(streakLength(tasks, '2026-08-19')).toBe(0);
+  });
+});

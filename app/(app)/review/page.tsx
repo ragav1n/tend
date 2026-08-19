@@ -10,7 +10,7 @@ import { usePrefs } from '@/hooks/use-prefs';
 import { shiftDays } from '@/lib/calendar/grid';
 import { today } from '@/lib/db/queries';
 import { formatMinutes } from '@/lib/focus/timer';
-import { startOfWeek, summarize, weekBounds, weekDays } from '@/lib/stats/review';
+import { startOfWeek, streakLength, summarize, weekBounds, weekDays } from '@/lib/stats/review';
 import { cn } from '@/lib/utils';
 
 /**
@@ -85,12 +85,14 @@ export default function ReviewPage() {
     () => summarize(days, completed, sessions, todayDate),
     [days, completed, sessions, todayDate],
   );
-  const streak = useMemo(
-    () => summarize(days, forStreak, [], todayDate).streak,
-    [days, forStreak, todayDate],
-  );
-
   const thisWeek = offset === 0;
+  // A past week gets the streak as it stood at the end of it. Showing today's
+  // number beside March's totals reports something that is true and answers a
+  // question nobody asked.
+  const streak = useMemo(
+    () => streakLength(forStreak, thisWeek ? todayDate : shiftDays(start, 6)),
+    [forStreak, thisWeek, todayDate, start],
+  );
 
   return (
     <>
