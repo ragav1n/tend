@@ -128,7 +128,8 @@ export function SyncBadge() {
     <div
       className={cn(
         // Phone: floats above the bottom nav, and only when it has something
-        // worth saying. Desktop: parked at the foot of the rail.
+        // worth saying. Desktop: parked at the foot of the rail, in the row the
+        // rail reserves for it with md:pb-16.
         'safe-x pointer-events-auto fixed bottom-[4.75rem] left-1/2 z-30 -translate-x-1/2',
         'md:bottom-4 md:left-3 md:translate-x-0',
         look.loud ? 'block' : 'hidden md:block',

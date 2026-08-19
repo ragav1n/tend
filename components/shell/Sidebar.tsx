@@ -45,7 +45,11 @@ export function Sidebar() {
         'safe-bottom safe-x fixed inset-x-0 bottom-0 z-20 flex items-stretch gap-1',
         'border-t border-line bg-surface/95 px-2 py-1.5 backdrop-blur-xl',
         'md:safe-top md:inset-y-0 md:right-auto md:left-0 md:w-[232px] md:flex-col',
-        'md:items-stretch md:border-t-0 md:border-r md:bg-void/60 md:px-3 md:py-5',
+        'md:items-stretch md:border-t-0 md:border-r md:bg-void/60 md:px-3 md:pt-5',
+        // The bottom padding is a reservation, not spacing. SyncBadge is fixed at
+        // the foot of the rail and cannot know what the rail put there, so the
+        // rail keeps that row empty. Without it the badge sits on top of Settings.
+        'md:pb-16',
       )}
     >
       <div className="hidden md:mb-6 md:block md:px-2">
