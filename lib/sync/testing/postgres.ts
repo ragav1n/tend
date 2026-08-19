@@ -31,6 +31,7 @@ export const MIGRATIONS = [
   '0012_find_pg_net',
   '0013_richer_emails',
   '0014_web_push',
+  '0015_notifiable',
 ];
 
 export function migrationSql(name: string): string {

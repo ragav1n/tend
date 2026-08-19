@@ -1308,3 +1308,96 @@ describe('what a session can reach', () => {
     }
   });
 });
+
+describe('notifications when email is off', () => {
+  /**
+   * The promise 0014 makes: somebody who turns email off and turns notifications
+   * on still gets reminded. 0014 delivered half of it, at the claim, and the claim
+   * can only choose channels for a row that exists. Every enqueue decides whether
+   * a row exists at all, and all of them asked `email_enabled`, so for that person
+   * nothing was ever created and there was nothing to choose.
+   *
+   * These drive the enqueues rather than writing rows directly, which is the only
+   * way to see it. Every claim test above writes its own due rows on purpose, and
+   * that is exactly why the whole suite passed while this was broken.
+   */
+  const digest = (asOf: string) =>
+    one<{ enqueue_daily_digests: number }>(
+      'select public.enqueue_daily_digests($1::timestamptz) as enqueue_daily_digests',
+      [asOf],
+    );
+  const nudge = (asOf: string) =>
+    one<{ enqueue_overdue_nudges: number }>(
+      'select public.enqueue_overdue_nudges($1::timestamptz) as enqueue_overdue_nudges',
+      [asOf],
+    );
+  const review = (asOf: string) =>
+    one<{ enqueue_weekly_reviews: number }>(
+      'select public.enqueue_weekly_reviews($1::timestamptz) as enqueue_weekly_reviews',
+      [asOf],
+    );
+
+  it('schedules a task reminder for a subscribed device', async () => {
+    const user = await newUser({ email_enabled: false });
+    await subscribe(user);
+    const task = await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
+
+    await pg.query('select public.recompute_task_notifications($1)', [task]);
+    expect(await deliveries(user, 'task_reminder')).toHaveLength(1);
+  });
+
+  it('schedules a digest for a subscribed device', async () => {
+    const user = await newUser({ email_enabled: false, digest_time: '07:00' });
+    await subscribe(user);
+
+    await digest('2026-09-01T11:30:00Z');
+    expect(await deliveries(user, 'daily_digest')).toHaveLength(1);
+  });
+
+  it('schedules a nudge for a subscribed device', async () => {
+    const user = await newUser({ email_enabled: false, nudge_time: '06:00' });
+    await subscribe(user);
+    await newTask(user, { dueDate: '2026-08-01' });
+
+    await nudge('2026-09-01T11:30:00Z');
+    expect(await deliveries(user, 'overdue_nudge')).toHaveLength(1);
+  });
+
+  it('schedules a weekly review for a subscribed device', async () => {
+    // 2026-09-01 is a Tuesday in New York at 11:30 UTC.
+    const user = await newUser({
+      email_enabled: false,
+      weekly_review_day: 2,
+      weekly_review_time: '05:00',
+    });
+    await subscribe(user);
+
+    await review('2026-09-01T11:30:00Z');
+    expect(await deliveries(user, 'weekly_review')).toHaveLength(1);
+  });
+
+  it('schedules nothing for somebody who turned everything off', async () => {
+    // The other half of the rule. No email and no device is not a channel
+    // problem, it is somebody asking not to be told.
+    const user = await newUser({ email_enabled: false, digest_time: '07:00' });
+    const task = await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
+
+    await pg.query('select public.recompute_task_notifications($1)', [task]);
+    await digest('2026-09-01T11:30:00Z');
+    expect(await deliveries(user)).toHaveLength(0);
+  });
+
+  it('still respects the per-kind switches', async () => {
+    // email_enabled is a channel. digest_enabled is "do I want this kind at all",
+    // and a subscription is no reason to override it.
+    const user = await newUser({
+      email_enabled: false,
+      digest_enabled: false,
+      digest_time: '07:00',
+    });
+    await subscribe(user);
+
+    await digest('2026-09-01T11:30:00Z');
+    expect(await deliveries(user, 'daily_digest')).toHaveLength(0);
+  });
+});

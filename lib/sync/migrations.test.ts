@@ -46,6 +46,7 @@ describe('the migration directory', () => {
       '0012_find_pg_net.sql',
       '0013_richer_emails.sql',
       '0014_web_push.sql',
+      '0015_notifiable.sql',
     ]);
   });
 
@@ -131,6 +132,62 @@ describe('schema rules', () => {
     expect(CODE).toMatch(
       /create unique index tasks_series_occurrence_idx[\s\S]*?series_id is not null and deleted_at is null/,
     );
+  });
+});
+
+describe('what may be scheduled', () => {
+  /**
+   * The newest definition of a function, which is the only one that runs.
+   *
+   * `create or replace` has no partial form, so every fix to a pipeline function
+   * reproduces the whole body, and a later migration silently owns every rule an
+   * earlier one wrote. 0014 nearly dropped 0011's staleness check that way, and
+   * then did drop 0015's rule before it existed. Reading the last definition is
+   * the only honest way to grep these.
+   */
+  function newestDefinition(name: string): string {
+    const owner = FILES.filter((file) =>
+      SQL[file]!.includes(`create or replace function public.${name}`),
+    ).pop();
+    expect(owner, name).toBeDefined();
+    const source = code(SQL[owner!]!);
+    const start = source.indexOf(`create or replace function public.${name}`);
+    return source.slice(start, source.indexOf('\n$$;', start));
+  }
+
+  const SCHEDULERS = [
+    'recompute_task_notifications',
+    'enqueue_daily_digests',
+    'enqueue_overdue_nudges',
+    'enqueue_weekly_reviews',
+    'reconcile_notifications',
+  ];
+
+  it('asks notifiable() rather than email_enabled', () => {
+    // email_enabled was doing two jobs: whether to tell somebody, and how. A
+    // scheduler that asks it directly refuses to enqueue anything for a person
+    // who wants notifications and no mail, which is what 0015 fixed. The claim
+    // can only choose a channel for a row that already exists.
+    for (const name of SCHEDULERS) {
+      const body = newestDefinition(name);
+      expect(body, name).toContain('public.notifiable(');
+      expect(body, name).not.toContain('email_enabled');
+    }
+  });
+
+  it('keeps the per-kind switches, which a subscription must not override', () => {
+    // "Do I want a digest at all" is a different question from "how do you reach
+    // me", and notifiable() answers only the second.
+    expect(newestDefinition('enqueue_daily_digests')).toContain('digest_enabled');
+    expect(newestDefinition('enqueue_overdue_nudges')).toContain('nudge_enabled');
+    expect(newestDefinition('enqueue_weekly_reviews')).toContain('weekly_review_enabled');
+    expect(newestDefinition('recompute_task_notifications')).toContain('reminders_enabled');
+  });
+
+  it('still cancels a summary that is about a day already gone', () => {
+    // 0011's rule, in the function 0014 rewrote. Dropping it would send three
+    // days of "here is your day" the next time the route came back.
+    expect(newestDefinition('claim_reminder_batch')).toContain('too late to be true');
   });
 });
 
