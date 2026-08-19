@@ -28,6 +28,7 @@ export const MIGRATIONS = [
   '0009_reconcile_notifications',
   '0010_digest_no_repeats',
   '0011_stale_digests',
+  '0012_find_pg_net',
 ];
 
 export function migrationSql(name: string): string {

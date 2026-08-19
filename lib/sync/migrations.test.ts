@@ -43,6 +43,7 @@ describe('the migration directory', () => {
       '0009_reconcile_notifications.sql',
       '0010_digest_no_repeats.sql',
       '0011_stale_digests.sql',
+      '0012_find_pg_net.sql',
     ]);
   });
 

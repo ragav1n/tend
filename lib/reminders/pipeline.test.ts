@@ -851,6 +851,37 @@ describe('the tick', () => {
     );
     expect(beat!.detail.drained).toBe(answer.notifications_tick.drained);
   });
+
+  it('finds http_post wherever pg_net was installed', async () => {
+    // PGlite has no pg_net, so this stands in for it: a function of that name in
+    // the schema Supabase's dialog defaults to. The tick used to look only in
+    // `net`, report posted: false, and leave every digest pending in silence.
+    await pg.exec(`
+      create schema if not exists extensions;
+      create or replace function extensions.http_post(
+        url text, body jsonb default '{}', headers jsonb default '{}'
+      ) returns bigint language sql as $$
+        select 1::bigint
+      $$;
+      create schema if not exists vault;
+      create table if not exists vault.decrypted_secrets (name text, decrypted_secret text);
+      insert into vault.decrypted_secrets (name, decrypted_secret) values
+        ('tend_reminders_url', 'https://example.test/api/cron/reminders'),
+        ('tend_cron_secret', 'a-secret');
+    `);
+
+    const user = await newUser();
+    await dueDelivery(user);
+
+    const answer = await one<{ notifications_tick: { due: number; posted: boolean } }>(
+      'select public.notifications_tick() as notifications_tick',
+    );
+
+    expect(answer.notifications_tick.due).toBeGreaterThan(0);
+    expect(answer.notifications_tick.posted).toBe(true);
+
+    await pg.exec('drop schema extensions cascade; drop schema vault cascade;');
+  });
 });
 
 describe('what a session can reach', () => {

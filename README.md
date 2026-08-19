@@ -66,13 +66,22 @@ npm run lint
 The scheduling lives in Postgres and the sending lives in Vercel, so both sides need
 one-time setup. Nothing below is in the repo, because all of it is a secret.
 
-**1. Apply the migrations.** `supabase/migrations/0001` through `0011`, in order.
+**1. Apply the migrations.** `supabase/migrations/0001` through `0012`, in order.
 
 **2. Enable the extensions**, from the Supabase dashboard or SQL:
 
 ```sql
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
+```
+
+The dashboard's dialog pins `pg_cron` to `pg_catalog` and lets `pg_net` go anywhere,
+defaulting to `extensions`. Either placement works: the tick reads the schema out of
+`pg_proc` rather than assuming `net`. Check where it landed with
+
+```sql
+select n.nspname, p.proname from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace where p.proname = 'http_post';
 ```
 
 `0008` schedules `notifications_tick()` every minute and `0009` schedules the nightly repair,
