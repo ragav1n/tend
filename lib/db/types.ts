@@ -180,13 +180,32 @@ export interface TaskTag {
 export interface Prefs {
   /** Always 'me'. A singleton row, so the key is a constant. */
   id: 'me';
-  /** IANA name. Drives every local date calculation. */
+  /** IANA name. Drives every local date calculation, and every reminder instant. */
   timezone: string;
   /** ISO day of week, 1 Monday through 7 Sunday. */
   weekStart: number;
   allDayReminderTime: PlainTime;
   digestEnabled: boolean;
   digestTime: PlainTime;
+
+  /** The master switch. Off means nothing at all is emailed. */
+  emailEnabled: boolean;
+  /** Per-task reminders at the due time. */
+  remindersEnabled: boolean;
+  /** Minutes before the due instant. Positive, because that is how people say it. */
+  reminderLeadMinutes: number;
+  quietHoursEnabled: boolean;
+  quietStart: PlainTime;
+  quietEnd: PlainTime;
+  nudgeEnabled: boolean;
+  nudgeTime: PlainTime;
+  weeklyReviewEnabled: boolean;
+  weeklyReviewDay: number;
+  weeklyReviewTime: PlainTime;
+  maxReminderEmailsPerDay: number;
+  /** Server-owned in practice: bumping it revokes every unsubscribe link. */
+  emailTokenVersion: number;
+
   rowVersion: number;
   updatedAt: Instant;
 }

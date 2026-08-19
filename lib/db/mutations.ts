@@ -654,8 +654,14 @@ export async function ensureProject(name: string, db: TendDb = getDb()): Promise
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
-/** Everything a person can change. The server owns the rest. */
-export type PrefsPatch = Partial<Omit<Prefs, 'id' | 'rowVersion' | 'updatedAt'>>;
+/**
+ * Everything a person can change. The server owns the rest, and
+ * `emailTokenVersion` is on that list: it exists to revoke unsubscribe links, so
+ * a client that could set it could un-revoke its own.
+ */
+export type PrefsPatch = Partial<
+  Omit<Prefs, 'id' | 'rowVersion' | 'updatedAt' | 'emailTokenVersion'>
+>;
 
 /**
  * Changes settings, which is always an update.

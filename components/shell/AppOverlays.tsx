@@ -3,6 +3,7 @@
 import { Toaster } from 'sonner';
 import { SyncBadge } from '@/components/shell/SyncBadge';
 import { TaskDetailHost } from '@/components/task/TaskDetailHost';
+import { useAdoptDeviceTimezone } from '@/hooks/use-prefs';
 
 /**
  * Everything that floats above the views: the detail sheet, the sync badge
@@ -18,6 +19,10 @@ import { TaskDetailHost } from '@/components/task/TaskDetailHost';
  * Undo" is useless sitting behind the tab bar.
  */
 export function AppOverlays() {
+  // Mounts once for the shell, which is the right place to notice that the
+  // account is still on the server's default timezone.
+  useAdoptDeviceTimezone();
+
   return (
     <>
       <TaskDetailHost />

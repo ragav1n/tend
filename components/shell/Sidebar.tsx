@@ -3,7 +3,14 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion } from 'motion/react';
-import { Archive, CalendarDots, CheckCircle, Sun, Tray } from '@phosphor-icons/react/dist/ssr';
+import {
+  Archive,
+  CalendarDots,
+  CheckCircle,
+  GearSix,
+  Sun,
+  Tray,
+} from '@phosphor-icons/react/dist/ssr';
 import { APP_NAME } from '@/lib/config';
 import { SOFT } from '@/lib/motion';
 import { useSidebarCounts } from '@/hooks/use-tasks';
@@ -93,6 +100,35 @@ export function Sidebar() {
           </Link>
         );
       })}
+
+      {/* Pinned to the bottom of the rail, and just another item on the bar. */}
+      <Link
+        href="/settings"
+        aria-current={pathname === '/settings' ? 'page' : undefined}
+        className={cn(
+          'relative flex flex-1 flex-col items-center gap-0.5 rounded-md px-2 py-1.5',
+          'md:mt-auto md:flex-none md:flex-row md:gap-2.5 md:px-3 md:py-2',
+          pathname === '/settings' ? 'text-text-hi' : 'text-text-lo hover:text-text-mid',
+        )}
+      >
+        {pathname === '/settings' && (
+          <motion.span
+            layoutId="nav-active"
+            aria-hidden
+            className="absolute inset-0 rounded-md border border-line-bright bg-raised"
+            transition={SOFT}
+          />
+        )}
+        <GearSix
+          size={19}
+          weight={pathname === '/settings' ? 'fill' : 'regular'}
+          className={cn('relative', pathname === '/settings' && 'text-clay-300')}
+          aria-hidden
+        />
+        <span className="relative text-[0.6875rem] md:flex-1 md:text-left md:text-sm">
+          Settings
+        </span>
+      </Link>
     </nav>
   );
 }
