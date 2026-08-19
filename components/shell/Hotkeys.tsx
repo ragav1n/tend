@@ -4,6 +4,7 @@ import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { CHORD_INDEX, TYPING_SAFE, routeFor } from '@/components/shell/keymap';
 import { useHotkeys } from '@/hooks/use-hotkeys';
+import { useSelectionStore } from '@/hooks/use-selection';
 import { useUiStore } from '@/hooks/use-ui';
 
 /**
@@ -43,6 +44,9 @@ export function Hotkeys() {
           break;
         case 'new-task':
           focusQuickAdd(router);
+          break;
+        case 'select-mode':
+          useSelectionStore.getState().begin();
           break;
       }
     },

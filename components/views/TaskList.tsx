@@ -6,8 +6,10 @@ import { COMPLETED_ROW_LINGER_MS, listVariants, QUICK_FADE } from '@/lib/motion'
 import { completeTask } from '@/lib/db/mutations';
 import { today } from '@/lib/db/queries';
 import type { Task } from '@/lib/db/types';
+import { useSelectionStore } from '@/hooks/use-selection';
 import { useUiStore } from '@/hooks/use-ui';
 import { TaskRow } from '@/components/task/TaskRow';
+import { SelectionBarHost } from '@/components/views/SelectionBar';
 
 /**
  * A list of task rows with enter, exit and reorder animation.
@@ -21,6 +23,9 @@ import { TaskRow } from '@/components/task/TaskRow';
  * Entries only ever leave the linger set from the timer callback, never from an
  * effect that watches `tasks`. Syncing it in an effect would mean calling
  * setState during an effect body, which cascades renders on every query update.
+ *
+ * The list also owns selection mode, because it is the thing that knows the
+ * order rows are in, and order is what a shift-click spans.
  */
 
 interface TaskListProps {
@@ -32,6 +37,12 @@ interface TaskListProps {
 export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
   const todayDate = today();
   const openTask = useUiStore((state) => state.openTask);
+  const selecting = useSelectionStore((state) => state.active);
+  const selectedIds = useSelectionStore((state) => state.ids);
+  const beginSelect = useSelectionStore((state) => state.begin);
+  const endSelect = useSelectionStore((state) => state.end);
+  const pickRow = useSelectionStore((state) => state.pick);
+  const pruneSelection = useSelectionStore((state) => state.prune);
   const [lingering, setLingering] = useState<Task[]>([]);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
@@ -80,6 +91,18 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
     if (!shown.some((t) => t.id === row.id)) shown.push(row);
   }
 
+  const order = shown.map((task) => task.id);
+  // Joined so the dependency is a value. An array literal changes identity every
+  // render and would re-run this on each one.
+  const orderKey = order.join(',');
+  useEffect(() => {
+    pruneSelection(orderKey === '' ? [] : orderKey.split(','));
+  }, [orderKey, pruneSelection]);
+
+  // Selection mode ends with the list. Carrying it to the next view would leave
+  // an action bar over a set of rows it no longer refers to.
+  useEffect(() => endSelect, [endSelect]);
+
   if (loading) {
     return (
       <ul className="space-y-2" aria-busy>
@@ -104,6 +127,20 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
 
   return (
     <LayoutGroup>
+      {/* One row is not a selection, so the affordance only appears once there
+          is something to compare. */}
+      {shown.length > 1 && (
+        <div className="mb-2 flex justify-end">
+          <button
+            type="button"
+            onClick={selecting ? endSelect : beginSelect}
+            className="label rounded-md px-2 py-1 !text-[0.625rem] hover:text-text-mid"
+          >
+            {selecting ? 'Cancel' : 'Select'}
+          </button>
+        </div>
+      )}
+
       <motion.ul variants={listVariants} initial="hidden" animate="visible" className="space-y-2">
         <AnimatePresence mode="popLayout" initial={false}>
           {shown.map((task) => (
@@ -113,10 +150,15 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
               onToggle={handleToggle}
               onOpen={openTask}
               todayDate={todayDate}
+              selectable={selecting}
+              selected={selectedIds.has(task.id)}
+              onPick={(id, extend) => pickRow(id, order, extend)}
             />
           ))}
         </AnimatePresence>
       </motion.ul>
+
+      <SelectionBarHost order={order} />
     </LayoutGroup>
   );
 }

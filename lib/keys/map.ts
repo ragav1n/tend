@@ -12,7 +12,17 @@
  * platform string, so a Mac keyboard plugged into Linux still works.
  */
 
-export type BindingGroup = 'Go to' | 'Tasks' | 'App';
+export type BindingGroup = 'Go to' | 'Tasks' | 'App' | 'While selecting';
+
+/**
+ * Where a binding is live.
+ *
+ * `global` is bound for the life of the app. `selection` is bound by the
+ * selection bar, which only exists while rows are selected, so `Backspace` is
+ * not a app-wide delete key and ⌘A only stops meaning "select this page" while
+ * there is a list selection to grow.
+ */
+export type BindingScope = 'global' | 'selection';
 
 export interface Binding {
   /** Stable handler key. Never shown. */
@@ -21,6 +31,8 @@ export interface Binding {
   chord: string;
   label: string;
   group: BindingGroup;
+  /** Defaults to global. */
+  scope?: BindingScope;
   /**
    * Fires while a text field has focus. Off by default: someone typing "great"
    * into a title is not asking to go to the Board. Only the ones that have to
@@ -143,6 +155,39 @@ export const ACTIONS: Binding[] = [
   { id: 'search', chord: '/', label: 'Search tasks', group: 'App' },
   { id: 'shortcuts', chord: '?', label: 'Keyboard shortcuts', group: 'App' },
   { id: 'new-task', chord: 'n', label: 'New task', group: 'Tasks' },
+  { id: 'select-mode', chord: 'shift+s', label: 'Select tasks', group: 'Tasks' },
+];
+
+/** Live only while a selection exists. */
+export const SELECTION_ACTIONS: Binding[] = [
+  {
+    id: 'select-all',
+    chord: 'mod+a',
+    label: 'Select every task in the list',
+    group: 'While selecting',
+    scope: 'selection',
+  },
+  {
+    id: 'complete-selected',
+    chord: 'e',
+    label: 'Complete the selection',
+    group: 'While selecting',
+    scope: 'selection',
+  },
+  {
+    id: 'delete-selected',
+    chord: 'backspace',
+    label: 'Delete the selection',
+    group: 'While selecting',
+    scope: 'selection',
+  },
+  {
+    id: 'exit-selection',
+    chord: 'escape',
+    label: 'Stop selecting',
+    group: 'While selecting',
+    scope: 'selection',
+  },
 ];
 
 /** chord to binding id, which is the lookup the dispatcher does per key press. */
@@ -150,6 +195,11 @@ export function chordIndex(bindings: readonly Binding[]): Map<string, string> {
   const index = new Map<string, string>();
   for (const binding of bindings) index.set(binding.chord, binding.id);
   return index;
+}
+
+/** The bindings live in one scope. */
+export function inScope(bindings: readonly Binding[], scope: BindingScope): Binding[] {
+  return bindings.filter((binding) => (binding.scope ?? 'global') === scope);
 }
 
 /** Bindings that survive a focused text field, by id. */

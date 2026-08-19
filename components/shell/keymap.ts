@@ -1,4 +1,12 @@
-import { ACTIONS, chordIndex, navBindings, typingSafe, type Binding } from '@/lib/keys/map';
+import {
+  ACTIONS,
+  chordIndex,
+  inScope,
+  navBindings,
+  SELECTION_ACTIONS,
+  typingSafe,
+  type Binding,
+} from '@/lib/keys/map';
 import { ALL_ITEMS } from './nav';
 
 /**
@@ -14,9 +22,11 @@ import { ALL_ITEMS } from './nav';
 /** How a nav binding's id names its route. */
 export const NAV_PREFIX = 'nav:';
 
-export const BINDINGS: Binding[] = [...navBindings(ALL_ITEMS), ...ACTIONS];
+/** Everything, in the order the overlay lists it. */
+export const BINDINGS: Binding[] = [...navBindings(ALL_ITEMS), ...ACTIONS, ...SELECTION_ACTIONS];
 
-export const CHORD_INDEX = chordIndex(BINDINGS);
+/** Only the global ones. The selection bar binds its own while it exists. */
+export const CHORD_INDEX = chordIndex(inScope(BINDINGS, 'global'));
 export const TYPING_SAFE = typingSafe(BINDINGS);
 
 /** binding id to chord, for anything that wants to print the shortcut. */

@@ -10,6 +10,7 @@ import { SyncBadge } from '@/components/shell/SyncBadge';
 import { UpdatePrompt } from '@/components/shell/UpdatePrompt';
 import { TaskDetailHost } from '@/components/task/TaskDetailHost';
 import { useAdoptDeviceTimezone } from '@/hooks/use-prefs';
+import { useSelectionStore } from '@/hooks/use-selection';
 
 /**
  * Everything that floats above the views: the detail sheet, the command
@@ -22,13 +23,18 @@ import { useAdoptDeviceTimezone } from '@/hooks/use-prefs';
  * across versions. Toasts land on `surface`, so `text-mid` is the floor for
  * anything inside them.
  *
- * The mobile offset clears the bottom nav. A toast that reads "Task deleted,
- * Undo" is useless sitting behind the tab bar.
+ * The mobile offset clears the bottom nav, and the selection bar when that is
+ * up. A toast that reads "Task deleted, Undo" is useless sitting behind the tab
+ * bar.
  */
 export function AppOverlays() {
   // Mounts once for the shell, which is the right place to notice that the
   // account is still on the server's default timezone.
   useAdoptDeviceTimezone();
+  // The selection bar owns the bottom edge while it is up, and it is the thing
+  // that raises most of these toasts. A toast sitting on the button that fired
+  // it hides the next four.
+  const selecting = useSelectionStore((state) => state.active);
 
   return (
     <>
@@ -50,8 +56,8 @@ export function AppOverlays() {
         // be readable to be answered: "install this" and "a new version is
         // ready" can arrive together, and the second must not bury the first.
         expand
-        offset={{ bottom: '24px' }}
-        mobileOffset={{ bottom: '96px', left: '16px', right: '16px' }}
+        offset={{ bottom: selecting ? '88px' : '24px' }}
+        mobileOffset={{ bottom: selecting ? '152px' : '96px', left: '16px', right: '16px' }}
         style={
           {
             // Sonner ships z-index 999999999, which puts a toast on top of an

@@ -1,8 +1,8 @@
 'use client';
 
 import { motion, useReducedMotion } from 'motion/react';
-import { CalendarBlank, Flag, WarningCircle } from '@phosphor-icons/react/dist/ssr';
-import { PRESS_DEPTH, ROW, STRIKE, rowVariants } from '@/lib/motion';
+import { Check, CalendarBlank, Flag, WarningCircle } from '@phosphor-icons/react/dist/ssr';
+import { PRESS_DEPTH, ROW, SNAPPY, STRIKE, rowVariants } from '@/lib/motion';
 import { formatClock, formatDueLabel } from '@/lib/format/date';
 import { today } from '@/lib/db/queries';
 import { NO_DUE_DAY, type Task } from '@/lib/db/types';
@@ -25,6 +25,12 @@ interface TaskRowProps {
   onOpen?: (id: string) => void;
   /** Today, passed in so a long list computes it once instead of per row. */
   todayDate?: string;
+  /** The list is in selection mode, so the row offers a checkbox and its body
+   *  picks rather than opens. */
+  selectable?: boolean;
+  selected?: boolean;
+  /** `extend` is the shift key, which grows a run from the last plain pick. */
+  onPick?: (id: string, extend: boolean) => void;
 }
 
 const PRIORITY_LABEL: Record<number, string> = {
@@ -33,7 +39,15 @@ const PRIORITY_LABEL: Record<number, string> = {
   3: 'High priority',
 };
 
-export function TaskRow({ task, onToggle, onOpen, todayDate = today() }: TaskRowProps) {
+export function TaskRow({
+  task,
+  onToggle,
+  onOpen,
+  todayDate = today(),
+  selectable = false,
+  selected = false,
+  onPick,
+}: TaskRowProps) {
   const reduced = useReducedMotion();
   const done = task._done === 1;
   const overdue = !done && task._dueDay !== NO_DUE_DAY && task._dueDay < todayDate;
@@ -51,13 +65,38 @@ export function TaskRow({ task, onToggle, onOpen, todayDate = today() }: TaskRow
     >
       <motion.div
         className={cn(
-          'group flex items-start gap-3 rounded-lg border border-line bg-surface',
-          'px-3.5 py-3 text-left',
+          'group flex items-start gap-3 rounded-lg border bg-surface px-3.5 py-3 text-left',
+          selected ? 'border-clay-400' : 'border-line',
         )}
         style={{ boxShadow: 'var(--shadow-flush)' }}
         whileTap={reduced ? undefined : { y: 1 }}
         transition={PRESS_DEPTH}
       >
+        {selectable && (
+          <motion.div
+            className="pt-0.5"
+            initial={reduced ? false : { opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={SNAPPY}
+          >
+            <button
+              type="button"
+              role="checkbox"
+              aria-checked={selected}
+              aria-label={`Select ${task.title}`}
+              onClick={(event) => onPick?.(task.id, event.shiftKey)}
+              className={cn(
+                'grid size-[22px] place-items-center rounded-[6px] border',
+                selected
+                  ? 'border-clay-400 bg-clay-600 text-text-hi'
+                  : 'border-line-strong text-transparent hover:border-clay-400',
+              )}
+            >
+              <Check size={13} weight="bold" aria-hidden />
+            </button>
+          </motion.div>
+        )}
+
         <div className="pt-0.5">
           {/* The one element shared with the detail panel. The check is the
               right choice for it because it is the same 22px box in both
@@ -73,7 +112,11 @@ export function TaskRow({ task, onToggle, onOpen, todayDate = today() }: TaskRow
 
         <button
           type="button"
-          onClick={() => onOpen?.(task.id)}
+          // In selection mode the whole row picks. Leaving the body as "open"
+          // would make the checkbox the only target, which is a 22px box.
+          onClick={(event) =>
+            selectable ? onPick?.(task.id, event.shiftKey) : onOpen?.(task.id)
+          }
           className="min-w-0 flex-1 text-left"
         >
           <span className="relative inline-block max-w-full align-top">
