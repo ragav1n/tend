@@ -65,7 +65,9 @@ describe('the single write API', () => {
     const row = await db.tasks.get(id);
     expect(row?.title).toBe('Buy oat milk');
 
-    const outbox = await db.outbox.toArray();
+    // The activity entry rides in the same transaction, so the outbox holds
+    // two records. Only the task one is what this test is about.
+    const outbox = (await db.outbox.toArray()).filter((r) => r.table === 'tasks');
     expect(outbox).toHaveLength(1);
     expect(outbox[0]).toMatchObject({
       table: 'tasks',
@@ -252,9 +254,14 @@ describe('tags', () => {
     const id = await createTask({ title: 'Draft the deck', tagIds: [work] }, db);
 
     const records = await db.outbox.toArray();
-    const batchIds = new Set(records.map((r) => r.batchId));
+    // The activity entry is deliberately outside the batch: it carries no
+    // foreign key, so nothing about it has to land in the same transaction.
+    const batchIds = new Set(
+      records.filter((r) => r.table !== 'activityLog').map((r) => r.batchId),
+    );
     expect(batchIds.size).toBe(1);
     expect([...batchIds][0]).not.toBeNull();
+    expect(records.find((r) => r.table === 'activityLog')?.batchId).toBeNull();
 
     // The join row depends on the task existing server-side first.
     const join = records.find((r) => r.table === 'taskTags');

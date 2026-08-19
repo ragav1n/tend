@@ -422,9 +422,10 @@ describe('a partition', () => {
     await expect(cycle(b)).rejects.toThrow(/fetch failed/);
 
     // An unreachable server is the normal case for this app, so the work waits
-    // rather than being retired.
+    // rather than being retired. Four records: the create, the edit, and the
+    // activity entry each of them wrote.
     expect(await deadCount(b.db)).toBe(0);
-    expect(await pendingCount(b.db)).toBe(2);
+    expect(await pendingCount(b.db)).toBe(4);
 
     // A keeps working and cannot see what B has not sent.
     await updateTask(shared, { notes: 'ask for a 3pm slot' }, a.db);
@@ -455,9 +456,10 @@ describe('duplicate delivery', () => {
     a.loseResponses = false;
 
     // The row is in Postgres and the device still has the mutation queued, which
-    // is the exact state a dropped ack leaves behind.
+    // is the exact state a dropped ack leaves behind. Two records: the task and
+    // its activity entry.
     expect(await serverTasks()).toHaveLength(1);
-    expect(await pendingCount(a.db)).toBe(1);
+    expect(await pendingCount(a.db)).toBe(2);
 
     await afterBackoff(() => cycle(a));
 

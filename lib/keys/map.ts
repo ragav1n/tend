@@ -156,6 +156,9 @@ export const ACTIONS: Binding[] = [
   { id: 'shortcuts', chord: '?', label: 'Keyboard shortcuts', group: 'App' },
   { id: 'new-task', chord: 'n', label: 'New task', group: 'Tasks' },
   { id: 'select-mode', chord: 'shift+s', label: 'Select tasks', group: 'Tasks' },
+  // Not whileTyping. Inside a field ⌘Z belongs to the field, and taking it
+  // would mean a mistyped title could only be fixed by retyping it.
+  { id: 'undo', chord: 'mod+z', label: 'Undo the last change', group: 'Tasks' },
 ];
 
 /** Live only while a selection exists. */

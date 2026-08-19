@@ -3,6 +3,7 @@ import { APP_DB_PREFIX } from '@/lib/config';
 import { openWithRecovery, type OpenOutcome } from './recovery';
 import { defineSchema } from './schema';
 import type {
+  ActivityEntry,
   FocusSession,
   OutboxRecord,
   Prefs,
@@ -50,6 +51,7 @@ export class TendDb extends Dexie {
   taskTags!: Table<TaskTag, [string, string]>;
   taskSeries!: EntityTable<TaskSeries, 'id'>;
   focusSessions!: EntityTable<FocusSession, 'id'>;
+  activityLog!: EntityTable<ActivityEntry, 'id'>;
   prefs!: EntityTable<Prefs, 'id'>;
   /** Auto-incrementing seq, so the key type is a number. */
   outbox!: Table<OutboxRecord, number>;

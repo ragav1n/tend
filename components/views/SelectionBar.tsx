@@ -10,7 +10,7 @@ import {
   Trash,
   X,
 } from '@phosphor-icons/react/dist/ssr';
-import { completeMany, deleteMany, patchMany, restoreMany } from '@/lib/db/bulk';
+import { completeTasks, deleteTasks, restoreTasks, updateTasks } from '@/lib/db/mutations';
 import { addDays, today } from '@/lib/db/queries';
 import { NO_PROJECT } from '@/lib/db/types';
 import { chordIndex, inScope, SELECTION_ACTIONS, typingSafe } from '@/lib/keys/map';
@@ -94,7 +94,7 @@ export function SelectionBar({ order }: { order: readonly string[] }) {
   const picked = [...ids];
   const count = picked.length;
 
-  function run(work: Promise<void>, done: string) {
+  function run(work: Promise<unknown>, done: string) {
     void work.then(() => toast(done));
     clear();
   }
@@ -102,9 +102,9 @@ export function SelectionBar({ order }: { order: readonly string[] }) {
   function remove() {
     const doomed = picked;
     clear();
-    void deleteMany(doomed).then(() =>
+    void deleteTasks(doomed).then(() =>
       toast(`${doomed.length} ${doomed.length === 1 ? 'task' : 'tasks'} deleted`, {
-        action: { label: 'Undo', onClick: () => void restoreMany(doomed) },
+        action: { label: 'Undo', onClick: () => void restoreTasks(doomed) },
       }),
     );
   }
@@ -114,7 +114,7 @@ export function SelectionBar({ order }: { order: readonly string[] }) {
     // Clearing the date takes the time with it. A task due at 09:00 on no day
     // is not a state the rest of the app has a meaning for.
     run(
-      patchMany(picked, dueDate === null ? { dueDate: null, dueTime: null } : { dueDate }),
+      updateTasks(picked, dueDate === null ? { dueDate: null, dueTime: null } : { dueDate }),
       dueDate === null ? 'Dates cleared' : `Moved to ${dueDate}`,
     );
   }
@@ -125,7 +125,7 @@ export function SelectionBar({ order }: { order: readonly string[] }) {
         selectAll(order);
         break;
       case 'complete-selected':
-        if (count > 0) run(completeMany(picked), `${count} completed`);
+        if (count > 0) run(completeTasks(picked), `${count} completed`);
         break;
       case 'delete-selected':
         if (count > 0) remove();
@@ -159,7 +159,7 @@ export function SelectionBar({ order }: { order: readonly string[] }) {
             <BarButton
               label="Complete"
               icon={CheckCircle}
-              onClick={() => count > 0 && run(completeMany(picked), `${count} completed`)}
+              onClick={() => count > 0 && run(completeTasks(picked), `${count} completed`)}
             />
             <BarButton label="Schedule" icon={CalendarBlank} onClick={() => setSheet('schedule')} />
             <BarButton label="Move" icon={FolderSimple} onClick={() => setSheet('project')} />
@@ -206,7 +206,7 @@ export function SelectionBar({ order }: { order: readonly string[] }) {
             label="Inbox"
             onClick={() => {
               setSheet(null);
-              run(patchMany(picked, { projectId: NO_PROJECT }), 'Moved to Inbox');
+              run(updateTasks(picked, { projectId: NO_PROJECT }), 'Moved to Inbox');
             }}
           />
           {projects.map((project) => (
@@ -215,7 +215,7 @@ export function SelectionBar({ order }: { order: readonly string[] }) {
               label={project.name}
               onClick={() => {
                 setSheet(null);
-                run(patchMany(picked, { projectId: project.id }), `Moved to ${project.name}`);
+                run(updateTasks(picked, { projectId: project.id }), `Moved to ${project.name}`);
               }}
             />
           ))}

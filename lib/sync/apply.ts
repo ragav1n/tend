@@ -1,5 +1,6 @@
 import type { TendDb } from '@/lib/db/client';
 import {
+  deriveActivity,
   deriveFocusSession,
   deriveProject,
   deriveSeries,
@@ -8,6 +9,7 @@ import {
 } from '@/lib/db/derive';
 import { DEFAULT_PREFS, PREFS_ID } from '@/lib/db/prefs';
 import type {
+  ActivityEntry,
   EntityTable,
   FocusSession,
   Prefs,
@@ -247,6 +249,34 @@ async function applyPrefs(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
   return result;
 }
 
+async function applyActivity(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
+  const result: ApplyResult = { applied: 0, skipped: 0 };
+  const ids = rows.map((r) => String(r.row.id));
+  const current = new Map(
+    (await db.activityLog.bulkGet(ids))
+      .filter((entry): entry is ActivityEntry => entry !== undefined)
+      .map((entry) => [entry.id, entry]),
+  );
+
+  const puts: ActivityEntry[] = [];
+  for (const { row } of rows) {
+    const id = String(row.id);
+    if (isStale(Number(row.row_version ?? 0), current.get(id)?.rowVersion)) {
+      result.skipped += 1;
+      continue;
+    }
+    const base = {
+      ...(current.get(id) ?? {}),
+      ...wireToLocal('activity_log', row),
+    } as ActivityEntry;
+    puts.push({ ...base, ...deriveActivity(base) });
+    result.applied += 1;
+  }
+
+  if (puts.length > 0) await db.activityLog.bulkPut(puts);
+  return result;
+}
+
 const APPLIERS: Partial<
   Record<WireTable, (db: TendDb, rows: PullRow[]) => Promise<ApplyResult>>
 > = {
@@ -255,6 +285,7 @@ const APPLIERS: Partial<
   tags: applyTags,
   task_series: applySeries,
   focus_sessions: applyFocusSessions,
+  activity_log: applyActivity,
   user_settings: applyPrefs,
 };
 

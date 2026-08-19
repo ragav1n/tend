@@ -34,6 +34,7 @@ export const MIGRATIONS = [
   '0015_notifiable',
   '0016_focus_sessions',
   '0017_missing_parent',
+  '0018_activity_log',
 ];
 
 export function migrationSql(name: string): string {

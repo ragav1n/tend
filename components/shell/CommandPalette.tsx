@@ -4,10 +4,18 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { Command } from 'cmdk';
+import { toast } from 'sonner';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { Icon } from '@phosphor-icons/react';
-import { ArrowRight, Keyboard, MagnifyingGlass, Plus } from '@phosphor-icons/react/dist/ssr';
+import {
+  ArrowCounterClockwise,
+  ArrowRight,
+  Keyboard,
+  MagnifyingGlass,
+  Plus,
+} from '@phosphor-icons/react/dist/ssr';
 import { quickCreate } from '@/lib/db/quick-create';
+import { undoLast } from '@/lib/db/undo';
 import { today } from '@/lib/db/queries';
 import { NO_DUE_DAY } from '@/lib/db/types';
 import { formatDueLabel } from '@/lib/format/date';
@@ -108,6 +116,14 @@ function Palette({ mode, onClose }: { mode: PaletteMode; onClose: () => void }) 
       chord: CHORD_FOR.get(`nav:${item.href}`),
       run: () => router.push(item.href),
     }));
+    rows.push({
+      id: 'undo',
+      label: 'Undo the last change',
+      icon: ArrowCounterClockwise,
+      chord: CHORD_FOR.get('undo'),
+      // A phone has no ⌘Z, so the palette is where undo lives there.
+      run: () => void undoLast().then((took) => toast(took ? `Undid: ${took}` : 'Nothing to undo')),
+    });
     rows.push({
       id: 'shortcuts',
       label: 'Keyboard shortcuts',

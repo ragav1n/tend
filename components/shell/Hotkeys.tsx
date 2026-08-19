@@ -2,6 +2,8 @@
 
 import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import { undoLast } from '@/lib/db/undo';
 import { CHORD_INDEX, TYPING_SAFE, routeFor } from '@/components/shell/keymap';
 import { useHotkeys } from '@/hooks/use-hotkeys';
 import { useSelectionStore } from '@/hooks/use-selection';
@@ -47,6 +49,11 @@ export function Hotkeys() {
           break;
         case 'select-mode':
           useSelectionStore.getState().begin();
+          break;
+        case 'undo':
+          void undoLast().then((took) =>
+            toast(took ? `Undid: ${took}` : 'Nothing to undo'),
+          );
           break;
       }
     },

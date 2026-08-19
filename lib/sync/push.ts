@@ -71,6 +71,9 @@ export async function pushOnce(db: TendDb): Promise<PushOutcome> {
 
   let merged = 0;
   let discarded = 0;
+  /** Rows the server will never accept. Retired rather than acked, so the badge
+   *  can say something is stranded instead of reporting a clean sync. */
+  const refused: number[] = [];
 
   for (const result of response.results) {
     // The local entityId, not the one that went out. task_tags sends its task id
@@ -97,10 +100,24 @@ export async function pushOnce(db: TendDb): Promise<PushOutcome> {
     if (lostTheRace && record) {
       await discardLocal(db, record.table, record.entityId);
       discarded += 1;
+      continue;
     }
+
+    // A constraint this row breaks. Sending it again gets the same answer, so
+    // it goes to the deadletter with everything else that cannot be sent. The
+    // local row stays: nothing a person did disappears off their own device.
+    if (result.status === 'rejected' && record?.seq !== undefined) refused.push(record.seq);
   }
 
-  await ackBatch(db, seqs);
+  if (refused.length > 0) {
+    await failBatch(db, refused, {
+      kind: 'fatal',
+      code: 'rejected',
+      message: 'the server refused this row',
+    });
+  }
+
+  await ackBatch(db, seqs.filter((seq) => !refused.includes(seq)));
 
   // A full batch probably means more is waiting. Asking the queue directly
   // would be a second read for an answer the batch size already implies.

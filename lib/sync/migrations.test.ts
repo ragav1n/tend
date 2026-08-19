@@ -49,6 +49,7 @@ describe('the migration directory', () => {
       '0015_notifiable.sql',
       '0016_focus_sessions.sql',
       '0017_missing_parent.sql',
+      '0018_activity_log.sql',
     ]);
   });
 

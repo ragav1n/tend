@@ -126,11 +126,13 @@ describe('claiming', () => {
     const id = await createTask({ title: 'Buy oat milk' }, db);
     await updateTask(id, { title: 'Buy soy milk' }, db);
 
+    // Four records, not two: each of those gestures also queues its activity
+    // entry, which syncs like anything else.
     const { seqs } = await claimBatch(db);
-    expect(seqs).toHaveLength(2);
+    expect(seqs).toHaveLength(4);
 
     const states = (await db.outbox.toArray()).map((r) => r.state);
-    expect(states).toEqual(['inflight', 'inflight']);
+    expect(states).toEqual(['inflight', 'inflight', 'inflight', 'inflight']);
   });
 
   it('skips records still waiting out a backoff', async () => {
@@ -234,13 +236,14 @@ describe('recovering from a tab that died mid-push', () => {
 
 describe('counts', () => {
   it('counts everything not yet settled', async () => {
+    // Two tasks and the two activity entries that record them.
     await createTask({ title: 'a' }, db);
     await createTask({ title: 'b' }, db);
-    expect(await pendingCount(db)).toBe(2);
+    expect(await pendingCount(db)).toBe(4);
 
     const { seqs } = await claimBatch(db);
     // Still unsettled while inflight, which is what the badge should show.
-    expect(await pendingCount(db)).toBe(2);
+    expect(await pendingCount(db)).toBe(4);
 
     await ackBatch(db, seqs);
     expect(await pendingCount(db)).toBe(0);

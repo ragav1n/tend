@@ -6,6 +6,7 @@ import {
 } from '@/lib/recurrence';
 import { getDb, LOCAL_USER_ID, type TendDb } from './client';
 import {
+  deriveActivity,
   deriveFocusSession,
   deriveProject,
   deriveSeries,
@@ -22,6 +23,8 @@ import {
   NO_DUE_DAY,
   NO_PARENT,
   NO_PROJECT,
+  type ActivityAction,
+  type ActivityEntry,
   type EntityTable,
   type FocusSession,
   type MutationOp,
@@ -109,6 +112,7 @@ const NOT_CLIENT_WRITABLE = new Set([
   '_tagIds',
   '_words',
   '_archived',
+  '_undone',
   'updatedAt',
   'rowVersion',
   'completedAt',
@@ -156,6 +160,114 @@ function endRank(existing: readonly string[]): string {
   return rankAfter(last ?? null);
 }
 
+// ─── The activity log ─────────────────────────────────────────────────────────
+// Undo is a forward mutation, not a server-side revert: it writes the old values
+// back through the same outbox every other edit uses. A revert that skipped the
+// outbox would be invisible to every other device, which for a protocol built on
+// last-writer-wins per field means the change would come straight back on the
+// next pull.
+
+/** Tables every logged task mutation touches. Named once so the transaction
+ *  lists cannot drift apart, which in Dexie fails at runtime and only for the
+ *  path that was missed. */
+const TASK_TABLES = (db: TendDb) => [db.tasks, db.taskTags, db.outbox, db.activityLog];
+
+interface LogInput {
+  action: ActivityAction;
+  entityId: string;
+  /** One user gesture. A single edit is a group of one. */
+  group: string;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+  summary: string;
+}
+
+/** Writes one entry. Called inside the caller's transaction, never on its own,
+ *  so "changed but not recorded" is impossible the same way "changed but not
+ *  queued" is. */
+async function logActivity(db: TendDb, input: LogInput): Promise<void> {
+  const base = {
+    id: newId(),
+    userId: LOCAL_USER_ID,
+    action: input.action,
+    entityTable: 'tasks' as const,
+    entityId: input.entityId,
+    groupId: input.group,
+    before: input.before ?? {},
+    after: input.after ?? {},
+    summary: input.summary,
+    undoneAt: null,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    deletedAt: null,
+    rowVersion: 0,
+  };
+
+  const row: ActivityEntry = { ...base, ...deriveActivity(base) };
+  await db.activityLog.add(row);
+  await db.outbox.add(
+    outboxRecord('activityLog', row.id, 'insert', toInsertPatch(row), 0),
+  );
+}
+
+/** What a toast says it took back. */
+function summarize(action: ActivityAction, title: string): string {
+  const verb: Record<ActivityAction, string> = {
+    create: 'Added',
+    update: 'Edited',
+    complete: 'Completed',
+    reopen: 'Reopened',
+    delete: 'Deleted',
+    restore: 'Restored',
+  };
+  return `${verb[action]} "${title}"`;
+}
+
+/** The fields a patch is about to overwrite, as they stand. */
+function previousValues(row: Task, patch: TaskPatch): Record<string, unknown> {
+  const before: Record<string, unknown> = {};
+  for (const key of Object.keys(patch)) {
+    before[key] = (row as unknown as Record<string, unknown>)[key];
+  }
+  return before;
+}
+
+/**
+ * The write half of `updateTask`, with no entry of its own.
+ *
+ * Undo and `completeTask` both need to move fields without that move becoming
+ * new history: undo already has an entry to mark, and a completion is a
+ * completion rather than an edit to `status`.
+ *
+ * Returns the row as it was, or null when there was nothing to change.
+ */
+async function writeTaskPatch(
+  id: string,
+  patch: TaskPatch,
+  db: TendDb,
+): Promise<Task | null> {
+  const current = await db.tasks.get(id);
+  if (!current) return null;
+
+  const next = { ...current, ...patch, updatedAt: nowIso() };
+
+  // completedAt is server-derived, but the optimistic row still needs a value
+  // so the UI can show "done 2 minutes ago" before the next pull lands.
+  if (patch.status !== undefined && patch.status !== current.status) {
+    next.completedAt = patch.status === 'done' ? nowIso() : null;
+  }
+  if (patch.parentTaskId !== undefined) {
+    next.depth = patch.parentTaskId === NO_PARENT ? 0 : 1;
+  }
+
+  const tagIds = (await db.taskTags.where('taskId').equals(id).toArray()).map((t) => t.tagId);
+  const row: Task = { ...next, ...deriveTask(next, tagIds) };
+  await db.tasks.put(row);
+
+  await db.outbox.add(outboxRecord('tasks', id, 'update', { ...patch }, current.rowVersion));
+  return current;
+}
+
 // ─── Tasks ────────────────────────────────────────────────────────────────────
 
 export async function createTask(input: NewTaskInput, db: TendDb = getDb()): Promise<string> {
@@ -164,7 +276,7 @@ export async function createTask(input: NewTaskInput, db: TendDb = getDb()): Pro
   const tagIds = input.tagIds ?? [];
   const batchId = tagIds.length > 0 ? newBatchId() : null;
 
-  await db.transaction('rw', [db.tasks, db.taskTags, db.outbox], async () => {
+  await db.transaction('rw', TASK_TABLES(db), async () => {
     // Rank against the list the task is actually joining, so a new subtask lands
     // at the end of its parent's children rather than the end of the project.
     const siblings =
@@ -233,6 +345,14 @@ export async function createTask(input: NewTaskInput, db: TendDb = getDb()): Pro
         }),
       );
     }
+
+    await logActivity(db, {
+      action: 'create',
+      entityId: id,
+      group: newId(),
+      after: { title: input.title },
+      summary: summarize('create', input.title),
+    });
   });
 
   return id;
@@ -243,26 +363,37 @@ export async function updateTask(
   patch: TaskPatch,
   db: TendDb = getDb(),
 ): Promise<void> {
-  await db.transaction('rw', [db.tasks, db.taskTags, db.outbox], async () => {
-    const current = await db.tasks.get(id);
-    if (!current) return;
+  await updateTasks([id], patch, db);
+}
 
-    const next = { ...current, ...patch, updatedAt: nowIso() };
+/**
+ * The same patch across several tasks, as one undo step.
+ *
+ * Each task still gets its own outbox record. A bulk edit that pushed as one
+ * unit would strand nineteen good writes behind one bad row, which is the
+ * failure 0017 was written to stop.
+ */
+export async function updateTasks(
+  ids: readonly string[],
+  patch: TaskPatch,
+  db: TendDb = getDb(),
+): Promise<void> {
+  const group = newId();
 
-    // completedAt is server-derived, but the optimistic row still needs a value
-    // so the UI can show "done 2 minutes ago" before the next pull lands.
-    if (patch.status !== undefined && patch.status !== current.status) {
-      next.completedAt = patch.status === 'done' ? nowIso() : null;
+  await db.transaction('rw', TASK_TABLES(db), async () => {
+    for (const id of ids) {
+      const before = await writeTaskPatch(id, patch, db);
+      if (!before) continue;
+
+      await logActivity(db, {
+        action: 'update',
+        entityId: id,
+        group,
+        before: previousValues(before, patch),
+        after: { ...patch },
+        summary: summarize('update', before.title),
+      });
     }
-    if (patch.parentTaskId !== undefined) {
-      next.depth = patch.parentTaskId === NO_PARENT ? 0 : 1;
-    }
-
-    const tagIds = (await db.taskTags.where('taskId').equals(id).toArray()).map((t) => t.tagId);
-    const row: Task = { ...next, ...deriveTask(next, tagIds) };
-    await db.tasks.put(row);
-
-    await db.outbox.add(outboxRecord('tasks', id, 'update', { ...patch }, current.rowVersion));
   });
 }
 
@@ -280,18 +411,48 @@ export async function completeTask(
   done = true,
   db: TendDb = getDb(),
 ): Promise<string | null> {
-  let created: string | null = null;
+  const created = await completeTasks([id], done, db);
+  return created[id] ?? null;
+}
 
-  await db.transaction('rw', [db.tasks, db.taskTags, db.taskSeries, db.outbox], async () => {
-    // Read before the write, so the clone copies the status the task had rather
-    // than the 'done' it is about to get.
-    const before = await db.tasks.get(id);
-    if (!before) return;
+/**
+ * Several completions as one undo step.
+ *
+ * Returns the occurrence each recurring task spawned, keyed by the task that
+ * spawned it, because undoing a completion has to take the next occurrence back
+ * with it. A recurring task reopened while its successor survives leaves two
+ * open occurrences of a series that promises exactly one.
+ */
+export async function completeTasks(
+  ids: readonly string[],
+  done = true,
+  db: TendDb = getDb(),
+): Promise<Record<string, string>> {
+  const created: Record<string, string> = {};
+  const group = newId();
 
-    await updateTask(id, { status: done ? 'done' : 'active' }, db);
-    if (!done || before.seriesId === '') return;
+  await db.transaction('rw', [...TASK_TABLES(db), db.taskSeries], async () => {
+    for (const id of ids) {
+      // Read before the write, so the clone copies the status the task had
+      // rather than the 'done' it is about to get.
+      const before = await db.tasks.get(id);
+      if (!before) continue;
 
-    created = await materializeNext(before, db);
+      const status: TaskStatus = done ? 'done' : 'active';
+      if (!(await writeTaskPatch(id, { status }, db))) continue;
+
+      const spawned = done && before.seriesId !== '' ? await materializeNext(before, db) : null;
+      if (spawned) created[id] = spawned;
+
+      await logActivity(db, {
+        action: done ? 'complete' : 'reopen',
+        entityId: id,
+        group,
+        before: { status: before.status },
+        after: spawned ? { status, spawnedId: spawned } : { status },
+        summary: summarize(done ? 'complete' : 'reopen', before.title),
+      });
+    }
   });
 
   return created;
@@ -400,9 +561,34 @@ async function materializeNext(completed: Task, db: TendDb): Promise<string | nu
 
 /** Soft delete. The row keeps its content so restore is just another field write. */
 export async function deleteTask(id: string, db: TendDb = getDb()): Promise<void> {
-  await db.transaction('rw', [db.tasks, db.taskTags, db.outbox], async () => {
+  await deleteTasks([id], db);
+}
+
+/** Several deletes as one undo step. */
+export async function deleteTasks(
+  ids: readonly string[],
+  db: TendDb = getDb(),
+): Promise<void> {
+  const group = newId();
+  await db.transaction('rw', TASK_TABLES(db), async () => {
+    for (const id of ids) {
+      const current = await writeDelete(id, db);
+      if (!current) continue;
+      await logActivity(db, {
+        action: 'delete',
+        entityId: id,
+        group,
+        summary: summarize('delete', current.title),
+      });
+    }
+  });
+}
+
+/** The write half of a delete, with no entry of its own. */
+async function writeDelete(id: string, db: TendDb): Promise<Task | null> {
+  {
     const current = await db.tasks.get(id);
-    if (!current) return;
+    if (!current) return null;
 
     const deletedAt = nowIso();
     const tagIds = (await db.taskTags.where('taskId').equals(id).toArray()).map((t) => t.tagId);
@@ -425,7 +611,9 @@ export async function deleteTask(id: string, db: TendDb = getDb()): Promise<void
       await db.tasks.put({ ...next, ...deriveTask(next, childTagIds) });
       await db.outbox.add(outboxRecord('tasks', row.id, 'delete', { deletedAt }, row.rowVersion));
     }
-  });
+
+    return current;
+  }
 }
 
 /**
@@ -437,9 +625,34 @@ export async function deleteTask(id: string, db: TendDb = getDb()): Promise<void
  * no undo at all.
  */
 export async function restoreTask(id: string, db: TendDb = getDb()): Promise<void> {
-  await db.transaction('rw', [db.tasks, db.taskTags, db.outbox], async () => {
+  await restoreTasks([id], db);
+}
+
+/** Several restores as one undo step. */
+export async function restoreTasks(
+  ids: readonly string[],
+  db: TendDb = getDb(),
+): Promise<void> {
+  const group = newId();
+  await db.transaction('rw', TASK_TABLES(db), async () => {
+    for (const id of ids) {
+      const current = await writeRestore(id, db);
+      if (!current) continue;
+      await logActivity(db, {
+        action: 'restore',
+        entityId: id,
+        group,
+        summary: summarize('restore', current.title),
+      });
+    }
+  });
+}
+
+/** The write half of a restore, with no entry of its own. */
+async function writeRestore(id: string, db: TendDb): Promise<Task | null> {
+  {
     const current = await db.tasks.get(id);
-    if (!current) return;
+    if (!current) return null;
 
     const children = (await db.tasks.where('parentTaskId').equals(id).toArray()).filter(
       (t) => t.deletedAt !== null && t.deletedAt === current.deletedAt,
@@ -453,6 +666,64 @@ export async function restoreTask(id: string, db: TendDb = getDb()): Promise<voi
       await db.tasks.put({ ...next, ...deriveTask(next, tagIds) });
       await db.outbox.add(
         outboxRecord('tasks', row.id, 'undelete', { deletedAt: null }, row.rowVersion),
+      );
+    }
+
+    return current;
+  }
+}
+
+/**
+ * Puts a group of entries back the way they were.
+ *
+ * The reversal writes go through the same unlogged helpers `updateTask` and
+ * `deleteTask` use, so every device sees them as ordinary edits. They record no
+ * new history of their own: the entry gets `undoneAt` instead, which is both
+ * what makes the stack skip it next time and an honest account of what
+ * happened. A reversal logged as a fresh change would make the next undo redo
+ * it, and a stack that alternates is not an undo stack.
+ *
+ * Entries are reversed newest first, because a group can contain two writes to
+ * one field and only the oldest `before` is the value to land on. The order
+ * comes from the id rather than `createdAt`: ids are UUIDv7, which is monotonic
+ * inside a millisecond, and a bulk edit writes its whole group inside one.
+ */
+export async function revertActivity(
+  entries: readonly ActivityEntry[],
+  db: TendDb = getDb(),
+): Promise<void> {
+  const ordered = [...entries].sort((a, b) => b.id.localeCompare(a.id));
+  const undoneAt = nowIso();
+
+  await db.transaction('rw', TASK_TABLES(db), async () => {
+    for (const entry of ordered) {
+      switch (entry.action) {
+        case 'create':
+          await writeDelete(entry.entityId, db);
+          break;
+        case 'delete':
+          await writeRestore(entry.entityId, db);
+          break;
+        case 'restore':
+          await writeDelete(entry.entityId, db);
+          break;
+        case 'complete':
+        case 'reopen':
+        case 'update': {
+          await writeTaskPatch(entry.entityId, entry.before as TaskPatch, db);
+          // A completed recurring task spawned its successor. Reopening the one
+          // without removing the other leaves two open occurrences of a series
+          // that promises exactly one.
+          const spawned = entry.after.spawnedId;
+          if (typeof spawned === 'string' && spawned !== '') await writeDelete(spawned, db);
+          break;
+        }
+      }
+
+      const next = { ...entry, undoneAt, updatedAt: undoneAt };
+      await db.activityLog.put({ ...next, ...deriveActivity(next) });
+      await db.outbox.add(
+        outboxRecord('activityLog', entry.id, 'update', { undoneAt }, entry.rowVersion),
       );
     }
   });
@@ -478,7 +749,12 @@ export async function reorderTask(
           ? rankAfter(prevSortKey)
           : rankBetween(prevSortKey, nextSortKey);
 
-  await updateTask(id, { [field]: sortKey } as TaskPatch, db);
+  // Unlogged: a drag has its own undo, which is dragging it back, and a
+  // reorder in the stack would sit between the edits people actually want to
+  // take back.
+  await db.transaction('rw', [db.tasks, db.taskTags, db.outbox], async () => {
+    await writeTaskPatch(id, { [field]: sortKey } as TaskPatch, db);
+  });
 }
 
 /** Replaces the whole tag set for a task, which is how the sync layer models it. */
@@ -576,7 +852,9 @@ export async function setTaskRecurrence(
 
     // The anchor the first generation steps from. A task with no due date still
     // needs one, or "every 3 days" has nothing to count from.
-    await updateTask(
+    // Unlogged. Undo restoring `seriesId` while the series row it points at
+    // stayed would be a half-undo, and a half-undo is worse than none.
+    await writeTaskPatch(
       taskId,
       { seriesId: id, occurrenceDate: task.dueDate ?? today(), occurrenceSeq: 0 },
       db,
@@ -609,7 +887,7 @@ export async function clearTaskRecurrence(
       );
     }
 
-    await updateTask(taskId, { seriesId: '', occurrenceDate: null, occurrenceSeq: null }, db);
+    await writeTaskPatch(taskId, { seriesId: '', occurrenceDate: null, occurrenceSeq: null }, db);
   });
 }
 

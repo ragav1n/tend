@@ -188,6 +188,47 @@ export interface FocusSession extends SyncedRow {
   _del: 0 | 1;
 }
 
+/**
+ * One thing that happened, and enough to take it back.
+ *
+ * `before` and `after` hold only the fields that moved, in the local camelCase
+ * shape, which is exactly what `mutations.ts` takes as a patch. Storing the
+ * wire shape would mean undo had to translate on the way out.
+ *
+ * `groupId` is one gesture. A bulk reschedule of six tasks writes six entries
+ * sharing a group, and undo takes the group rather than the row, because
+ * somebody who moved six things and pressed undo was not asking about the
+ * sixth one.
+ */
+export type ActivityAction =
+  | 'create'
+  | 'update'
+  | 'complete'
+  | 'reopen'
+  | 'delete'
+  | 'restore';
+
+export interface ActivityEntry extends SyncedRow {
+  action: ActivityAction;
+  /** Only 'tasks' today. The column exists so a second kind needs no migration
+   *  of the rows already written. */
+  entityTable: 'tasks';
+  entityId: string;
+  groupId: string;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  /** What a toast says. Written by the client that made the change, so undoing
+   *  on a phone can still name what it took back. */
+  summary: string;
+  /** Set once the entry has been taken back. The entry stays: it is still true,
+   *  it just no longer stands. */
+  undoneAt: Instant | null;
+  _del: 0 | 1;
+  /** 1 when `undoneAt` is set. Leads the stack index, since booleans cannot be
+   *  indexed. */
+  _undone: 0 | 1;
+}
+
 /** Join rows are hard-deleted rather than tombstoned. The sync layer treats
  *  "the tag set for task X" as a replaceable set keyed by taskId, which avoids
  *  needing tombstones on a three-column table. */
@@ -241,6 +282,7 @@ export type EntityTable =
   | 'taskTags'
   | 'taskSeries'
   | 'focusSessions'
+  | 'activityLog'
   | 'prefs';
 export type MutationOp = 'insert' | 'update' | 'delete' | 'undelete';
 export type OutboxState = 'pending' | 'inflight' | 'failed' | 'dead';

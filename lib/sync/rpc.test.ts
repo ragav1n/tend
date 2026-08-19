@@ -734,3 +734,165 @@ describe('a child whose parent is not there', () => {
     expect(response.results[0]).toMatchObject({ status: 'applied' });
   });
 });
+
+describe('the activity log', () => {
+  const ENTRY = '55555555-5555-4555-8555-555555555551';
+  const GROUP = '55555555-5555-4555-8555-5555555555f0';
+  const GHOST = '99999999-9999-4999-8999-999999999999';
+
+  const entry = (patch: Record<string, unknown>, mutationId: string, op = 'insert') => ({
+    mutationId,
+    table: 'activity_log',
+    entityId: ENTRY,
+    op,
+    patch,
+    baseVersion: 0,
+  });
+
+  it('lands an entry', async () => {
+    await asUser(USER);
+    const response = await push([
+      entry(
+        localToWire('activity_log', {
+          id: ENTRY,
+          userId: 'local',
+          action: 'update',
+          entityTable: 'tasks',
+          entityId: '11111111-1111-4111-8111-111111111111',
+          groupId: GROUP,
+          before: { priority: 0 },
+          after: { priority: 3 },
+          summary: 'Edited "Buy oat milk"',
+          undoneAt: null,
+          createdAt: '2026-08-20T09:00:00.000Z',
+          deletedAt: null,
+        }),
+        '55555555-5555-4555-8555-55555555500a',
+      ),
+    ]);
+
+    expect(response.results[0]).toMatchObject({ status: 'applied' });
+
+    await asSuperuser();
+    const { rows } = await db.query<{ user_id: string; action: string; before: unknown }>(
+      `select user_id, action, before from activity_log where id = '${ENTRY}'`,
+    );
+    // The client sent 'local' as the user, and the server ignores it.
+    expect(rows[0]).toEqual({ user_id: USER, action: 'update', before: { priority: 0 } });
+  });
+
+  it('marks it undone with an update, which is all undo sends', async () => {
+    await asUser(USER);
+    const response = await push([
+      entry({ undone_at: '2026-08-20T09:05:00.000Z' }, '55555555-5555-4555-8555-55555555500b', 'update'),
+    ]);
+
+    expect(response.results[0]).toMatchObject({ status: 'applied' });
+
+    await asSuperuser();
+    const { rows } = await db.query<{ undone_at: Date | null }>(
+      `select undone_at from activity_log where id = '${ENTRY}'`,
+    );
+    expect(rows[0]!.undone_at).not.toBeNull();
+  });
+
+  it('comes back through sync_pull', async () => {
+    await asUser(USER);
+    const page = await pull(0);
+    const row = page.rows.find((r) => r.table === 'activity_log')?.row as
+      | Record<string, unknown>
+      | undefined;
+    expect(row).toBeDefined();
+    expect(row!.group_id).toBe(GROUP);
+    // user_id is stripped on the way out, the same as every other table.
+    expect(row).not.toHaveProperty('user_id');
+  });
+
+  /**
+   * The one place in the schema with no foreign key on the thing it points at.
+   * A log entry outliving its task is what a log is, and 0017 is the reminder
+   * of what the alternative costs: a foreign_key_violation takes the whole
+   * claimed batch to the deadletter.
+   */
+  it('accepts an entry about a task that is not there', async () => {
+    await asUser(USER);
+    const orphan = '55555555-5555-4555-8555-555555555552';
+    const response = await push([
+      {
+        mutationId: '55555555-5555-4555-8555-55555555500c',
+        table: 'activity_log',
+        entityId: orphan,
+        op: 'insert',
+        patch: {
+          id: orphan,
+          action: 'delete',
+          entity_table: 'tasks',
+          entity_id: GHOST,
+          group_id: GROUP,
+          summary: 'Deleted "gone"',
+        },
+        baseVersion: 0,
+      },
+    ]);
+    expect(response.results[0]).toMatchObject({ status: 'applied' });
+  });
+
+  it('refuses an action it does not know without taking the batch down', async () => {
+    await asUser(USER);
+    const bad = '55555555-5555-4555-8555-555555555553';
+    const response = await push([
+      {
+        mutationId: '55555555-5555-4555-8555-55555555500d',
+        table: 'activity_log',
+        entityId: bad,
+        op: 'insert',
+        patch: {
+          id: bad,
+          action: 'obliterate',
+          entity_id: GHOST,
+          group_id: GROUP,
+        },
+        baseVersion: 0,
+      },
+      // An innocent row queued behind it. Before the check_violation branch in
+      // 0018 this whole call raised and neither landed, which is 0017's bug
+      // wearing a different error code.
+      {
+        mutationId: '55555555-5555-4555-8555-55555555500e',
+        table: 'activity_log',
+        entityId: '55555555-5555-4555-8555-555555555554',
+        op: 'insert',
+        patch: {
+          id: '55555555-5555-4555-8555-555555555554',
+          action: 'create',
+          entity_id: GHOST,
+          group_id: GROUP,
+          summary: 'Added "something"',
+        },
+        baseVersion: 0,
+      },
+    ]);
+    expect(response.results[0]).toMatchObject({ status: 'rejected' });
+    expect(response.results[1]).toMatchObject({ status: 'applied' });
+
+    await asSuperuser();
+    const { rows } = await db.query(
+      `select id from activity_log where id = '55555555-5555-4555-8555-555555555554'`,
+    );
+    expect(rows).toHaveLength(1);
+  });
+
+  it('refuses a bad value in an update the same way', async () => {
+    await asUser(USER);
+    const response = await push([
+      entry({ action: 'obliterate' }, '55555555-5555-4555-8555-55555555500f', 'update'),
+    ]);
+    expect(response.results[0]).toMatchObject({ status: 'rejected' });
+  });
+
+  it('keeps one account out of another account\'s history', async () => {
+    await asUser(OTHER);
+    const { rows } = await db.query(`select id from activity_log where id = '${ENTRY}'`);
+    expect(rows).toEqual([]);
+  });
+});

@@ -21,7 +21,7 @@ import type Dexie from 'dexie';
  * items or closed items, never a mix.
  */
 
-export const DATA_LAYER_VERSION = 3;
+export const DATA_LAYER_VERSION = 4;
 
 export function defineSchema(db: Dexie): void {
   db.version(1).stores({
@@ -83,5 +83,19 @@ export function defineSchema(db: Dexie): void {
   // first, so startedAt leads the one compound index.
   db.version(3).stores({
     focusSessions: ['id', '_del', 'rowVersion', '[_del+startedAt]'].join(', '),
+  });
+
+  // v4 adds the activity log behind undo. The stack asks one question, "the
+  // newest entry still standing", so _undone leads createdAt; groupId fetches
+  // the rest of the gesture once the newest is known.
+  db.version(4).stores({
+    activityLog: [
+      'id',
+      '_del',
+      'rowVersion',
+      'groupId',
+      '[_del+_undone+createdAt]',
+      '[_del+entityId+createdAt]',
+    ].join(', '),
   });
 }

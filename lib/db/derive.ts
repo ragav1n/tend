@@ -1,5 +1,6 @@
 import {
   NO_DUE_DAY,
+  type ActivityEntry,
   type DerivedTaskFields,
   type FocusSession,
   type Project,
@@ -104,4 +105,12 @@ export function deriveFocusSession(
   session: Omit<FocusSession, '_del'>,
 ): Pick<FocusSession, '_del'> {
   return { _del: session.deletedAt ? 1 : 0 };
+}
+
+/** `_undone` exists because IndexedDB cannot index a boolean or a null, and the
+ *  undo stack's only question is which entries still stand. */
+export function deriveActivity(
+  entry: Omit<ActivityEntry, '_del' | '_undone'>,
+): Pick<ActivityEntry, '_del' | '_undone'> {
+  return { _del: entry.deletedAt ? 1 : 0, _undone: entry.undoneAt ? 1 : 0 };
 }

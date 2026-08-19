@@ -18,6 +18,7 @@ export type WireTable =
   | 'task_series'
   | 'task_tags'
   | 'focus_sessions'
+  | 'activity_log'
   | 'user_settings';
 
 export const WIRE_TABLE: Record<EntityTable, WireTable> = {
@@ -27,6 +28,7 @@ export const WIRE_TABLE: Record<EntityTable, WireTable> = {
   taskTags: 'task_tags',
   taskSeries: 'task_series',
   focusSessions: 'focus_sessions',
+  activityLog: 'activity_log',
   prefs: 'user_settings',
 };
 
@@ -37,6 +39,7 @@ export const LOCAL_TABLE: Record<WireTable, EntityTable | null> = {
   task_tags: 'taskTags',
   task_series: 'taskSeries',
   focus_sessions: 'focusSessions',
+  activity_log: 'activityLog',
   user_settings: 'prefs',
   // Areas exist server-side so projects can reference them. No local table
   // until the phase that introduces the UI for them.
@@ -87,7 +90,12 @@ export interface PushRequest {
  * already exists under another id, because another device created it first. The
  * client drops its local copy and takes the server's on the next pull.
  */
-export type PushStatus = 'applied' | 'merged' | 'missing' | 'superseded';
+/**
+ * `rejected` means the row broke a constraint. Retrying cannot help, so the
+ * client retires it rather than sending it again: the local value stays on this
+ * device and the badge says something is stranded, which is the honest answer.
+ */
+export type PushStatus = 'applied' | 'merged' | 'missing' | 'superseded' | 'rejected';
 
 export interface PushResult {
   mutationId: string;
