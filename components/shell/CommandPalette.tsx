@@ -10,12 +10,14 @@ import type { Icon } from '@phosphor-icons/react';
 import {
   ArrowCounterClockwise,
   ArrowRight,
+  DownloadSimple,
   Keyboard,
   MagnifyingGlass,
   Plus,
 } from '@phosphor-icons/react/dist/ssr';
 import { quickCreate } from '@/lib/db/quick-create';
 import { undoLast } from '@/lib/db/undo';
+import { buildIcs, saveFile } from '@/lib/ics/download';
 import { today } from '@/lib/db/queries';
 import { NO_DUE_DAY } from '@/lib/db/types';
 import { formatDueLabel } from '@/lib/format/date';
@@ -126,6 +128,21 @@ function Palette({ mode, onClose }: { mode: PaletteMode; onClose: () => void }) 
       chord: CHORD_FOR.get('undo'),
       // A phone has no ⌘Z, so the palette is where undo lives there.
       run: () => void undoLast().then((took) => toast(took ? `Undid: ${took}` : 'Nothing to undo')),
+    });
+    rows.push({
+      id: 'export',
+      label: 'Export to a calendar file',
+      icon: DownloadSimple,
+      run: () =>
+        void buildIcs().then(({ body, filename }) => {
+          const events = (body.match(/BEGIN:VEVENT/g) ?? []).length;
+          if (events === 0) {
+            toast('Nothing to export', { description: 'No task has a date yet.' });
+            return;
+          }
+          saveFile(body, filename);
+          toast(`Exported ${events} ${events === 1 ? 'task' : 'tasks'}`);
+        }),
     });
     rows.push({
       id: 'shortcuts',

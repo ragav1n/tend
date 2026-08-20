@@ -1,7 +1,14 @@
 'use client';
 
-import { useId } from 'react';
-import { Bell, EnvelopeSimple, Globe, HardDrives, MoonStars } from '@phosphor-icons/react/dist/ssr';
+import { useId, useState } from 'react';
+import {
+  Bell,
+  DownloadSimple,
+  EnvelopeSimple,
+  Globe,
+  HardDrives,
+  MoonStars,
+} from '@phosphor-icons/react/dist/ssr';
 import { Segmented } from '@/components/ui/Segmented';
 import { Toggle } from '@/components/ui/Toggle';
 import { controlClass } from '@/components/ui/Field';
@@ -15,6 +22,7 @@ import { useSyncState } from '@/hooks/use-sync';
 import { useTheme } from '@/hooks/use-theme';
 import { updatePrefs } from '@/lib/db/mutations';
 import { deviceTimezone, fromTimeInput, toTimeInput } from '@/lib/db/prefs';
+import { buildIcs, saveFile } from '@/lib/ics/download';
 import type { PrefsPatch } from '@/lib/db/mutations';
 import { cn } from '@/lib/utils';
 
@@ -413,7 +421,56 @@ function DeviceGroup() {
           </span>
         )}
       </Row>
+
+      <Row
+        label="Export to a calendar"
+        hint="Everything with a date, as an .ics file any calendar can read."
+      >
+        {() => <ExportButton />}
+      </Row>
     </Group>
+  );
+}
+
+/**
+ * The .ics download.
+ *
+ * Built and handed over in the browser rather than through a route, because a
+ * route needs the network and this app does not. Undated tasks are left out:
+ * a calendar has nowhere to put them.
+ */
+function ExportButton() {
+  const [busy, setBusy] = useState(false);
+
+  async function run() {
+    setBusy(true);
+    try {
+      const { body, filename } = await buildIcs();
+      const events = (body.match(/BEGIN:VEVENT/g) ?? []).length;
+      if (events === 0) {
+        toast('Nothing to export', { description: 'No task has a date yet.' });
+        return;
+      }
+      saveFile(body, filename);
+      toast(`Exported ${events} ${events === 1 ? 'task' : 'tasks'}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => void run()}
+      disabled={busy}
+      className={cn(
+        'flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5',
+        'text-sm text-text-mid hover:border-clay-400 hover:bg-raised disabled:opacity-40',
+      )}
+    >
+      <DownloadSimple size={16} aria-hidden />
+      {busy ? 'Working' : 'Download'}
+    </button>
   );
 }
 
