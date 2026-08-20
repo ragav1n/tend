@@ -130,7 +130,11 @@ export function SyncBadge() {
         // Phone: floats above the bottom nav, and only when it has something
         // worth saying. Desktop: parked at the foot of the rail, in the row the
         // rail reserves for it with md:pb-16.
-        'safe-x pointer-events-auto fixed bottom-[4.75rem] left-1/2 z-30 -translate-x-1/2',
+        // The offset clears the phone's bottom nav, which is itself as tall as
+        // the home indicator makes it, so the inset has to be in here too. A
+        // bare 4.75rem parks this badge on top of the nav on a notched phone.
+        'pointer-events-auto fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] left-1/2 z-30 -translate-x-1/2',
+        'pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]',
         'md:bottom-4 md:left-3 md:translate-x-0',
         look.loud ? 'block' : 'hidden md:block',
       )}

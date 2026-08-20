@@ -57,7 +57,13 @@ export function AppOverlays() {
         // ready" can arrive together, and the second must not bury the first.
         expand
         offset={{ bottom: selecting ? '88px' : '24px' }}
-        mobileOffset={{ bottom: selecting ? '152px' : '96px', left: '16px', right: '16px' }}
+        // The phone offsets clear the bottom nav, and the nav is as tall as the
+        // home indicator makes it, so the inset belongs in the sum.
+        mobileOffset={{
+          bottom: `calc(${selecting ? '152px' : '96px'} + env(safe-area-inset-bottom))`,
+          left: '16px',
+          right: '16px',
+        }}
         style={
           {
             // Sonner ships z-index 999999999, which puts a toast on top of an

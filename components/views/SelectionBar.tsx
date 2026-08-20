@@ -158,8 +158,10 @@ export function SelectionBar({ order }: { order: readonly string[] }) {
         exit={reduced ? { opacity: 0 } : 'hidden'}
         transition={reduced ? QUICK_FADE : SHEET}
         className={cn(
-          'safe-bottom safe-x fixed inset-x-0 bottom-0 z-30 md:left-[232px]',
-          'border-t border-line bg-surface/95 px-3 py-2.5 backdrop-blur-xl',
+          'fixed inset-x-0 bottom-0 z-30 md:left-[232px]',
+          'border-t border-line bg-surface/95 backdrop-blur-xl',
+          'pt-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))]',
+          'pl-[calc(0.75rem+env(safe-area-inset-left))] pr-[calc(0.75rem+env(safe-area-inset-right))]',
         )}
         style={{ boxShadow: 'var(--shadow-lifted)' }}
       >

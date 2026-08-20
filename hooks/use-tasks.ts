@@ -15,6 +15,7 @@ import {
   seriesById,
   sidebarCounts,
   somedayList,
+  subtasksForParents,
   subtasksOf,
   tagOptions,
   taskById,
@@ -61,6 +62,24 @@ export function useLogbook(limit = 100): Task[] {
 
 export function useSubtasks(taskId: string): Task[] {
   return useStableLiveQuery(() => subtasksOf(taskId), [taskId], NO_TASKS);
+}
+
+const NO_SUBTASKS = new Map<string, Task[]>();
+
+/**
+ * The children of every parent in a list, keyed by parent.
+ *
+ * The ids are joined into one string so the dependency is a value rather than
+ * an array identity, which changes on every render and would re-run the query
+ * with it. Same trick `useTasksByIds` uses.
+ */
+export function useSubtasksFor(parentIds: readonly string[]): Map<string, Task[]> {
+  const key = parentIds.join(',');
+  return useStableLiveQuery(
+    () => subtasksForParents(key === '' ? [] : key.split(',')),
+    [key],
+    NO_SUBTASKS,
+  );
 }
 
 /** Debouncing lives in the input, not here: this fires per committed query. */

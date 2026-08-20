@@ -203,7 +203,10 @@ function Palette({ mode, onClose }: { mode: PaletteMode; onClose: () => void }) 
         // until this element unmounts, and MODAL takes over a second to settle.
         exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.98, transition: QUICK_FADE }}
         transition={reduced ? QUICK_FADE : MODAL}
-        className="safe-x fixed inset-x-0 top-[12vh] z-50 mx-auto w-[min(36rem,calc(100%-2rem))]"
+        className={cn(
+          'fixed inset-x-0 top-[12vh] z-50 mx-auto w-[min(36rem,calc(100%-2rem))]',
+          'pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]',
+        )}
       >
         <Command
           label={mode === 'search' ? 'Search tasks' : 'Command palette'}

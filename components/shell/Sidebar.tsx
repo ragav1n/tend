@@ -111,8 +111,9 @@ export function Sidebar() {
       <nav
         aria-label="Views"
         className={cn(
-          'safe-top hidden md:fixed md:inset-y-0 md:left-0 md:z-20 md:flex md:w-[232px]',
-          'md:flex-col md:border-r md:border-line md:bg-void/60 md:px-3 md:pt-5',
+          'hidden md:fixed md:inset-y-0 md:left-0 md:z-20 md:flex md:w-[232px]',
+          'md:flex-col md:border-r md:border-line md:bg-void/60 md:px-3',
+          'md:pt-[calc(1.25rem+env(safe-area-inset-top))]',
           // A reservation, not spacing. SyncBadge is fixed at the foot of the
           // rail and cannot know what the rail put there, so the rail keeps that
           // row empty. Without it the badge sits on top of Settings.
@@ -175,8 +176,12 @@ export function Sidebar() {
       <nav
         aria-label="Views"
         className={cn(
-          'safe-bottom safe-x fixed inset-x-0 bottom-0 z-20 flex items-stretch gap-1 md:hidden',
-          'border-t border-line bg-surface/95 px-2 py-1.5 backdrop-blur-xl',
+          'fixed inset-x-0 bottom-0 z-20 flex items-stretch gap-1 md:hidden',
+          'border-t border-line bg-surface/95 backdrop-blur-xl',
+          // Clears the home indicator. Folded into the padding for the same
+          // reason MainFrame's is: `py-1.5` beat `safe-bottom` outright.
+          'pt-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))]',
+          'pl-[calc(0.5rem+env(safe-area-inset-left))] pr-[calc(0.5rem+env(safe-area-inset-right))]',
         )}
       >
         {BAR_ITEMS.map((item) => {

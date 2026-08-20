@@ -203,7 +203,11 @@ function SignInForm() {
 
 export default function SignInPage() {
   return (
-    <main className="safe-top safe-x flex min-h-dvh items-center justify-center px-4 py-10">
+    <main className={cn(
+        'flex min-h-dvh items-center justify-center',
+        'pt-[calc(2.5rem+env(safe-area-inset-top))] pb-[calc(2.5rem+env(safe-area-inset-bottom))]',
+        'pl-[calc(1rem+env(safe-area-inset-left))] pr-[calc(1rem+env(safe-area-inset-right))]',
+      )}>
       {/* useSearchParams needs a Suspense boundary, or the whole route opts out
           of static rendering and the shell stops arriving in the first paint. */}
       <Suspense fallback={null}>

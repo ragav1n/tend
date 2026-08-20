@@ -44,6 +44,17 @@ The full architecture plan lives at `~/.claude/plans/i-want-to-create-noble-flam
   (300, 200) sit below the border step (400), and `raised` is darker than
   `surface` rather than lighter. Read tokens with `themeTokens()`, never
   `extractColorTokens()` over the whole file, which lets the last ramp win.
+- **Safe-area insets are folded into an element's own padding**, never added by a
+  helper class. A class in `@layer base` loses to every Tailwind padding utility,
+  so `safe-top pt-6` on one element applied no inset at all and the Inbox eyebrow
+  rendered under the iPhone status bar. The `.safe-*` classes are gone; use
+  `pt-[calc(1.5rem+env(safe-area-inset-top))]`. Anything with a hardcoded offset
+  above the bottom nav (the sync badge, the toaster) needs the inset in that sum
+  too.
+- **Subtasks render under their parent in the list**, which is what every list
+  query already promises by filtering them out of the top level. `TaskList`
+  fetches them for the whole page with `useSubtasksFor`, never per row, because a
+  hook per row is a live query per row. Past three they collapse behind a count.
 - **A key binding is scoped.** `lib/keys/map.ts` is the one list; the dispatcher
   binds `scope: 'global'` and the selection bar binds its own. Backspace must
   not be an app-wide delete key.

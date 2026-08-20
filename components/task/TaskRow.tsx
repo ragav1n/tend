@@ -1,7 +1,13 @@
 'use client';
 
 import { motion, useReducedMotion } from 'motion/react';
-import { Check, CalendarBlank, Flag, WarningCircle } from '@phosphor-icons/react/dist/ssr';
+import {
+  Check,
+  CalendarBlank,
+  Flag,
+  ListChecks,
+  WarningCircle,
+} from '@phosphor-icons/react/dist/ssr';
 import { PRESS_DEPTH, ROW, SNAPPY, STRIKE, rowVariants } from '@/lib/motion';
 import { formatClock, formatDueLabel } from '@/lib/format/date';
 import { today } from '@/lib/db/queries';
@@ -31,6 +37,13 @@ interface TaskRowProps {
   selected?: boolean;
   /** `extend` is the shift key, which grows a run from the last plain pick. */
   onPick?: (id: string, extend: boolean) => void;
+  /** "2/5", when the task has children. Passed in because the list already
+   *  fetched every parent's children in one go. */
+  subtaskCount?: string | null;
+  /** Rendered inside this row's list item, under the card. The subtasks go
+   *  here: they belong to this row rather than beside it, and a second `li`
+   *  wrapping both would be an `li` inside an `li`. */
+  children?: React.ReactNode;
 }
 
 const PRIORITY_LABEL: Record<number, string> = {
@@ -47,6 +60,8 @@ export function TaskRow({
   selectable = false,
   selected = false,
   onPick,
+  subtaskCount = null,
+  children,
 }: TaskRowProps) {
   const reduced = useReducedMotion();
   const done = task._done === 1;
@@ -74,7 +89,7 @@ export function TaskRow({
       >
         {selectable && (
           <motion.div
-            className="pt-0.5"
+            className="flex min-h-[22px] items-center"
             initial={reduced ? false : { opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={SNAPPY}
@@ -97,7 +112,7 @@ export function TaskRow({
           </motion.div>
         )}
 
-        <div className="pt-0.5">
+        <div>
           {/* The one element shared with the detail panel. The check is the
               right choice for it because it is the same 22px box in both
               places: a title would have to warp between two font sizes, which
@@ -119,7 +134,11 @@ export function TaskRow({
           }
           className="min-w-0 flex-1 text-left"
         >
-          <span className="relative inline-block max-w-full align-top">
+          {/* The title's first line occupies the same 22px the check does, and
+              centres inside it. Without this the row is `items-start` and a
+              15px line sits three pixels above a 22px box, which is small
+              enough to look like a mistake and big enough to see. */}
+          <span className="relative flex min-h-[22px] max-w-full items-center">
             <span
               className={cn(
                 'block truncate text-[0.9375rem] leading-snug transition-colors duration-200',
@@ -140,7 +159,7 @@ export function TaskRow({
             />
           </span>
 
-          {(hasDue || task.priority > 0 || task._tagIds.length > 0) && (
+          {(hasDue || task.priority > 0 || task._tagIds.length > 0 || subtaskCount) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
               {hasDue && (
                 <span
@@ -176,10 +195,19 @@ export function TaskRow({
                   {task._tagIds.length} {task._tagIds.length === 1 ? 'tag' : 'tags'}
                 </span>
               )}
+
+              {subtaskCount && (
+                <span className="inline-flex items-center gap-1 text-xs text-text-lo">
+                  <ListChecks size={13} aria-hidden />
+                  <span className="tnum">{subtaskCount}</span>
+                </span>
+              )}
             </div>
           )}
         </button>
       </motion.div>
+
+      {children}
     </motion.li>
   );
 }

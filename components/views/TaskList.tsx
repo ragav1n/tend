@@ -7,7 +7,9 @@ import { completeTask } from '@/lib/db/mutations';
 import { today } from '@/lib/db/queries';
 import type { Task } from '@/lib/db/types';
 import { useSelectionStore } from '@/hooks/use-selection';
+import { useSubtasksFor } from '@/hooks/use-tasks';
 import { useUiStore } from '@/hooks/use-ui';
+import { SubtaskRows, subtaskProgress } from '@/components/task/SubtaskRows';
 import { TaskRow } from '@/components/task/TaskRow';
 import { SelectionBarHost } from '@/components/views/SelectionBar';
 
@@ -26,6 +28,12 @@ import { SelectionBarHost } from '@/components/views/SelectionBar';
  *
  * The list also owns selection mode, because it is the thing that knows the
  * order rows are in, and order is what a shift-click spans.
+ *
+ * Subtasks render under their parent here. Every list query already drops them
+ * from the top level with a note saying they appear underneath it, so until this
+ * existed a subtask could only be reached by opening the parent. They are
+ * fetched for the whole page in one hook rather than per row, because a hook per
+ * row is a live query per row.
  */
 
 interface TaskListProps {
@@ -92,6 +100,9 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
   }
 
   const order = shown.map((task) => task.id);
+  // One query for the whole page. The key is the joined ids, so it re-runs when
+  // the list changes rather than on every render.
+  const subtasks = useSubtasksFor(order);
   // Joined so the dependency is a value. An array literal changes identity every
   // render and would re-run this on each one.
   const orderKey = order.join(',');
@@ -143,18 +154,31 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
 
       <motion.ul variants={listVariants} initial="hidden" animate="visible" className="space-y-2">
         <AnimatePresence mode="popLayout" initial={false}>
-          {shown.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              onToggle={handleToggle}
-              onOpen={openTask}
-              todayDate={todayDate}
-              selectable={selecting}
-              selected={selectedIds.has(task.id)}
-              onPick={(id, extend) => pickRow(id, order, extend)}
-            />
-          ))}
+          {shown.map((task) => {
+            const children = subtasks.get(task.id);
+            return (
+              <TaskRow
+                key={task.id}
+                task={task}
+                onToggle={handleToggle}
+                onOpen={openTask}
+                todayDate={todayDate}
+                selectable={selecting}
+                selected={selectedIds.has(task.id)}
+                onPick={(id, extend) => pickRow(id, order, extend)}
+                subtaskCount={subtaskProgress(children)}
+              >
+                {children && (
+                  <SubtaskRows
+                    subtasks={children}
+                    onToggle={handleToggle}
+                    onOpen={openTask}
+                    inset={selecting}
+                  />
+                )}
+              </TaskRow>
+            );
+          })}
         </AnimatePresence>
       </motion.ul>
 

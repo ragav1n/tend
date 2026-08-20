@@ -148,7 +148,8 @@ function SheetPanel({ onClose, label, children }: Omit<SheetProps, 'open'>) {
         dragSnapToOrigin
         onDragEnd={handleDragEnd}
         className={cn(
-          'safe-x fixed z-50 flex flex-col border-line bg-surface outline-none',
+          'fixed z-50 flex flex-col border-line bg-surface outline-none',
+          'pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]',
           // Phone: rises from the bottom edge, capped so the list stays visible.
           'inset-x-0 bottom-0 max-h-[88dvh] rounded-t-xl border-t',
           // Desktop: a panel against the right edge, full height.

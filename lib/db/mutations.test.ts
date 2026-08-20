@@ -29,6 +29,7 @@ import {
   somedayList,
   subtasksOf,
   taggedWith,
+  subtasksForParents,
   today,
   todayList,
   upcomingList,
@@ -729,5 +730,66 @@ describe('view candidates', () => {
 
     const { tasks } = await viewCandidates(VIEW_CANDIDATE_LIMIT, db);
     expect(tasks.map((t) => t.title)).toEqual(['Here']);
+  });
+});
+
+/**
+ * The children of a page of parents, in one go.
+ *
+ * Every list query drops subtasks from the top level and says they render
+ * underneath their parent, so this is the read that makes that true. A hook per
+ * row would be a live query per row.
+ */
+describe('subtasks for a page of parents', () => {
+  it('groups children under the right parent', async () => {
+    const a = await createTask({ title: 'Move flat' }, db);
+    const b = await createTask({ title: 'Do taxes' }, db);
+    await createTask({ title: 'Pack kitchen', parentTaskId: a }, db);
+    await createTask({ title: 'Book a van', parentTaskId: a }, db);
+    await createTask({ title: 'Find receipts', parentTaskId: b }, db);
+
+    const map = await subtasksForParents([a, b], db);
+    expect(map.get(a)?.map((t) => t.title)).toEqual(['Pack kitchen', 'Book a van']);
+    expect(map.get(b)?.map((t) => t.title)).toEqual(['Find receipts']);
+  });
+
+  it('leaves a childless parent out entirely rather than giving it an empty list', async () => {
+    const lonely = await createTask({ title: 'Nothing under this' }, db);
+    const map = await subtasksForParents([lonely], db);
+    expect(map.has(lonely)).toBe(false);
+  });
+
+  it('asks for nothing when the page is empty', async () => {
+    expect(await subtasksForParents([], db)).toEqual(new Map());
+  });
+
+  it('keeps a completed child, so the count can say 1/2', async () => {
+    const parent = await createTask({ title: 'Move flat' }, db);
+    const first = await createTask({ title: 'Pack kitchen', parentTaskId: parent }, db);
+    await createTask({ title: 'Book a van', parentTaskId: parent }, db);
+    await completeTask(first, true, db);
+
+    const children = (await subtasksForParents([parent], db)).get(parent)!;
+    expect(children).toHaveLength(2);
+    expect(children.filter((t) => t._done === 1)).toHaveLength(1);
+  });
+
+  it('drops a deleted child', async () => {
+    const parent = await createTask({ title: 'Move flat' }, db);
+    const child = await createTask({ title: 'Pack kitchen', parentTaskId: parent }, db);
+    await deleteTask(child, db);
+
+    expect((await subtasksForParents([parent], db)).has(parent)).toBe(false);
+  });
+
+  it('never shows a subtask at the top level as well', async () => {
+    // The lists already promise this. Both halves are asserted together so a
+    // change to either one cannot start showing the same work twice.
+    const parent = await createTask({ title: 'Move flat' }, db);
+    await createTask({ title: 'Pack kitchen', parentTaskId: parent }, db);
+
+    const top = await inboxList(db);
+    expect(top.map((t) => t.title)).toEqual(['Move flat']);
+    expect((await subtasksForParents(top.map((t) => t.id), db)).get(parent)).toHaveLength(1);
   });
 });

@@ -42,6 +42,9 @@ interface TaskCheckProps {
   label: string;
   /** Shared-element id, so the control flies from a row into the detail panel. */
   layoutId?: string;
+  /** Edge length in px. 22 is the row's; a subtask uses 18, which reads as a
+   *  child of the thing above it without needing a second indent. */
+  size?: number;
   className?: string;
 }
 
@@ -53,7 +56,14 @@ const SCRIBBLE =
 /** Framed to the ink rather than the source's box, plus two units of margin. */
 const SCRIBBLE_VIEWBOX = '10 8 70 70';
 
-export function TaskCheck({ checked, onChange, label, layoutId, className }: TaskCheckProps) {
+export function TaskCheck({
+  checked,
+  onChange,
+  label,
+  layoutId,
+  size = 22,
+  className,
+}: TaskCheckProps) {
   const reduced = useReducedMotion();
 
   function handleClick() {
@@ -74,11 +84,15 @@ export function TaskCheck({ checked, onChange, label, layoutId, className }: Tas
       onClick={handleClick}
       layoutId={layoutId}
       className={cn(
-        'relative size-[22px] shrink-0 rounded-[7px] border-[1.5px]',
+        'relative shrink-0 rounded-[7px] border-[1.5px]',
         checked ? 'border-olive-400' : 'border-line-strong bg-sunken hover:border-clay-400',
         className,
       )}
-      style={{ boxShadow: checked ? 'none' : 'var(--shadow-sunken)' }}
+      style={{
+        width: size,
+        height: size,
+        boxShadow: checked ? 'none' : 'var(--shadow-sunken)',
+      }}
       // Depth rather than scale alone: the control moves in Z the way a physical
       // button would. The press is a fast tween and the return is a spring, so
       // it lands softly instead of clicking back.

@@ -25,7 +25,14 @@ export function MainFrame({ children }: { children: React.ReactNode }) {
   return (
     <main
       className={cn(
-        'safe-top safe-x mx-auto w-full px-4 pb-28 pt-6 md:pb-10 md:pt-10',
+        'mx-auto w-full pb-28 md:pb-10',
+        // The safe-area insets are folded into the padding rather than added by
+        // a .safe-* class. Those live in @layer base, so ANY Tailwind padding
+        // utility on the same element wins the cascade and the inset silently
+        // does nothing: this element had `safe-top` and `pt-6` together, and on
+        // a notched iPhone the eyebrow rendered under the status bar.
+        'pt-[calc(1.5rem+env(safe-area-inset-top))] md:pt-[calc(2.5rem+env(safe-area-inset-top))]',
+        'pl-[calc(1rem+env(safe-area-inset-left))] pr-[calc(1rem+env(safe-area-inset-right))]',
         WIDE_VIEWS.has(pathname) ? 'max-w-5xl' : 'max-w-2xl',
       )}
     >

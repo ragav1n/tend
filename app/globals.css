@@ -281,14 +281,12 @@
     color: inherit;
   }
 
-  /* Safe-area padding for standalone iOS. Applied to the shell, not body, so a
-     full-bleed sheet can still reach the screen edge. */
-  .safe-top    { padding-top:    env(safe-area-inset-top); }
-  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
-  .safe-x {
-    padding-left:  env(safe-area-inset-left);
-    padding-right: env(safe-area-inset-right);
-  }
+  /* There were .safe-top, .safe-bottom and .safe-x classes here. They are gone
+     on purpose. A class in @layer base loses to every Tailwind padding utility,
+     so `safe-top pt-6` on one element silently applied no inset at all, which
+     is how the Inbox eyebrow ended up under the iPhone status bar. Every site
+     now folds env() into its own padding with an arbitrary value, which cannot
+     be overridden by accident because it IS the padding. */
 }
 
 /* prefers-reduced-motion is a real path, not durations set to zero. Springs

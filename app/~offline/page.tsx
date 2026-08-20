@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { CloudSlash } from '@phosphor-icons/react/dist/ssr';
 import { APP_NAME } from '@/lib/config';
+import { cn } from '@/lib/utils';
 import { MarkTile } from '@/components/brand/Mark';
 
 /**
@@ -25,7 +26,11 @@ export const metadata: Metadata = {
 
 export default function OfflinePage() {
   return (
-    <main className="safe-top safe-x flex min-h-dvh items-center justify-center px-4 py-10">
+    <main className={cn(
+        'flex min-h-dvh items-center justify-center',
+        'pt-[calc(2.5rem+env(safe-area-inset-top))] pb-[calc(2.5rem+env(safe-area-inset-bottom))]',
+        'pl-[calc(1rem+env(safe-area-inset-left))] pr-[calc(1rem+env(safe-area-inset-right))]',
+      )}>
       <div className="w-full max-w-sm text-center">
         <MarkTile size={40} className="mx-auto mb-5" />
 

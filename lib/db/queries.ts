@@ -187,6 +187,33 @@ export async function subtasksOf(taskId: string, db: TendDb = getDb()): Promise<
     .toArray();
 }
 
+/**
+ * The children of several parents at once, keyed by parent.
+ *
+ * Every list query already drops subtasks with the note that they "render
+ * underneath their parent", so this is what makes that true. One range scan per
+ * parent over `[_del+parentTaskId+sortKey]`, run together: a scan bounded to one
+ * parent's children is a handful of rows, and the alternative is a filter over
+ * every open task in the store.
+ *
+ * Parents with no children are left out of the map rather than given an empty
+ * array, so a caller can ask `has` instead of checking a length.
+ */
+export async function subtasksForParents(
+  parentIds: readonly string[],
+  db: TendDb = getDb(),
+): Promise<Map<string, Task[]>> {
+  const out = new Map<string, Task[]>();
+  if (parentIds.length === 0) return out;
+
+  const groups = await Promise.all(parentIds.map((id) => subtasksOf(id, db)));
+  parentIds.forEach((id, i) => {
+    const rows = groups[i];
+    if (rows && rows.length > 0) out.set(id, rows.sort(compareRank));
+  });
+  return out;
+}
+
 /** One task by id. Undefined once it is hard-deleted or never existed. */
 export async function taskById(id: string, db: TendDb = getDb()): Promise<Task | undefined> {
   return db.tasks.get(id);
