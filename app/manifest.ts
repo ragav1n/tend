@@ -29,8 +29,9 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: '/today',
     scope: '/',
     display: 'standalone',
-    // --color-void, the same value the viewport themeColor carries, so the
-    // splash screen and the app paint the same floor.
+    // --color-void in the dark ramp, matching the theme-color tag the layout
+    // renders, so the splash screen and the app paint the same floor. The
+    // manifest cannot follow the theme setting: it is read once at install.
     background_color: '#111316',
     theme_color: '#111316',
     orientation: 'portrait',

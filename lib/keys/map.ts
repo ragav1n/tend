@@ -53,6 +53,16 @@ export const PREFIX_KEYS = new Set(['g']);
  *  short enough that a forgotten g does not swallow the next real shortcut. */
 export const SEQUENCE_WINDOW_MS = 1200;
 
+/**
+ * Keys that only exist as part of a chord.
+ *
+ * A keydown for one of these is somebody reaching for the modifier, not a
+ * press to match. `chordOf({ key: 'Shift', shiftKey: true })` reads `shift+shift`
+ * and would consume an armed sequence prefix, so the dispatcher drops these
+ * before it gets that far.
+ */
+export const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock']);
+
 export interface KeyLike {
   key: string;
   metaKey?: boolean;
@@ -220,6 +230,9 @@ const KEY_LABEL: Record<string, string> = {
   arrowright: '→',
   enter: '↵',
   escape: 'Esc',
+  backspace: '⌫',
+  delete: '⌦',
+  tab: '⇥',
 };
 
 /**

@@ -94,18 +94,31 @@ export function SelectionBar({ order }: { order: readonly string[] }) {
   const picked = [...ids];
   const count = picked.length;
 
+  /**
+   * Runs a bulk write and reports either way.
+   *
+   * The catch is not decoration. The selection is cleared before the promise
+   * settles, so without one a failed write left no toast, no selection to try
+   * again with, and nothing but an unhandled rejection in a console nobody has
+   * open.
+   */
   function run(work: Promise<unknown>, done: string) {
-    void work.then(() => toast(done));
+    void work.then(
+      () => toast(done),
+      () => toast('That did not go through', { description: 'Nothing was changed. Worth another go.' }),
+    );
     clear();
   }
 
   function remove() {
     const doomed = picked;
     clear();
-    void deleteTasks(doomed).then(() =>
-      toast(`${doomed.length} ${doomed.length === 1 ? 'task' : 'tasks'} deleted`, {
-        action: { label: 'Undo', onClick: () => void restoreTasks(doomed) },
-      }),
+    void deleteTasks(doomed).then(
+      () =>
+        toast(`${doomed.length} ${doomed.length === 1 ? 'task' : 'tasks'} deleted`, {
+          action: { label: 'Undo', onClick: () => void restoreTasks(doomed) },
+        }),
+      () => toast('Could not delete those', { description: 'They are all still here.' }),
     );
   }
 

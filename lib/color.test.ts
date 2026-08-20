@@ -142,6 +142,45 @@ describe.each(NAMES)('%s: text on the accent fills', (theme) => {
   });
 });
 
+describe('sand is a fill in one ramp and a text colour in the other', () => {
+  /*
+   * The rule the old single-ramp test encoded was "text on a sand fill is
+   * `void`, never `text-hi`", which held because sand-500 was light. In the
+   * light ramp it is a mid-dark accent instead, so that pairing inverts. Both
+   * are asserted here rather than dropped: nothing puts text on sand today, and
+   * the next component that does should find the answer written down.
+   */
+  it('never takes text-hi, in either ramp, for opposite reasons', () => {
+    // Dark ramp: sand-500 is a light fill and text-hi is cream, so they collide.
+    // Light ramp: sand-500 is a dark fill and text-hi is near black, so they
+    // collide the other way. One ban, two causes.
+    for (const theme of NAMES) {
+      expect(
+        contrast(token(theme, 'text-hi'), token(theme, 'sand-500')),
+        `text-hi on ${theme} sand-500`,
+      ).toBeLessThan(AA_TEXT);
+    }
+  });
+
+  it('takes void in the dark ramp and on-accent in the light one', () => {
+    expect(contrast(token('dark', 'void'), token('dark', 'sand-500'))).toBeGreaterThanOrEqual(
+      AA_TEXT,
+    );
+    expect(
+      contrast(token('light', 'on-accent'), token('light', 'sand-500')),
+    ).toBeGreaterThanOrEqual(AA_TEXT);
+  });
+
+  it('reads as text on the page in both, at the step meant for it', () => {
+    for (const theme of NAMES) {
+      expect(
+        contrast(token(theme, 'sand-300'), token(theme, 'surface')),
+        `sand-300 on ${theme} surface`,
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+    }
+  });
+});
+
 describe.each(NAMES)('%s: text-faint is decoration', (theme) => {
   it('clears nothing anywhere, which is why it is banned from real text', () => {
     for (const bg of ['void', 'sunken', 'surface', 'raised']) {

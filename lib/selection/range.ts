@@ -7,7 +7,7 @@
  * walks the anchor down the list and the range creeps.
  */
 
-export interface Pick {
+export interface Selection {
   selected: ReadonlySet<string>;
   /** Where the next shift-click measures from. */
   anchor: string | null;
@@ -33,11 +33,11 @@ export function rangeBetween(
  * a third row grows or shrinks the same run rather than starting a new one.
  */
 export function pick(
-  current: Pick,
+  current: Selection,
   order: readonly string[],
   id: string,
   extend: boolean,
-): Pick {
+): Selection {
   if (extend && current.anchor !== null) {
     const run = rangeBetween(order, current.anchor, id);
     if (run.length > 0) {

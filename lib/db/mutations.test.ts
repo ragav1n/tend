@@ -32,6 +32,8 @@ import {
   today,
   todayList,
   upcomingList,
+  VIEW_CANDIDATE_LIMIT,
+  viewCandidates,
 } from './queries';
 import { NO_DUE_DAY } from './types';
 
@@ -682,5 +684,50 @@ describe('focus sessions', () => {
   it('keeps a session with no task, since most have none', async () => {
     const id = await startFocusSession({ plannedMinutes: 50 }, db);
     expect((await db.focusSessions.get(id))!.taskId).toBe('');
+  });
+});
+
+/**
+ * The read a saved view filters over.
+ *
+ * Bounded, because `toArray()` on tasks is banned: it deserializes the whole
+ * store on the main thread. The bound is reported rather than applied in
+ * silence, since it walks the tombstone index in primary-key order, so a
+ * truncated read is the OLDEST n rows and everything newer is invisible. A view
+ * that quietly omits half your tasks is worse than one that admits it.
+ */
+describe('view candidates', () => {
+  it('says nothing was left out when the store fits', async () => {
+    await createTask({ title: 'One' }, db);
+    await createTask({ title: 'Two' }, db);
+
+    const { tasks, truncated } = await viewCandidates(VIEW_CANDIDATE_LIMIT, db);
+    expect(tasks).toHaveLength(2);
+    expect(truncated).toBe(false);
+  });
+
+  it('reports the cap when it bites, rather than trimming quietly', async () => {
+    for (let i = 0; i < 4; i++) await createTask({ title: `Task ${i}` }, db);
+
+    const { tasks, truncated } = await viewCandidates(3, db);
+    expect(tasks).toHaveLength(3);
+    expect(truncated).toBe(true);
+  });
+
+  it('is exact at the boundary, so a full store does not read as truncated', async () => {
+    for (let i = 0; i < 3; i++) await createTask({ title: `Task ${i}` }, db);
+
+    const { tasks, truncated } = await viewCandidates(3, db);
+    expect(tasks).toHaveLength(3);
+    expect(truncated).toBe(false);
+  });
+
+  it('leaves tombstones out entirely', async () => {
+    const id = await createTask({ title: 'Gone' }, db);
+    await createTask({ title: 'Here' }, db);
+    await deleteTask(id, db);
+
+    const { tasks } = await viewCandidates(VIEW_CANDIDATE_LIMIT, db);
+    expect(tasks.map((t) => t.title)).toEqual(['Here']);
   });
 });

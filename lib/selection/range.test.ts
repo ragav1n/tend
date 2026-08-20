@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { pick, prune, rangeBetween, type Pick } from './range';
+import { pick, prune, rangeBetween, type Selection } from './range';
 
 const ORDER = ['a', 'b', 'c', 'd', 'e'];
-const empty: Pick = { selected: new Set(), anchor: null };
+const empty: Selection = { selected: new Set(), anchor: null };
 
-const ids = (p: Pick) => [...p.selected].sort();
+const ids = (p: Selection) => [...p.selected].sort();
 
 describe('rangeBetween', () => {
   it('runs both ways', () => {
@@ -57,7 +57,7 @@ describe('pick', () => {
   });
 
   it('falls back to a toggle when the anchor has left the list', () => {
-    const stale: Pick = { selected: new Set(['zz']), anchor: 'zz' };
+    const stale: Selection = { selected: new Set(['zz']), anchor: 'zz' };
     const next = pick(stale, ORDER, 'c', true);
     expect(ids(next)).toEqual(['c', 'zz']);
     expect(next.anchor).toBe('c');

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ACTIONS,
   chordIndex,
+  MODIFIER_KEYS,
   chordKeys,
   chordOf,
   isTypingTarget,
@@ -79,6 +80,22 @@ describe('resolveChord', () => {
   });
 });
 
+describe('modifier keys', () => {
+  it('names the ones that only exist inside a chord', () => {
+    // A keydown for one of these is somebody reaching for the modifier. Left to
+    // reach chordOf, Shift reads as `shift+shift` and eats an armed prefix.
+    expect(chordOf({ key: 'Shift', shiftKey: true })).toBe('shift+shift');
+    expect(MODIFIER_KEYS.has('Shift')).toBe(true);
+    for (const key of ['Control', 'Alt', 'Meta', 'CapsLock']) {
+      expect(MODIFIER_KEYS.has(key), key).toBe(true);
+    }
+    // And not the keys that are real presses.
+    for (const key of ['g', 'Escape', 'Backspace', 'Tab']) {
+      expect(MODIFIER_KEYS.has(key), key).toBe(false);
+    }
+  });
+});
+
 describe('isTypingTarget', () => {
   it('claims the keyboard for fields and gives it back for everything else', () => {
     expect(isTypingTarget({ tagName: 'INPUT' })).toBe(true);
@@ -149,6 +166,10 @@ describe('chordKeys', () => {
   it('leaves a symbol alone and names the keys that have no glyph', () => {
     expect(chordKeys('?')).toEqual(['?']);
     expect(chordKeys('escape')).toEqual(['Esc']);
+    // Or the overlay draws a cap reading "backspace" in lower case next to a
+    // row of glyphs.
+    expect(chordKeys('backspace')).toEqual(['⌫']);
+    expect(chordKeys('mod+a')).toEqual(['⌘', 'A']);
   });
 });
 

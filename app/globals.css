@@ -168,8 +168,13 @@
   --color-olive-200: oklch(0.430 0.055 119.5); /* #4C5431  done text on raised, 6.65 */
 
   /* ── SAND. Darkened wholesale: the source beige measures 2.5 on this page,
-        so here it survives as a hue rather than as a value. ───────────────── */
-  --color-sand-500: oklch(0.560 0.073 67.6);  /* #916C44 */
+        so here it survives as a hue rather than as a value. 500 is a fill in
+        both ramps but flips from light to dark, so the text on it flips too:
+        --color-void in the dark ramp, --color-on-accent here. 0.520 rather than
+        0.560 because at 0.560 it could carry neither, 4.20 against the cream
+        and 3.40 against the page, which is the same unusable middle the raw
+        palette landed in. ─────────────────────────────────────────────────── */
+  --color-sand-500: oklch(0.520 0.073 67.6);  /* #856139  4.97 under on-accent */
   --color-sand-400: oklch(0.640 0.073 67.6);  /* #AA845B  non-text marks only */
   --color-sand-300: oklch(0.500 0.073 67.6);  /* #7F5B33  6.00 on surface */
   --color-sand-200: oklch(0.440 0.073 67.6);  /* #6D4A22 */

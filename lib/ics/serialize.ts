@@ -105,13 +105,16 @@ const DOW = ['', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
 /**
  * The structured rule as an RRULE, or null when it cannot be one.
  *
+ * `timed` says whether the event's DTSTART carries a time, because UNTIL has to
+ * match it.
+ *
  * `completion_date` anchoring has no RRULE. RFC 5545 describes a fixed calendar
  * series, and "every 3 days after I finish it" is not one: that is the whole
  * reason this app stores structured columns instead of RRULE strings. Rather
  * than emit a rule that means something else, those series export as their one
  * open occurrence and the description says so.
  */
-export function toRrule(rule: RecurrenceRule): string | null {
+export function toRrule(rule: RecurrenceRule, timed = false): string | null {
   if (rule.anchorMode === 'completion_date') return null;
 
   const parts = [`FREQ=${FREQ[rule.freq]}`];
@@ -130,7 +133,10 @@ export function toRrule(rule: RecurrenceRule): string | null {
   }
 
   if (rule.endsMode === 'on_date' && rule.endsOn) {
-    parts.push(`UNTIL=${toIcsDate(rule.endsOn)}`);
+    // RFC 5545 3.3.10: UNTIL has to be the same value type as DTSTART. A DATE
+    // form against a DATE-TIME start makes strict parsers drop the rule, and
+    // Google Calendar imports the series as never-ending instead.
+    parts.push(`UNTIL=${toIcsDate(rule.endsOn)}${timed ? 'T235959' : ''}`);
   }
   if (rule.endsMode === 'after_count' && rule.endsAfterCount) {
     parts.push(`COUNT=${rule.endsAfterCount}`);
@@ -188,7 +194,7 @@ function event(entry: IcsTask, stamp: string, domain: string): string[] {
   const body = description(entry);
   if (body) lines.push(`DESCRIPTION:${escapeText(body)}`);
 
-  const rrule = entry.rule ? toRrule(entry.rule) : null;
+  const rrule = entry.rule ? toRrule(entry.rule, Boolean(task.dueTime)) : null;
   if (rrule) lines.push(`RRULE:${rrule}`);
 
   // Done work exports as confirmed history rather than as a commitment.

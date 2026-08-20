@@ -10,7 +10,7 @@ import {
   updateSavedView,
 } from '@/lib/db/mutations';
 import { NO_PROJECT, type Priority, type SavedView } from '@/lib/db/types';
-import type { DueWindow, StatusScope, ViewFilter, ViewSort } from '@/lib/views/filter';
+import { PRIORITY_LABEL, type DueWindow, type StatusScope, type ViewFilter, type ViewSort } from '@/lib/views/filter';
 import { cn } from '@/lib/utils';
 import { useProjects, useTags } from '@/hooks/use-tasks';
 import { Field, controlClass } from '@/components/ui/Field';
@@ -50,23 +50,38 @@ const SORT_OPTIONS: { value: ViewSort; label: string }[] = [
   { value: 'title', label: 'Title' },
 ];
 
-const PRIORITY_OPTIONS: { value: Priority; label: string }[] = [
-  { value: 0, label: 'Any' },
-  { value: 1, label: 'P3 and up' },
-  { value: 2, label: 'P2 and up' },
-  { value: 3, label: 'P1 only' },
-];
+/** Read from the same map the view's own subtitle uses, so the dropdown and the
+ *  description cannot disagree about what a floor means. */
+const PRIORITY_OPTIONS: { value: Priority; label: string }[] = ([0, 1, 2, 3] as Priority[]).map(
+  (value) => ({ value, label: PRIORITY_LABEL[value] }),
+);
 
-/** Absent, not empty. A key set to undefined and no key at all mean the same
- *  thing to the filter, and the second is what gets stored. */
-function tidy(filter: ViewFilter): ViewFilter {
-  const out: ViewFilter = {};
-  if (filter.status && filter.status !== 'open') out.status = filter.status;
-  if (filter.projectId !== undefined) out.projectId = filter.projectId;
-  if (filter.tagIds && filter.tagIds.length > 0) out.tagIds = filter.tagIds;
-  if (filter.minPriority) out.minPriority = filter.minPriority;
-  if (filter.due && filter.due !== 'any') out.due = filter.due;
-  if (filter.text?.trim()) out.text = filter.text.trim();
+/** The axes this builder knows how to edit. Anything else on the row is left
+ *  where it was. */
+const KNOWN_AXES = ['status', 'projectId', 'tagIds', 'minPriority', 'due', 'text'] as const;
+
+/**
+ * Absent, not empty, and never lossy.
+ *
+ * A key set to undefined and no key at all mean the same thing to the filter,
+ * and the second is what gets stored, so an axis left at its default drops out.
+ *
+ * Keys this build has never heard of are carried through untouched. `SavedView`
+ * types the filter loosely precisely so a row written by a newer client
+ * survives a round trip through an older one, and rebuilding the object from a
+ * closed list would have thrown that away on the first save.
+ */
+export function tidy(filter: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...filter };
+  for (const key of KNOWN_AXES) delete out[key];
+
+  const known = filter as ViewFilter;
+  if (known.status && known.status !== 'open') out.status = known.status;
+  if (known.projectId !== undefined) out.projectId = known.projectId;
+  if (known.tagIds && known.tagIds.length > 0) out.tagIds = known.tagIds;
+  if (known.minPriority) out.minPriority = known.minPriority;
+  if (known.due && known.due !== 'any') out.due = known.due;
+  if (known.text?.trim()) out.text = known.text.trim();
   return out;
 }
 
@@ -95,26 +110,22 @@ function BuilderForm({
   const [icon, setIcon] = useState(view?.icon ?? 'Funnel');
   const [sort, setSort] = useState<ViewSort>((view?.sort as ViewSort) ?? 'manual');
   const [pinned, setPinned] = useState(view?.pinned ?? true);
-  const [filter, setFilter] = useState<ViewFilter>((view?.filter as ViewFilter) ?? {});
+  // Typed as the record rather than as ViewFilter, so keys this build does not
+  // know about ride along in state and back out through `tidy`.
+  const [filter, setFilter] = useState<Record<string, unknown>>(view?.filter ?? {});
 
   function patch(next: Partial<ViewFilter>) {
     setFilter((current) => ({ ...current, ...next }));
   }
 
+  /** The known axes, for the controls to read. */
+  const known = filter as ViewFilter;
+
   async function save() {
     const title = name.trim();
     if (title === '') return;
 
-    // Cast at the boundary: the row type says "a filter this client may not
-    // fully understand", which is what lets a newer client's extra key survive
-    // a round trip through an older one.
-    const body = {
-      name: title,
-      icon,
-      filter: { ...tidy(filter) } as Record<string, unknown>,
-      sort,
-      pinned,
-    };
+    const body = { name: title, icon, filter: tidy(filter), sort, pinned };
     if (view) {
       await updateSavedView(view.id, body);
       onClose(view.id);
@@ -181,7 +192,7 @@ function BuilderForm({
         <Field label="Status" htmlFor="view-status">
           <select
             id="view-status"
-            value={filter.status ?? 'open'}
+            value={known.status ?? 'open'}
             onChange={(event) => patch({ status: event.target.value as StatusScope })}
             className={controlClass}
           >
@@ -196,7 +207,7 @@ function BuilderForm({
         <Field label="Project" htmlFor="view-project">
           <select
             id="view-project"
-            value={filter.projectId ?? ANY_PROJECT}
+            value={known.projectId ?? ANY_PROJECT}
             onChange={(event) =>
               patch({
                 projectId: event.target.value === ANY_PROJECT ? undefined : event.target.value,
@@ -217,7 +228,7 @@ function BuilderForm({
         <Field label="Due" htmlFor="view-due">
           <select
             id="view-due"
-            value={filter.due ?? 'any'}
+            value={known.due ?? 'any'}
             onChange={(event) => patch({ due: event.target.value as DueWindow })}
             className={controlClass}
           >
@@ -232,7 +243,7 @@ function BuilderForm({
         <Field label="Priority" htmlFor="view-priority">
           <select
             id="view-priority"
-            value={filter.minPriority ?? 0}
+            value={known.minPriority ?? 0}
             onChange={(event) => patch({ minPriority: Number(event.target.value) as Priority })}
             className={controlClass}
           >
@@ -248,7 +259,7 @@ function BuilderForm({
           <Field label="Tags">
             <div className="flex flex-wrap gap-1.5">
               {tags.map((tag) => {
-                const active = (filter.tagIds ?? []).includes(tag.id);
+                const active = (known.tagIds ?? []).includes(tag.id);
                 return (
                   <button
                     key={tag.id}
@@ -257,8 +268,8 @@ function BuilderForm({
                     onClick={() =>
                       patch({
                         tagIds: active
-                          ? (filter.tagIds ?? []).filter((id) => id !== tag.id)
-                          : [...(filter.tagIds ?? []), tag.id],
+                          ? (known.tagIds ?? []).filter((id) => id !== tag.id)
+                          : [...(known.tagIds ?? []), tag.id],
                       })
                     }
                     className={cn(
@@ -279,7 +290,7 @@ function BuilderForm({
         <Field label="Words" htmlFor="view-text">
           <input
             id="view-text"
-            value={filter.text ?? ''}
+            value={known.text ?? ''}
             onChange={(event) => patch({ text: event.target.value })}
             placeholder="Any word in the title or notes"
             className={controlClass}

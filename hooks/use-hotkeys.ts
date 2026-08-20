@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { chordOf, isTypingTarget, resolveChord, type Pending } from '@/lib/keys/map';
+import { chordOf, isTypingTarget, MODIFIER_KEYS, resolveChord, type Pending } from '@/lib/keys/map';
 
 /**
  * One global key listener for the whole app.
@@ -36,23 +36,32 @@ export function useHotkeys(
       // composing rather than pressing.
       if (event.defaultPrevented || event.isComposing) return;
 
+      // A modifier pressed on its own is on the way to a chord, not a chord.
+      // Reaching for Shift between the two keys of a sequence used to consume
+      // the armed prefix and swallow the key after it.
+      if (MODIFIER_KEYS.has(event.key)) return;
+
       const chord = chordOf(event);
       const typing = isTypingTarget(event.target);
 
       // No sequences inside a field. Typing "go" would otherwise arm the prefix
-      // and eat the o.
+      // and eat the o. The prefix is dropped rather than held, or one armed on
+      // the page survives a paragraph of typing and fires whenever the next
+      // letter lands outside a field.
       //
       // The clock is `event.timeStamp`, not `Date.now()`: it records when the
       // key was pressed rather than when this handler got a turn. Under a busy
       // main thread the two are seconds apart, and measuring the wrong one lets
       // a prefix pressed long ago complete a sequence.
-      const resolved = typing
-        ? chord
-        : (() => {
-            const step = resolveChord(chord, pending, event.timeStamp);
-            pending = step.pending;
-            return step.chord;
-          })();
+      let resolved: string | null;
+      if (typing) {
+        pending = null;
+        resolved = chord;
+      } else {
+        const step = resolveChord(chord, pending, event.timeStamp);
+        pending = step.pending;
+        resolved = step.chord;
+      }
 
       if (!resolved) return;
 

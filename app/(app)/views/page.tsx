@@ -3,7 +3,9 @@
 import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Funnel, PencilSimple, Plus } from '@phosphor-icons/react/dist/ssr';
+import { Funnel, PencilSimple, Plus, WarningCircle } from '@phosphor-icons/react/dist/ssr';
+import { VIEW_CANDIDATE_LIMIT } from '@/lib/db/queries';
+import type { SavedView } from '@/lib/db/types';
 import { describeFilter, type ViewFilter, type ViewSort } from '@/lib/views/filter';
 import { cn } from '@/lib/utils';
 import { useProjects, useTags } from '@/hooks/use-tasks';
@@ -22,70 +24,86 @@ import { viewIcon } from '@/components/views/viewIcons';
  * service worker precaches prerendered views: a saved view behind a dynamic
  * route would be the one screen in the app that needs a network to open. That
  * is not a trade this app makes.
+ *
+ * The two screens are separate components rather than two branches of one, so
+ * the index does not run the view's query. Called unconditionally, that read
+ * deserialized thousands of task rows and re-ran on every unrelated write while
+ * somebody looked at a list of names.
  */
 
-function ViewsScreen() {
-  const router = useRouter();
-  const params = useSearchParams();
-  const openId = params.get('v');
-
-  const views = useSavedViews();
-  const view = useSavedView(openId);
+/** Names for `describeFilter`, which both screens need. */
+function useFilterNames() {
   const projects = useProjects();
   const tags = useTags();
-  const [editing, setEditing] = useState<'new' | 'current' | null>(null);
-
-  const names = {
+  return {
     projects: new Map(projects.map((project) => [project.id, project.name])),
     tags: new Map(tags.map((tag) => [tag.id, tag.name])),
   };
+}
 
-  // Hooks run for both screens, since neither branch may skip one.
-  const tasks = useViewTasks(
-    (view?.filter as ViewFilter) ?? {},
-    (view?.sort as ViewSort) ?? 'manual',
+function OneView({
+  view,
+  onEdit,
+}: {
+  view: SavedView;
+  onEdit: () => void;
+}) {
+  const names = useFilterNames();
+  const { tasks, truncated } = useViewTasks(
+    view.filter as ViewFilter,
+    (view.sort as ViewSort) ?? 'manual',
   );
+  const Icon = viewIcon(view.icon);
 
-  function closeBuilder(savedId?: string) {
-    setEditing(null);
-    if (savedId) router.push(`/views?v=${savedId}`);
-  }
+  return (
+    <>
+      <ViewHeader
+        title={view.name}
+        eyebrow="Saved view"
+        subtitle={describeFilter(view.filter as ViewFilter, names)}
+      />
 
-  if (openId && view) {
-    const Icon = viewIcon(view.icon);
-    return (
-      <>
-        <ViewHeader title={view.name} eyebrow="Saved view" subtitle={describeFilter(view.filter as ViewFilter, names)} />
+      <div className="mb-4 flex items-center gap-2">
+        <Link href="/views" className="label rounded-md px-2 py-1 hover:text-text-mid">
+          All views
+        </Link>
+        <button
+          type="button"
+          onClick={onEdit}
+          className="label ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 hover:text-text-mid"
+        >
+          <PencilSimple size={13} aria-hidden />
+          Edit
+        </button>
+      </div>
 
-        <div className="mb-4 flex items-center gap-2">
-          <Link href="/views" className="label rounded-md px-2 py-1 hover:text-text-mid">
-            All views
-          </Link>
-          <button
-            type="button"
-            onClick={() => setEditing('current')}
-            className="label ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 hover:text-text-mid"
-          >
-            <PencilSimple size={13} aria-hidden />
-            Edit
-          </button>
-        </div>
+      {truncated && (
+        // Said out loud rather than swallowed. A filter runs over a bounded read,
+        // and a view that quietly omits half the store is worse than one that
+        // admits where it stopped.
+        <p className="mb-3 flex items-center gap-1.5 rounded-md border border-line bg-surface px-3 py-2 text-xs text-clay-200">
+          <WarningCircle size={14} weight="bold" aria-hidden />
+          Filtered over the first {VIEW_CANDIDATE_LIMIT.toLocaleString()} tasks. Anything newer is
+          not counted here.
+        </p>
+      )}
 
-        <TaskList
-          tasks={tasks}
-          empty={
-            <EmptyState
-              icon={Icon}
-              title="Nothing matches this view"
-              hint="Edit the filter, or let the work arrive."
-            />
-          }
-        />
+      <TaskList
+        tasks={tasks}
+        empty={
+          <EmptyState
+            icon={Icon}
+            title="Nothing matches this view"
+            hint="Edit the filter, or let the work arrive."
+          />
+        }
+      />
+    </>
+  );
+}
 
-        <ViewBuilder open={editing === 'current'} view={view} onClose={closeBuilder} />
-      </>
-    );
-  }
+function ViewIndex({ views, onNew }: { views: SavedView[]; onNew: () => void }) {
+  const names = useFilterNames();
 
   return (
     <>
@@ -97,7 +115,7 @@ function ViewsScreen() {
 
       <button
         type="button"
-        onClick={() => setEditing('new')}
+        onClick={onNew}
         className={cn(
           'mb-5 flex w-full items-center gap-2.5 rounded-lg border border-line bg-sunken',
           'px-3 py-3 text-left text-sm text-text-lo hover:border-clay-400 hover:text-text-mid',
@@ -143,8 +161,35 @@ function ViewsScreen() {
           })}
         </ul>
       )}
+    </>
+  );
+}
 
-      <ViewBuilder open={editing === 'new'} onClose={closeBuilder} />
+function ViewsScreen() {
+  const router = useRouter();
+  const openId = useSearchParams().get('v');
+  const views = useSavedViews();
+  const view = useSavedView(openId);
+  const [editing, setEditing] = useState<'new' | 'current' | null>(null);
+
+  function closeBuilder(savedId?: string) {
+    setEditing(null);
+    if (savedId) router.push(`/views?v=${savedId}`);
+  }
+
+  return (
+    <>
+      {view ? (
+        <OneView view={view} onEdit={() => setEditing('current')} />
+      ) : (
+        <ViewIndex views={views} onNew={() => setEditing('new')} />
+      )}
+
+      <ViewBuilder
+        open={editing !== null}
+        view={editing === 'current' ? view : undefined}
+        onClose={closeBuilder}
+      />
     </>
   );
 }

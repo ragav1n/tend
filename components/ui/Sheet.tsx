@@ -93,9 +93,15 @@ function SheetPanel({ onClose, label, children }: Omit<SheetProps, 'open'>) {
       }
     }
 
-    document.addEventListener('keydown', onKeyDown);
+    // Capture phase, so an open dialog owns Escape ahead of every app-level
+    // shortcut. Both listeners are on document, so without this the order is
+    // whichever mounted first: pressing Escape in the selection bar's schedule
+    // sheet closed the sheet AND dropped the selection, because the bar had been
+    // listening since before the sheet existed. preventDefault here is what the
+    // hotkey dispatcher checks.
+    document.addEventListener('keydown', onKeyDown, true);
     return () => {
-      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('keydown', onKeyDown, true);
       // The row that opened the sheet can be gone by now, deleted or filtered
       // out of the list, so focusing it blind would throw focus to the body.
       if (opener?.isConnected) opener.focus();

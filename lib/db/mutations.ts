@@ -443,15 +443,22 @@ export async function completeTasks(
       const status: TaskStatus = done ? 'done' : 'active';
       if (!(await writeTaskPatch(id, { status }, db))) continue;
 
-      const spawned = done && before.seriesId !== '' ? await materializeNext(before, db) : null;
-      if (spawned) created[id] = spawned;
+      const { spawnedId, advancedSeriesId } =
+        done && before.seriesId !== ''
+          ? await materializeNext(before, db)
+          : NOTHING_MATERIALIZED;
+      if (spawnedId) created[id] = spawnedId;
 
       await logActivity(db, {
         action: done ? 'complete' : 'reopen',
         entityId: id,
         group,
         before: { status: before.status },
-        after: spawned ? { status, spawnedId: spawned } : { status },
+        after: {
+          status,
+          ...(spawnedId ? { spawnedId } : {}),
+          ...(advancedSeriesId ? { advancedSeriesId } : {}),
+        },
         summary: summarize(done ? 'complete' : 'reopen', before.title),
       });
     }
@@ -467,9 +474,20 @@ export async function completeTasks(
  * second set of template columns that can drift out of step with the task the
  * user actually edits.
  */
-async function materializeNext(completed: Task, db: TendDb): Promise<string | null> {
+interface Materialized {
+  /** The occurrence that was created, or null when the series ended here. */
+  spawnedId: string | null;
+  /** The series whose `completedCount` this advanced. Recorded separately from
+   *  `spawnedId` because the count moves even when the series ends and nothing
+   *  is created, and undo has to put both back. */
+  advancedSeriesId: string | null;
+}
+
+const NOTHING_MATERIALIZED: Materialized = { spawnedId: null, advancedSeriesId: null };
+
+async function materializeNext(completed: Task, db: TendDb): Promise<Materialized> {
   const series = await db.taskSeries.get(completed.seriesId);
-  if (!series || series._del === 1) return null;
+  if (!series || series._del === 1) return NOTHING_MATERIALIZED;
 
   const day = today();
   const result = nextOccurrence({
@@ -488,7 +506,7 @@ async function materializeNext(completed: Task, db: TendDb): Promise<string | nu
     outboxRecord('taskSeries', series.id, 'update', seriesPatch, series.rowVersion),
   );
 
-  if (result.kind === 'ended') return null;
+  if (result.kind === 'ended') return { spawnedId: null, advancedSeriesId: series.id };
 
   const id = newId();
   const tagIds = (await db.taskTags.where('taskId').equals(completed.id).toArray()).map(
@@ -558,7 +576,27 @@ async function materializeNext(completed: Task, db: TendDb): Promise<string | nu
     );
   }
 
-  return id;
+  return { spawnedId: id, advancedSeriesId: series.id };
+}
+
+/**
+ * Puts a series' completion counter back by one.
+ *
+ * `materializeNext` advances it on every completion, including the one that
+ * ends the series and creates nothing, so undoing a completion has to reverse
+ * that too. Without it, five complete-then-undo cycles on an `after_count`
+ * series burn five of its occurrences and it stops early with nothing to show.
+ */
+async function rewindSeriesCount(seriesId: string, db: TendDb): Promise<void> {
+  const series = await db.taskSeries.get(seriesId);
+  if (!series || series._del === 1) return;
+
+  const patch = { completedCount: Math.max(0, series.completedCount - 1) };
+  if (patch.completedCount === series.completedCount) return;
+
+  const next = { ...series, ...patch, updatedAt: nowIso() };
+  await db.taskSeries.put({ ...next, ...deriveSeries(next) });
+  await db.outbox.add(outboxRecord('taskSeries', series.id, 'update', patch, series.rowVersion));
 }
 
 /** Soft delete. The row keeps its content so restore is just another field write. */
@@ -586,36 +624,40 @@ export async function deleteTasks(
   });
 }
 
-/** The write half of a delete, with no entry of its own. */
+/**
+ * The write half of a delete, with no entry of its own.
+ *
+ * Must be called inside a transaction already covering `tasks`, `taskTags` and
+ * `outbox`. It opens none itself, because both callers, `deleteTasks` and
+ * `revertActivity`, need several of these to land together.
+ */
 async function writeDelete(id: string, db: TendDb): Promise<Task | null> {
-  {
-    const current = await db.tasks.get(id);
-    if (!current) return null;
+  const current = await db.tasks.get(id);
+  if (!current) return null;
 
-    const deletedAt = nowIso();
-    const tagIds = (await db.taskTags.where('taskId').equals(id).toArray()).map((t) => t.tagId);
+  const deletedAt = nowIso();
+  const tagIds = (await db.taskTags.where('taskId').equals(id).toArray()).map((t) => t.tagId);
 
-    // Cascade to subtasks, matching the Postgres ON DELETE CASCADE on the
-    // composite parent key, so local and server agree on what a delete removes.
-    // Children already deleted are left alone: re-stamping deletedAt would
-    // restart their retention window, queue a pointless mutation, and make them
-    // look like part of this delete to the undo that follows it.
-    const children = (await db.tasks.where('parentTaskId').equals(id).toArray()).filter(
-      (t) => t.deletedAt === null,
-    );
+  // Cascade to subtasks, matching the Postgres ON DELETE CASCADE on the
+  // composite parent key, so local and server agree on what a delete removes.
+  // Children already deleted are left alone: re-stamping deletedAt would
+  // restart their retention window, queue a pointless mutation, and make them
+  // look like part of this delete to the undo that follows it.
+  const children = (await db.tasks.where('parentTaskId').equals(id).toArray()).filter(
+    (t) => t.deletedAt === null,
+  );
 
-    for (const row of [current, ...children]) {
-      const next = { ...row, deletedAt, updatedAt: deletedAt };
-      const childTagIds =
-        row.id === id
-          ? tagIds
-          : (await db.taskTags.where('taskId').equals(row.id).toArray()).map((t) => t.tagId);
-      await db.tasks.put({ ...next, ...deriveTask(next, childTagIds) });
-      await db.outbox.add(outboxRecord('tasks', row.id, 'delete', { deletedAt }, row.rowVersion));
-    }
-
-    return current;
+  for (const row of [current, ...children]) {
+    const next = { ...row, deletedAt, updatedAt: deletedAt };
+    const childTagIds =
+      row.id === id
+        ? tagIds
+        : (await db.taskTags.where('taskId').equals(row.id).toArray()).map((t) => t.tagId);
+    await db.tasks.put({ ...next, ...deriveTask(next, childTagIds) });
+    await db.outbox.add(outboxRecord('tasks', row.id, 'delete', { deletedAt }, row.rowVersion));
   }
+
+  return current;
 }
 
 /**
@@ -650,29 +692,26 @@ export async function restoreTasks(
   });
 }
 
-/** The write half of a restore, with no entry of its own. */
+/** The write half of a restore, with the same transaction requirement as
+ *  `writeDelete`. */
 async function writeRestore(id: string, db: TendDb): Promise<Task | null> {
-  {
-    const current = await db.tasks.get(id);
-    if (!current) return null;
+  const current = await db.tasks.get(id);
+  if (!current) return null;
 
-    const children = (await db.tasks.where('parentTaskId').equals(id).toArray()).filter(
-      (t) => t.deletedAt !== null && t.deletedAt === current.deletedAt,
+  const children = (await db.tasks.where('parentTaskId').equals(id).toArray()).filter(
+    (t) => t.deletedAt !== null && t.deletedAt === current.deletedAt,
+  );
+
+  for (const row of [current, ...children]) {
+    const next = { ...row, deletedAt: null, updatedAt: nowIso() };
+    const tagIds = (await db.taskTags.where('taskId').equals(row.id).toArray()).map((t) => t.tagId);
+    await db.tasks.put({ ...next, ...deriveTask(next, tagIds) });
+    await db.outbox.add(
+      outboxRecord('tasks', row.id, 'undelete', { deletedAt: null }, row.rowVersion),
     );
-
-    for (const row of [current, ...children]) {
-      const next = { ...row, deletedAt: null, updatedAt: nowIso() };
-      const tagIds = (await db.taskTags.where('taskId').equals(row.id).toArray()).map(
-        (t) => t.tagId,
-      );
-      await db.tasks.put({ ...next, ...deriveTask(next, tagIds) });
-      await db.outbox.add(
-        outboxRecord('tasks', row.id, 'undelete', { deletedAt: null }, row.rowVersion),
-      );
-    }
-
-    return current;
   }
+
+  return current;
 }
 
 /**
@@ -697,7 +736,10 @@ export async function revertActivity(
   const ordered = [...entries].sort((a, b) => b.id.localeCompare(a.id));
   const undoneAt = nowIso();
 
-  await db.transaction('rw', TASK_TABLES(db), async () => {
+  // taskSeries is in the list because undoing a completion has to rewind the
+  // counter materializeNext advanced. Without it this could not write that row
+  // even if it wanted to.
+  await db.transaction('rw', [...TASK_TABLES(db), db.taskSeries], async () => {
     for (const entry of ordered) {
       switch (entry.action) {
         case 'create':
@@ -718,6 +760,12 @@ export async function revertActivity(
           // that promises exactly one.
           const spawned = entry.after.spawnedId;
           if (typeof spawned === 'string' && spawned !== '') await writeDelete(spawned, db);
+          // And the counter moves on every completion, including the one that
+          // ended the series and spawned nothing.
+          const advanced = entry.after.advancedSeriesId;
+          if (typeof advanced === 'string' && advanced !== '') {
+            await rewindSeriesCount(advanced, db);
+          }
           break;
         }
       }

@@ -389,13 +389,34 @@ export async function savedViewById(
   return row && row._del === 0 ? row : undefined;
 }
 
+/** Above this a saved view stops reading the whole store on the main thread and
+ *  says so instead. `toArray()` on tasks is banned for the same reason. */
+export const VIEW_CANDIDATE_LIMIT = 5000;
+
+export interface Candidates {
+  tasks: Task[];
+  /** True when the cap bit, so a caller can say the answer is partial rather
+   *  than quietly showing a filtered subset of a subset. */
+  truncated: boolean;
+}
+
 /**
  * The candidate set a saved view filters.
  *
  * One index-bound read of everything not deleted, capped, because no compound
  * index can serve a filter that combines a project, tags, a priority floor and
  * a due window. `lib/views/filter.ts` decides from here.
+ *
+ * The cap is reported rather than applied in silence. It walks the `_del` index
+ * in primary-key order, so a truncated read is the oldest N ids and everything
+ * created after them is invisible: a view that quietly omits half your tasks is
+ * worse than one that admits it.
  */
-export async function viewCandidates(limit = 2000, db: TendDb = getDb()): Promise<Task[]> {
-  return db.tasks.where('_del').equals(0).limit(limit).toArray();
+export async function viewCandidates(
+  limit = VIEW_CANDIDATE_LIMIT,
+  db: TendDb = getDb(),
+): Promise<Candidates> {
+  // One over the limit, so "is there more" costs no second query.
+  const rows = await db.tasks.where('_del').equals(0).limit(limit + 1).toArray();
+  return { tasks: rows.slice(0, limit), truncated: rows.length > limit };
 }

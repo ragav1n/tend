@@ -42,6 +42,20 @@ export interface ViewFilter {
 
 export const EMPTY_FILTER: ViewFilter = {};
 
+/**
+ * What a priority floor is called, keyed by the floor.
+ *
+ * Exported so the builder's options read from it too. It said "P1 and up" for
+ * the top priority, which is a claim about nothing, while the builder's own
+ * dropdown said "P1 only" for the same value.
+ */
+export const PRIORITY_LABEL: Record<Priority, string> = {
+  0: 'Any priority',
+  1: 'P3 and up',
+  2: 'P2 and up',
+  3: 'P1 only',
+};
+
 /** Days from `day`, as a plain date. Local by construction: both ends are wall
  *  clock, which is the only kind of date a task has. */
 function shift(day: string, days: number): string {
@@ -159,7 +173,7 @@ export function describeFilter(
 
   for (const id of filter.tagIds ?? []) parts.push(`#${names.tags.get(id) ?? 'tag'}`);
 
-  if (filter.minPriority) parts.push(`P${4 - filter.minPriority} and up`);
+  if (filter.minPriority) parts.push(PRIORITY_LABEL[filter.minPriority]);
 
   const windows: Record<DueWindow, string> = {
     any: '',

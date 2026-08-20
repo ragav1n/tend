@@ -190,6 +190,54 @@ describe('undo', () => {
     expect(after.map((t) => t.id)).toEqual([id]);
   });
 
+  it('rewinds the series counter it advanced, so undo does not burn occurrences', async () => {
+    const id = await createTask({ title: 'Water the plants', dueDate: today() }, db);
+    const seriesId = (await setTaskRecurrence(id, DAILY, db))!;
+    expect((await db.taskSeries.get(seriesId))?.completedCount).toBe(0);
+
+    // Five complete-then-undo cycles. materializeNext advances the counter on
+    // every completion, so without the rewind this reads 5 with nothing to show
+    // for it, and an `after_count` series ends five occurrences early.
+    for (let i = 0; i < 5; i++) {
+      const open = (await db.tasks.toArray()).find((t) => t._del === 0 && t._done === 0)!;
+      await completeTask(open.id, true, db);
+      await undoLast(db);
+    }
+
+    expect((await db.taskSeries.get(seriesId))?.completedCount).toBe(0);
+    const open = (await db.tasks.toArray()).filter((t) => t._del === 0 && t._done === 0);
+    expect(open).toHaveLength(1);
+  });
+
+  it('rewinds it even when the completion ended the series and spawned nothing', async () => {
+    const id = await createTask({ title: 'Take the course', dueDate: today() }, db);
+    const seriesId = (await setTaskRecurrence(
+      id,
+      { ...DAILY, endsMode: 'after_count', endsAfterCount: 1 },
+      db,
+    ))!;
+
+    await completeTask(id, true, db);
+    // The series ends here, so there is no occurrence to delete, and the only
+    // thing undo has to put back is the counter.
+    expect((await db.taskSeries.get(seriesId))?.completedCount).toBe(1);
+    expect((await db.tasks.toArray()).filter((t) => t._del === 0)).toHaveLength(1);
+
+    await undoLast(db);
+    expect((await db.taskSeries.get(seriesId))?.completedCount).toBe(0);
+  });
+
+  it('never takes the counter below zero', async () => {
+    const id = await createTask({ title: 'Water the plants', dueDate: today() }, db);
+    const seriesId = (await setTaskRecurrence(id, DAILY, db))!;
+    await completeTask(id, true, db);
+    await undoLast(db);
+    // A second undo walks past the completion to the create; nothing should
+    // decrement again.
+    await undoLast(db);
+    expect((await db.taskSeries.get(seriesId))?.completedCount).toBe(0);
+  });
+
   it('lands on the oldest value when one gesture wrote a field twice', async () => {
     const a = await createTask({ title: 'A', priority: 0 }, db);
     // Two entries in one group over the same field, both written inside one

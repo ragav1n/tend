@@ -403,9 +403,26 @@ export async function discardLocal(
     case 'taskSeries':
       await db.taskSeries.delete(entityId);
       return;
+    case 'focusSessions':
+      await db.focusSessions.delete(entityId);
+      return;
+    case 'activityLog':
+      await db.activityLog.delete(entityId);
+      return;
+    case 'savedViews':
+      await db.savedViews.delete(entityId);
+      return;
     case 'prefs':
       // One row per user, created by the signup trigger. Nothing can race it.
       return;
+    default: {
+      // Exhaustiveness, checked by the compiler. A switch that falls off the
+      // end here leaves the local duplicate in place forever and reports the
+      // row as discarded, so the next table added must not be able to slip
+      // through: three already had.
+      const unreachable: never = table;
+      throw new Error(`discardLocal has no arm for ${String(unreachable)}`);
+    }
   }
 }
 

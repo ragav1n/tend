@@ -40,6 +40,14 @@ export function resolveTheme(pref: ThemePref, prefersDark: boolean): Theme {
  * as a string rather than compiled from a function so what ships is exactly
  * what is read here.
  *
+ * It also CREATES the theme-color tag rather than editing one the server sent.
+ * Neither of the two obvious alternatives works. `viewport.themeColor` can only
+ * emit a media-scoped pair, which is wrong in a quarter of the cases: on a
+ * light OS with the app forced dark, the browser matches the light tag nothing
+ * touched and the status bar stays pale against a dark page. And a plain tag
+ * rendered in JSX gets re-inserted by React the moment this script changes it,
+ * leaving two tags that disagree. Verified in a browser both ways.
+ *
  * Dark is the fallback for a browser with no `matchMedia` and for a value that
  * has been tampered with, because dark is what the app looked like before this
  * existed.
@@ -51,10 +59,15 @@ export const THEME_SCRIPT = `
     if (pref !== 'light' && pref !== 'dark' && pref !== 'system') pref = 'system';
     var dark = pref === 'dark' ||
       (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    var theme = dark ? 'dark' : 'light';
-    document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+
     var meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', dark ? ${JSON.stringify(THEME_COLOR.dark)} : ${JSON.stringify(THEME_COLOR.light)});
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.setAttribute('name', 'theme-color');
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute('content', dark ? ${JSON.stringify(THEME_COLOR.dark)} : ${JSON.stringify(THEME_COLOR.light)});
   } catch (e) {
     document.documentElement.dataset.theme = 'dark';
   }
@@ -64,8 +77,7 @@ export const THEME_SCRIPT = `
 /** Paints a resolved theme onto the document. Safe to call on every change. */
 export function applyTheme(theme: Theme): void {
   document.documentElement.dataset.theme = theme;
-  // Kept in step by hand rather than through the viewport export, because the
-  // metadata version can only follow the OS setting and this can be overridden.
+  // The tag THEME_SCRIPT created, which is the only one on the page.
   const meta = document.querySelector('meta[name="theme-color"]');
   meta?.setAttribute('content', THEME_COLOR[theme]);
 }

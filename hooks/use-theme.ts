@@ -38,13 +38,22 @@ function subscribe(notify: () => void): () => void {
     notify();
   }
 
+  // Another tab wrote the preference. `storage` does not fire in the tab that
+  // did the writing, so this is the only signal this one gets, and re-rendering
+  // the control without repainting the document would leave the settings screen
+  // claiming Light over a dark page.
+  function onStorage() {
+    applyTheme(resolveTheme(readThemePref(), media.matches));
+    notify();
+  }
+
   media.addEventListener('change', onSystemChange);
-  window.addEventListener('storage', notify);
+  window.addEventListener('storage', onStorage);
   listeners.add(notify);
 
   return () => {
     media.removeEventListener('change', onSystemChange);
-    window.removeEventListener('storage', notify);
+    window.removeEventListener('storage', onStorage);
     listeners.delete(notify);
   };
 }

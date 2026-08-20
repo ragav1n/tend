@@ -10,9 +10,11 @@ import { exportable, icsFilename, toIcs, type IcsTask } from './serialize';
  * `toArray()`, because "export" is not a reason to deserialize the whole store
  * on the frame somebody clicked a button.
  */
-export async function buildIcs(db: TendDb = getDb()): Promise<{ body: string; filename: string }> {
-  const [tasks, projects, tags] = await Promise.all([
-    viewCandidates(5000, db),
+export async function buildIcs(
+  db: TendDb = getDb(),
+): Promise<{ body: string; filename: string; truncated: boolean }> {
+  const [candidates, projects, tags] = await Promise.all([
+    viewCandidates(undefined, db),
     projectOptions(db),
     tagOptions(db),
   ]);
@@ -20,7 +22,7 @@ export async function buildIcs(db: TendDb = getDb()): Promise<{ body: string; fi
   const projectName = new Map(projects.map((p) => [p.id, p.name]));
   const tagName = new Map(tags.map((t) => [t.id, t.name]));
 
-  const rows = exportable(tasks);
+  const rows = exportable(candidates.tasks);
   const seriesIds = [...new Set(rows.map((t) => t.seriesId).filter(Boolean))];
   const series = new Map(
     (await db.taskSeries.bulkGet(seriesIds))
@@ -38,7 +40,7 @@ export async function buildIcs(db: TendDb = getDb()): Promise<{ body: string; fi
     };
   });
 
-  return { body: toIcs(entries), filename: icsFilename() };
+  return { body: toIcs(entries), filename: icsFilename(), truncated: candidates.truncated };
 }
 
 /**

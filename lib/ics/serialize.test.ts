@@ -239,6 +239,34 @@ describe('recurrence', () => {
     expect(toRrule({ ...RULE, endsMode: 'after_count', endsAfterCount: 10 })).toContain('COUNT=10');
   });
 
+  it('matches UNTIL to the value type of DTSTART', () => {
+    // RFC 5545 3.3.10. A DATE UNTIL against a DATE-TIME start makes strict
+    // parsers drop the rule, and Google Calendar imports it as never-ending.
+    const ends = { ...RULE, endsMode: 'on_date' as const, endsOn: '2026-12-31' };
+    expect(toRrule(ends, false)).toContain('UNTIL=20261231');
+    expect(toRrule(ends, true)).toContain('UNTIL=20261231T235959');
+  });
+
+  it('carries that through to a timed recurring event', () => {
+    const out = ics([
+      {
+        task: task({ dueTime: '09:00' }),
+        rule: { ...RULE, endsMode: 'on_date', endsOn: '2026-12-31' },
+      },
+    ]);
+    expect(out).toContain('DTSTART:20260821T090000');
+    expect(out).toContain('UNTIL=20261231T235959');
+  });
+
+  it('and leaves an all-day one as a DATE', () => {
+    const out = ics([
+      { task: task(), rule: { ...RULE, endsMode: 'on_date', endsOn: '2026-12-31' } },
+    ]);
+    expect(out).toContain('DTSTART;VALUE=DATE:20260821');
+    expect(out).toContain('UNTIL=20261231');
+    expect(out).not.toContain('UNTIL=20261231T');
+  });
+
   it('refuses to write a rule for completion-anchored recurrence', () => {
     // RFC 5545 describes a fixed calendar series. "Every 3 days after I finish
     // it" is not one, and emitting FREQ=DAILY;INTERVAL=3 would export a

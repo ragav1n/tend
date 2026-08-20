@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import Dexie from 'dexie';
 import { setDb, TendDb } from '@/lib/db/client';
-import { createTask, ensureTag, setTaskTags } from '@/lib/db/mutations';
+import { createSavedView, createTask, ensureTag, setTaskTags } from '@/lib/db/mutations';
 import { todayList, today } from '@/lib/db/queries';
-import { applyPage, readCursor, writeCursor } from './apply';
+import { applyPage, discardLocal, readCursor, writeCursor } from './apply';
 import type { PullRow } from './protocol';
 
 let db: TendDb;
@@ -237,5 +237,58 @@ describe('the cursor', () => {
     await writeCursor(db, 42);
     await writeCursor(db, 7);
     expect(await readCursor(db)).toBe(42);
+  });
+});
+
+/**
+ * Dropping a local row that lost a uniqueness race.
+ *
+ * `pushOnce` reports the row as discarded whether or not anything happened, so
+ * a table with no arm here leaves the duplicate in Dexie forever and says it
+ * cleaned up. Three tables were missing one at once.
+ */
+describe('discardLocal', () => {
+  it('drops a task and its tag joins', async () => {
+    const tag = await ensureTag('work', db);
+    const id = await createTask({ title: 'Draft the deck', tagIds: [tag] }, db);
+    expect(await db.taskTags.where('taskId').equals(id).count()).toBe(1);
+
+    await discardLocal(db, 'tasks', id);
+    expect(await db.tasks.get(id)).toBeUndefined();
+    expect(await db.taskTags.where('taskId').equals(id).count()).toBe(0);
+  });
+
+  it('drops a saved view, which the sidebar would otherwise list twice', async () => {
+    const id = await createSavedView({ name: 'Hot list' }, db);
+    await discardLocal(db, 'savedViews', id);
+    expect(await db.savedViews.get(id)).toBeUndefined();
+  });
+
+  it('drops an activity entry', async () => {
+    const id = await createTask({ title: 'Anything' }, db);
+    const entry = (await db.activityLog.toArray()).find((e) => e.entityId === id)!;
+    await discardLocal(db, 'activityLog', entry.id);
+    expect(await db.activityLog.get(entry.id)).toBeUndefined();
+  });
+
+  it('drops a focus session', async () => {
+    const { startFocusSession } = await import('@/lib/db/mutations');
+    const id = await startFocusSession({ plannedMinutes: 25 }, db);
+    await discardLocal(db, 'focusSessions', id);
+    expect(await db.focusSessions.get(id)).toBeUndefined();
+  });
+
+  it('has an arm for every entity table, checked at runtime as well as by tsc', async () => {
+    // prefs is the one table with nothing to drop: the signup trigger owns that
+    // row and nothing can race it.
+    const tables = [
+      'tasks', 'taskTags', 'projects', 'tags', 'taskSeries',
+      'focusSessions', 'activityLog', 'savedViews', 'prefs',
+    ] as const;
+    for (const table of tables) {
+      // A missing arm now throws rather than returning quietly, so an id that
+      // matches nothing is the only thing that should be a no-op.
+      await expect(discardLocal(db, table, 'nothing-with-this-id')).resolves.toBeUndefined();
+    }
   });
 });

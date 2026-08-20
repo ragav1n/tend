@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { pick, prune, type Pick } from '@/lib/selection/range';
+import { pick, prune, type Selection } from '@/lib/selection/range';
 
 /**
  * Which rows are picked, and whether the list is offering to pick any.
@@ -28,7 +28,7 @@ interface SelectionState {
   clear: () => void;
 }
 
-const NONE: Pick = { selected: new Set(), anchor: null };
+const NONE: Selection = { selected: new Set(), anchor: null };
 
 export const useSelectionStore = create<SelectionState>((set, get) => ({
   active: false,

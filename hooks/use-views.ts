@@ -2,12 +2,12 @@
 
 import { useMemo } from 'react';
 import { useStableLiveQuery } from './use-live';
-import { savedViews, today, viewCandidates } from '@/lib/db/queries';
+import { savedViews, today, viewCandidates, type Candidates } from '@/lib/db/queries';
 import type { SavedView, Task } from '@/lib/db/types';
 import { applyView, type ViewFilter, type ViewSort } from '@/lib/views/filter';
 
 const NO_VIEWS: SavedView[] = [];
-const NO_TASKS: Task[] = [];
+const NO_CANDIDATES: Candidates = { tasks: [], truncated: false };
 
 export function useSavedViews(): SavedView[] {
   return useStableLiveQuery(() => savedViews(), [], NO_VIEWS);
@@ -28,12 +28,17 @@ export function useSavedView(id: string | null): SavedView | undefined {
  * The filter is keyed by its JSON, not its object identity, so a caller can
  * build it inline without re-running the query on every render.
  */
-export function useViewTasks(filter: ViewFilter, sort: ViewSort): Task[] {
+export function useViewTasks(
+  filter: ViewFilter,
+  sort: ViewSort,
+): { tasks: Task[]; truncated: boolean } {
   const key = JSON.stringify(filter);
-  const candidates = useStableLiveQuery(() => viewCandidates(), [], NO_TASKS);
+  const candidates = useStableLiveQuery(() => viewCandidates(), [], NO_CANDIDATES);
 
-  return useMemo(
-    () => applyView(candidates, JSON.parse(key) as ViewFilter, sort, today()),
-    [candidates, key, sort],
+  const tasks = useMemo(
+    () => applyView(candidates.tasks, JSON.parse(key) as ViewFilter, sort, today()),
+    [candidates.tasks, key, sort],
   );
+
+  return { tasks, truncated: candidates.truncated };
 }
