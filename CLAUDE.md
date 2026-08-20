@@ -30,6 +30,23 @@ The full architecture plan lives at `~/.claude/plans/i-want-to-create-noble-flam
   and `node brand/gen-icons.mjs` rasterises the favicon, the Next icon conventions, the PWA
   set and the email PNG from it, resolving its colours out of `app/globals.css`. Change the
   paths there and re-run the script. Never hand-edit an icon, and never hardcode the hex.
+- **Every task mutation writes an activity entry in the same transaction**, so
+  undo can put it back. Structural writes that could only be half undone
+  (reorder, recurrence, tags) go through the unlogged helpers in `mutations.ts`
+  instead. Undo reverses through those same helpers and stamps `undone_at`; it
+  never writes new history, or the next undo would redo it.
+- **Text on a clay or olive fill is `text-on-accent`, never `text-hi`.** Both
+  ramps keep the source terracotta as the resting fill, and in the light ramp
+  `text-hi` is near black. `--color-on-accent` is the one text token that does
+  not flip with the theme.
+- **There are two colour ramps and `lib/color.test.ts` asserts both.** The step
+  numbers are jobs, not a lightness ordering: on a light page the text steps
+  (300, 200) sit below the border step (400), and `raised` is darker than
+  `surface` rather than lighter. Read tokens with `themeTokens()`, never
+  `extractColorTokens()` over the whole file, which lets the last ramp win.
+- **A key binding is scoped.** `lib/keys/map.ts` is the one list; the dispatcher
+  binds `scope: 'global'` and the selection bar binds its own. Backspace must
+  not be an app-wide delete key.
 - **The sync cursor is `row_version`, never `updated_at`.** `updated_at` is assigned before
   commit, so concurrent transactions can commit out of timestamp order and a timestamp cursor
   skips rows permanently.
@@ -111,6 +128,12 @@ These differ from Next 14/15 and will silently break things:
   detection and automatic retry of blocked navigations and prefetches. Deliberately left off:
   the service worker precaches every view, so an offline navigation is served from cache
   rather than blocked, and there is little left for it to retry.
+- **`useSearchParams()` opts the whole route out of prerendering** unless it sits
+  behind its own `<Suspense>`. Read from a component in the layout, that is every
+  page in the app, and `next build` fails on each one. It matters beyond the
+  build: the service worker precaches prerendered views, so a route that turns
+  dynamic is a route that needs the network. Saved views open at `/views?v=` for
+  the same reason rather than at `/views/[id]`.
 - `RouteContext<'/api/path'>` is a generated global type. Prefer it over hand-writing
   `{ params: Promise<...> }`.
 - The `<!-- BEGIN:nextjs-agent-rules -->` block in `AGENTS.md` is rewritten by `next dev` on
