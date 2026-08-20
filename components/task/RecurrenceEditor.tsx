@@ -168,7 +168,7 @@ export function RecurrenceEditor({ task, series }: { task: Task; series: TaskSer
                       className={cn(
                         'size-8 rounded-md border text-xs transition-colors duration-200',
                         on
-                          ? 'border-clay-400 bg-clay-600 text-text-hi'
+                          ? 'border-clay-400 bg-clay-600 text-on-accent'
                           : 'border-line bg-void text-text-lo hover:border-clay-400',
                       )}
                     >

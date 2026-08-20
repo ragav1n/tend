@@ -125,7 +125,7 @@ function InstallCard({
                 onClick={onInstall}
                 className={cn(
                   'mt-3 rounded-md border border-clay-400 bg-clay-600 px-3 py-1.5',
-                  'font-sans text-xs text-text-hi hover:bg-clay-500',
+                  'font-sans text-xs text-on-accent hover:bg-clay-500',
                 )}
                 style={{ boxShadow: 'var(--shadow-flush)' }}
               >

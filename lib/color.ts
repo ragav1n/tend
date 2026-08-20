@@ -91,3 +91,44 @@ export function extractColorTokens(css: string): Record<string, Oklch> {
   }
   return out;
 }
+
+/**
+ * The body of the first block with this header, brace-balanced.
+ *
+ * The token regex above scans a whole file and lets the last declaration win,
+ * which was fine while there was one ramp. With two, `--color-text-hi` appears
+ * twice with opposite values, so anything that wants one theme has to say
+ * which. The icon generator is the caller that would otherwise silently start
+ * drawing a near-black mark.
+ */
+export function extractBlock(css: string, header: string): string | null {
+  const start = css.indexOf(header);
+  if (start === -1) return null;
+
+  let depth = 0;
+  for (let i = start; i < css.length; i++) {
+    const ch = css[i];
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return css.slice(start + header.length, i);
+    }
+  }
+  return null;
+}
+
+const DARK_HEADER = '@theme {';
+const LIGHT_HEADER = "[data-theme='light'] {";
+
+/**
+ * Both ramps, resolved.
+ *
+ * Light is the base tokens with its overrides applied, which mirrors what the
+ * cascade does: a token the light block does not mention keeps its dark value,
+ * and that is exactly the kind of omission a test should be able to catch.
+ */
+export function themeTokens(css: string): { dark: Record<string, Oklch>; light: Record<string, Oklch> } {
+  const dark = extractColorTokens(extractBlock(css, DARK_HEADER) ?? '');
+  const overrides = extractColorTokens(extractBlock(css, LIGHT_HEADER) ?? '');
+  return { dark, light: { ...dark, ...overrides } };
+}

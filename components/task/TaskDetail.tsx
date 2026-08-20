@@ -353,7 +353,7 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
                 className={cn(
                   'rounded-pill border px-2.5 py-1 text-xs transition-colors duration-200',
                   on
-                    ? 'border-clay-400 bg-clay-600 text-text-hi'
+                    ? 'border-clay-400 bg-clay-600 text-on-accent'
                     : 'border-line bg-sunken text-text-lo hover:border-clay-400',
                 )}
               >

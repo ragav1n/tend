@@ -88,7 +88,7 @@ export function TaskRow({
               className={cn(
                 'grid size-[22px] place-items-center rounded-[6px] border',
                 selected
-                  ? 'border-clay-400 bg-clay-600 text-text-hi'
+                  ? 'border-clay-400 bg-clay-600 text-on-accent'
                   : 'border-line-strong text-transparent hover:border-clay-400',
               )}
             >

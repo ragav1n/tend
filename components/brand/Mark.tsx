@@ -34,7 +34,7 @@ export function MarkTile({ size = 28, className }: { size?: number; className?: 
   return (
     <span
       className={cn(
-        'inline-grid shrink-0 place-items-center bg-clay-600 text-text-hi',
+        'inline-grid shrink-0 place-items-center bg-clay-600 text-on-accent',
         'border border-line-bright',
         className,
       )}

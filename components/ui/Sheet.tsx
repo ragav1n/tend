@@ -119,7 +119,7 @@ function SheetPanel({ onClose, label, children }: Omit<SheetProps, 'open'>) {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={QUICK_FADE}
-        className="fixed inset-0 z-40 bg-void/70 backdrop-blur-sm"
+        className="fixed inset-0 z-40 bg-scrim backdrop-blur-sm"
       />
 
       <motion.div

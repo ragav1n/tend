@@ -12,6 +12,7 @@ import { useInstall } from '@/hooks/use-install';
 import { usePush } from '@/hooks/use-push';
 import { formatBytes, useStorageState } from '@/hooks/use-storage';
 import { useSyncState } from '@/hooks/use-sync';
+import { useTheme } from '@/hooks/use-theme';
 import { updatePrefs } from '@/lib/db/mutations';
 import { deviceTimezone, fromTimeInput, toTimeInput } from '@/lib/db/prefs';
 import type { PrefsPatch } from '@/lib/db/mutations';
@@ -365,9 +366,29 @@ function Group({
  */
 function DeviceGroup() {
   const { persisted, report } = useStorageState();
+  const { pref, setPref } = useTheme();
 
   return (
     <Group title="This device" icon={HardDrives}>
+      {/* Theme sits here rather than under a synced group on purpose. A phone in
+          a dark bedroom and a laptop under an office light are one person making
+          two different choices, and a synced setting makes one of them wrong. */}
+      <Row label="Theme" hint="Kept on this device, not synced with the account.">
+        {(id) => (
+          <Segmented
+            id={id}
+            label="Theme"
+            value={pref}
+            options={[
+              { value: 'system', label: 'Auto' },
+              { value: 'light', label: 'Light' },
+              { value: 'dark', label: 'Dark' },
+            ]}
+            onChange={setPref}
+          />
+        )}
+      </Row>
+
       <NotificationRow />
 
       <Row

@@ -27,7 +27,8 @@
 
   /* ── CLAY = interaction. Focus, primary, selection, the check-off. ────────
      600 is the source terracotta and is a FILL ONLY: it never carries text or
-     an icon at 1.71:1. Text on top of a clay fill is --color-text-hi (7.16:1). */
+     an icon at 1.71:1. Text on top of a clay fill is --color-on-accent
+     (7.16:1), which is the one text token that does not flip with the theme. */
   --color-clay-700: oklch(0.380 0.128 33.5); /* #781D09  pressed fill */
   --color-clay-600: oklch(0.446 0.128 33.5); /* #8D321F  SOURCE, resting fill */
   --color-clay-500: oklch(0.520 0.128 33.5); /* #A54834  hover fill */
@@ -52,6 +53,11 @@
   --color-sand-200: oklch(0.760 0.073 67.6);  /* #D0A97F */
 
   /* ── Text, warm-tinted so it belongs to the palette. Never pure white. ──── */
+  /* The cream that sits ON a clay or olive fill. Its own token because it is
+     the one text colour that must NOT flip with the theme: both themes keep the
+     source terracotta as the resting fill, so both need light text on it, and
+     in the light theme --color-text-hi is near black. */
+  --color-on-accent:  oklch(0.960 0.012 67.6); /* #F7F0E9  7.16 on clay-600 */
   --color-text-hi:    oklch(0.960 0.012 67.6); /* #F7F0E9  12.25 on surface */
   --color-text-mid:   oklch(0.790 0.020 67.6); /* #C4B8AD   7.11 on surface */
   --color-text-lo:    oklch(0.670 0.024 67.6); /* #A09386   4.59 on surface, the AA floor */
@@ -61,6 +67,10 @@
   --color-line:        color-mix(in oklab, white 8%,  transparent);
   --color-line-bright: color-mix(in oklab, white 15%, transparent);
   --color-line-strong: color-mix(in oklab, white 22%, transparent);
+
+  /* What a modal puts between itself and the page. Dark in both themes: a
+     near-white veil over a near-white page does not read as out of reach. */
+  --color-scrim: oklch(0.185 0.008 264 / 0.70);
 
   /* ── Type ───────────────────────────────────────────────────────────────── */
   --font-sans:    var(--font-instrument-sans), ui-sans-serif, system-ui, sans-serif;
@@ -101,6 +111,97 @@
    --color-text-faint clears nothing. Dividers and decoration only, never text a
    user has to read. --color-clay-600 and --color-olive-600 are fills only.
    ───────────────────────────────────────────────────────────────────────────── */
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE LIGHT THEME
+
+   A second measured ramp, not an inversion. Inverting the dark tokens clears
+   every threshold on paper and reads like a lightbox: the accents come out
+   pastel and the text comes out grey.
+
+   Two things are true here that are not true in the dark theme, and both are
+   why this is a second ramp rather than a filter:
+
+   1. The step numbers are jobs, not a lightness ordering. In the dark theme a
+      higher number is lighter, so the text steps (300, 200) sit above the
+      fills. On a light page text has to be DARKER than a border, so 300 and 200
+      sit below 400 here. Every component keeps using the step named for its
+      job, which is what lets one set of class names serve both themes.
+
+   2. `raised` is darker than `surface`, not lighter. Elevation still means
+      closer to the light, but the page is already near white, so a control
+      inside a card steps down instead of up. The knock-on is that the dark
+      theme's trap, text-lo failing on raised, does not exist here: every text
+      token clears AA on all four neutrals.
+
+   The neutrals move to hue 67.6, the beige hue, because a cool grey page under
+   these warm accents reads as a screenshot of somebody else's app. Every number
+   in the comments is measured, and lib/color.test.ts re-asserts all of them for
+   both themes.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  /* ── Neutral ramp, hue 67.6 from beige. Warm paper, never pure white. ───── */
+  --color-void:    oklch(0.968 0.008 67.6); /* #F8F4EF  page floor */
+  --color-surface: oklch(0.995 0.004 67.6); /* #FFFDFB  cards, the top level */
+  --color-raised:  oklch(0.938 0.010 67.6); /* #EFE9E4  controls inside cards */
+  --color-sunken:  oklch(0.922 0.012 67.6); /* #EBE4DD  inputs, wells */
+
+  /* ── CLAY = interaction. 600 is still the source terracotta and still a fill
+        only: text on it is --color-on-accent (7.16), never text-hi, which is
+        near black here. 300 and 200 are the text steps and sit BELOW 400. ──── */
+  --color-clay-700: oklch(0.360 0.128 33.5); /* #711602  pressed fill */
+  --color-clay-600: oklch(0.446 0.128 33.5); /* #8D321F  SOURCE, resting fill */
+  --color-clay-500: oklch(0.520 0.128 33.5); /* #A54834  hover fill */
+  --color-clay-400: oklch(0.570 0.128 33.5); /* #B65743  borders, ring, 3.75 on sunken */
+  --color-clay-300: oklch(0.500 0.128 33.5); /* #9F422F  text on surface, 5.06 on sunken */
+  --color-clay-200: oklch(0.430 0.128 33.5); /* #882D1A  text on raised, 7.18 there */
+
+  /* ── OLIVE = state. Same shape as clay. ─────────────────────────────────── */
+  --color-olive-700: oklch(0.360 0.055 119.5); /* #3A411F */
+  --color-olive-600: oklch(0.446 0.055 119.5); /* #505935  SOURCE, fill */
+  --color-olive-500: oklch(0.520 0.055 119.5); /* #656E49 */
+  --color-olive-400: oklch(0.570 0.055 119.5); /* #737C57  rings, 3.49 on sunken */
+  --color-olive-300: oklch(0.490 0.055 119.5); /* #5C6541  done text, 4.89 on sunken */
+  --color-olive-200: oklch(0.430 0.055 119.5); /* #4C5431  done text on raised, 6.65 */
+
+  /* ── SAND. Darkened wholesale: the source beige measures 2.5 on this page,
+        so here it survives as a hue rather than as a value. ───────────────── */
+  --color-sand-500: oklch(0.560 0.073 67.6);  /* #916C44 */
+  --color-sand-400: oklch(0.640 0.073 67.6);  /* #AA845B  non-text marks only */
+  --color-sand-300: oklch(0.500 0.073 67.6);  /* #7F5B33  6.00 on surface */
+  --color-sand-200: oklch(0.440 0.073 67.6);  /* #6D4A22 */
+
+  /* ── Text. Warm near-black rather than grey, so it belongs to the page. ─── */
+  --color-text-hi:    oklch(0.235 0.018 67.6); /* #241D15  16.45 on surface */
+  --color-text-mid:   oklch(0.430 0.024 67.6); /* #594E42   8.02 on surface */
+  --color-text-lo:    oklch(0.500 0.028 67.6); /* #6E6152   5.94 surface, 4.78 sunken */
+  --color-text-faint: oklch(0.700 0.022 67.6); /* #A89C90   2.64, NON-TEXT ONLY */
+
+  /* ── Hairlines invert to black alpha, or they vanish. ───────────────────── */
+  --color-line:        color-mix(in oklab, black 9%,  transparent);
+  --color-line-bright: color-mix(in oklab, black 15%, transparent);
+  --color-line-strong: color-mix(in oklab, black 24%, transparent);
+
+  /* Lighter than the dark theme's, because the blur behind it is doing more
+     work on a page this bright. */
+  --color-scrim: oklch(0.28 0.02 67.6 / 0.35);
+
+  /* ── Elevation. The 1px top highlight goes white and softens, since a white
+        edge on a near-white card is a smudge rather than a light. The shadows
+        warm up and lighten: neutral black on this page reads as dirt. ─────── */
+  --shadow-sunken: inset 0 1px 2px oklch(0.30 0.02 67.6 / 0.16),
+                   inset 0 -1px 0 oklch(1 0 0 / 0.6);
+  --shadow-flush:  0 1px 2px oklch(0.30 0.02 67.6 / 0.10);
+  --shadow-raised: inset 0 1px 0 oklch(1 0 0 / 0.8),
+                   0 2px 4px oklch(0.30 0.02 67.6 / 0.10),
+                   0 8px 20px oklch(0.30 0.02 67.6 / 0.09);
+  --shadow-lifted: inset 0 1px 0 oklch(1 0 0 / 0.8),
+                   0 8px 16px oklch(0.30 0.02 67.6 / 0.13),
+                   0 24px 48px oklch(0.30 0.02 67.6 / 0.11);
+}
 
 @layer base {
   :root {
@@ -160,7 +261,7 @@
 
   ::selection {
     background-color: var(--color-clay-600);
-    color: var(--color-text-hi);
+    color: var(--color-on-accent);
   }
 
   /* Clay is interaction, so the focus ring is clay. Offset so it reads on every

@@ -140,7 +140,7 @@ export default function FocusPage() {
                   <button
                     type="button"
                     onClick={resume}
-                    className="flex items-center gap-2 rounded-md bg-clay-600 px-4 py-2 text-sm text-text-hi"
+                    className="flex items-center gap-2 rounded-md bg-clay-600 px-4 py-2 text-sm text-on-accent"
                   >
                     <Play size={16} weight="fill" aria-hidden />
                     Resume
@@ -153,7 +153,7 @@ export default function FocusPage() {
                 className={cn(
                   'flex items-center gap-2 rounded-md px-4 py-2 text-sm',
                   done
-                    ? 'bg-clay-600 text-text-hi'
+                    ? 'bg-clay-600 text-on-accent'
                     : 'border border-line bg-raised text-text-mid',
                 )}
               >
@@ -196,7 +196,7 @@ export default function FocusPage() {
             <button
               type="button"
               onClick={() => void start({ taskId: taskId || undefined, plannedMinutes: minutes })}
-              className="flex items-center gap-2 rounded-md bg-clay-600 px-5 py-2.5 text-sm text-text-hi"
+              className="flex items-center gap-2 rounded-md bg-clay-600 px-5 py-2.5 text-sm text-on-accent"
             >
               <Play size={16} weight="fill" aria-hidden />
               Start

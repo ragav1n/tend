@@ -322,7 +322,7 @@ function BuilderForm({
           onClick={() => void save()}
           disabled={name.trim() === ''}
           className={cn(
-            'rounded-md border border-clay-400 bg-clay-600 px-3 py-2 text-sm text-text-hi',
+            'rounded-md border border-clay-400 bg-clay-600 px-3 py-2 text-sm text-on-accent',
             'hover:bg-clay-500 disabled:opacity-40',
           )}
           style={{ boxShadow: 'var(--shadow-flush)' }}

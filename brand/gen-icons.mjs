@@ -37,9 +37,11 @@ const {
   INK_FRACTION_MASKABLE,
   TILE_RADIUS_RATIO,
 } = await jiti.import(join(ROOT, 'lib/brand.ts'));
-const { extractColorTokens, oklchToHex } = await jiti.import(join(ROOT, 'lib/color.ts'));
+const { themeTokens, oklchToHex } = await jiti.import(join(ROOT, 'lib/color.ts'));
 
-const tokens = extractColorTokens(readFileSync(join(ROOT, 'app/globals.css'), 'utf8'));
+// The dark ramp, explicitly. An icon is one file with one set of colours, and
+// the light block redefines half of these names.
+const tokens = themeTokens(readFileSync(join(ROOT, 'app/globals.css'), 'utf8')).dark;
 const hex = (name) => {
   const token = tokens[name];
   if (!token) throw new Error(`--color-${name} is missing from app/globals.css`);

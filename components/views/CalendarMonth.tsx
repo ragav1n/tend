@@ -129,7 +129,7 @@ export function CalendarMonth({
                       className={cn(
                         'tnum pointer-events-none relative mx-auto flex size-[1.375rem] shrink-0',
                         'items-center justify-center rounded-full text-xs md:mx-0',
-                        isToday && 'bg-clay-600 text-text-hi',
+                        isToday && 'bg-clay-600 text-on-accent',
                         !isToday && (cell.inMonth ? 'text-text-mid' : 'text-text-faint'),
                       )}
                     >

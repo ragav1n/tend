@@ -18,6 +18,7 @@ import {
   updateTask,
 } from './mutations';
 import {
+  addDays,
   dueBetween,
   focusBetween,
   focusSeconds,
@@ -52,10 +53,16 @@ afterEach(async () => {
 });
 
 const TODAY = today();
+/**
+ * N days from today, in the device zone.
+ *
+ * Built from `addDays(today())` rather than from `toISOString()` on a local
+ * Date: the second reads the UTC calendar day off a local instant, so anywhere
+ * west of Greenwich the whole file starts failing in the evening. Found at
+ * 20:08 EDT, which is 00:08 UTC.
+ */
 function daysFrom(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  return addDays(TODAY, n);
 }
 
 describe('the single write API', () => {

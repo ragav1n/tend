@@ -112,7 +112,7 @@ export function QuickAdd({ defaults, placeholder = 'Add a task' }: QuickAddProps
               whileTap={{ y: 1 }}
               className={cn(
                 'label shrink-0 rounded-[7px] border border-clay-400 bg-clay-600 px-2.5 py-1',
-                '!text-[0.625rem] !text-text-hi hover:bg-clay-500',
+                '!text-[0.625rem] !text-on-accent hover:bg-clay-500',
               )}
               style={{ boxShadow: 'var(--shadow-flush)' }}
             >

@@ -138,7 +138,7 @@ function SignInForm() {
                 transition={PRESS_DEPTH}
                 className={cn(
                   'flex w-full items-center justify-center gap-2 rounded-md border border-clay-400',
-                  'bg-clay-600 px-3 py-2.5 text-sm text-text-hi hover:bg-clay-500',
+                  'bg-clay-600 px-3 py-2.5 text-sm text-on-accent hover:bg-clay-500',
                   'disabled:opacity-60',
                 )}
                 style={{ boxShadow: 'var(--shadow-flush)' }}

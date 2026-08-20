@@ -74,7 +74,7 @@ export function AppOverlays() {
         toastOptions={{
           classNames: {
             toast: 'font-sans text-sm',
-            actionButton: '!bg-clay-600 !text-text-hi',
+            actionButton: '!bg-clay-600 !text-on-accent',
           },
         }}
       />

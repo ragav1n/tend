@@ -43,7 +43,9 @@ export const MARK_SIZE = 96;
  * here when globals.css calls the 600s fills-only: the ink on top clears AA.
  */
 export const MARK_TILE_TOKEN = 'clay-600';
-export const MARK_INK_TOKEN = 'text-hi';
+// on-accent rather than text-hi: the mark sits on a clay tile in both themes,
+// so its ink is the token that does not flip.
+export const MARK_INK_TOKEN = 'on-accent';
 
 /**
  * How much of a tile the mark's ink fills. A maskable icon is cropped to the
