@@ -333,9 +333,19 @@ export async function projectCounts(
  * were the first thing the limit cut, which hid the bug on a big project and
  * showed it on a small one.
  */
+/**
+ * One page of a project's finished work.
+ *
+ * Paged rather than capped. It used to stop at 50 with nothing that could ask
+ * for the rest, so a project with a year of history had a wall the screen never
+ * mentioned. The disclosure quotes the real total from `projectCounts` and asks
+ * for another page.
+ */
+export const PROJECT_DONE_PAGE = 25;
+
 export async function projectDone(
   projectId: string,
-  limit = 50,
+  limit = PROJECT_DONE_PAGE,
   db: TendDb = getDb(),
 ): Promise<Task[]> {
   const rows = await db.tasks

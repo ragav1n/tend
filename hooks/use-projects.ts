@@ -7,6 +7,7 @@ import {
   allProjects,
   areaOptions,
   projectCounts,
+  PROJECT_DONE_PAGE,
   projectDone,
   projectList,
   type ProjectCount,
@@ -66,10 +67,12 @@ export function useProjectTasks(projectId: string | null): Task[] {
   );
 }
 
-export function useProjectDone(projectId: string | null): Task[] {
+/** One page of finished work. The limit is a dependency, so asking for more
+ *  re-runs the query rather than filtering a list already read. */
+export function useProjectDone(projectId: string | null, limit = PROJECT_DONE_PAGE): Task[] {
   return useStableLiveQuery(
-    () => (projectId ? projectDone(projectId) : Promise.resolve(NO_TASKS)),
-    [projectId],
+    () => (projectId ? projectDone(projectId, limit) : Promise.resolve(NO_TASKS)),
+    [projectId, limit],
     NO_TASKS,
   );
 }

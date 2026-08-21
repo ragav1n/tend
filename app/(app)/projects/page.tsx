@@ -3,8 +3,8 @@
 import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { CheckCircle, FolderSimple, PencilSimple, Plus, SquaresFour } from '@phosphor-icons/react/dist/ssr';
-import { today, type ProjectCount } from '@/lib/db/queries';
+import { CaretDown, CheckCircle, FolderSimple, PencilSimple, Plus, SquaresFour } from '@phosphor-icons/react/dist/ssr';
+import { PROJECT_DONE_PAGE, today, type ProjectCount } from '@/lib/db/queries';
 import type { Area, Project } from '@/lib/db/types';
 import { cn } from '@/lib/utils';
 import { useFirstLoadComplete } from '@/hooks/use-tasks';
@@ -303,9 +303,12 @@ function progressOf(count: ProjectCount | undefined) {
 
 function OneProject({ project, onEdit }: { project: Project; onEdit: () => void }) {
   const tasks = useProjectTasks(project.id);
-  const finished = useProjectDone(project.id);
   const loaded = useFirstLoadComplete();
   const [showDone, setShowDone] = useState(false);
+  // Pages of finished work, not a cap. The component is keyed on the project, so
+  // opening another one starts at one page again.
+  const [pages, setPages] = useState(1);
+  const finished = useProjectDone(project.id, pages * PROJECT_DONE_PAGE);
 
   // From the counts, never from `finished.length`. `projectDone` stops at 50, so
   // a project with sixty finished tasks read "50/55" here and "60 of 65 done" on
@@ -316,6 +319,10 @@ function OneProject({ project, onEdit }: { project: Project; onEdit: () => void 
   // project, and the difference matters: falling back to zero drew a 0% ring and
   // "0/2 done" for a frame before jumping to the real numbers.
   const count = counts.get(project.id);
+  // The real number finished, which is what the disclosure has to say. Before
+  // the counts land there is nothing better than what the page holds.
+  const doneTotal = count?.done ?? finished.length;
+  const unshown = doneTotal - finished.length;
   const firstNoteLine = project.notes.split('\n')[0]?.trim();
 
   return (
@@ -361,7 +368,7 @@ function OneProject({ project, onEdit }: { project: Project; onEdit: () => void 
         }
       />
 
-      {finished.length > 0 && (
+      {doneTotal > 0 && (
         <section className="mt-6 border-t border-line pt-4">
           <button
             type="button"
@@ -371,14 +378,29 @@ function OneProject({ project, onEdit }: { project: Project; onEdit: () => void 
           >
             <CheckCircle size={13} aria-hidden />
             {showDone ? 'Hide' : 'Show'} done
-            {/* What this list holds, which stops at `projectDone`'s limit. The
-                header quotes the real total. */}
-            <span className="tnum">({finished.length})</span>
+            {/* Everything finished, not the page. A number that meant "what is
+                loaded" disagreed with the ring above it on any project with more
+                history than one page. */}
+            <span className="tnum">({doneTotal})</span>
           </button>
 
           {showDone && (
             <div className="mt-2">
               <TaskList tasks={finished} />
+
+              {unshown > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPages((n) => n + 1)}
+                  className={cn(
+                    'label mt-2 flex items-center gap-1 rounded px-0.5 py-1',
+                    '!text-[0.625rem] hover:text-text-mid',
+                  )}
+                >
+                  <CaretDown size={11} weight="bold" aria-hidden />
+                  <span className="tnum">{unshown}</span> older
+                </button>
+              )}
             </div>
           )}
         </section>
@@ -409,7 +431,9 @@ function ProjectsScreen() {
   return (
     <>
       {open ? (
-        <OneProject project={open} onEdit={() => setEditing({ project: open })} />
+        // Keyed, so the done pages and the disclosure start fresh on another
+        // project rather than carrying over from the last one looked at.
+        <OneProject key={open.id} project={open} onEdit={() => setEditing({ project: open })} />
       ) : (
         <ProjectIndex
           all={all}

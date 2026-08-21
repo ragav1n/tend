@@ -1093,6 +1093,27 @@ describe('projects', () => {
     expect(counts.get(other)).toEqual({ open: 0, done: 0 });
     expect((await projectDone(project, 50, db)).map((t) => t.id)).toEqual([first]);
   });
+
+  it('pages the finished list rather than capping it', async () => {
+    // The screen used to read one page of 50 and say that was the total, so a
+    // project with a year behind it had a wall nothing on the page mentioned.
+    const project = await createProject({ name: 'Move house' }, db);
+    for (let i = 0; i < 4; i++) {
+      const id = await createTask({ title: `Box ${i}`, projectId: project }, db);
+      await completeTask(id, true, db);
+    }
+
+    const page = await projectDone(project, 2, db);
+    const all = await projectDone(project, 10, db);
+
+    expect(page).toHaveLength(2);
+    expect(all).toHaveLength(4);
+    // A bigger limit extends the same list rather than reshuffling it, which is
+    // what makes "show more" append instead of jump.
+    expect(page.map((t) => t.id)).toEqual(all.slice(0, 2).map((t) => t.id));
+    // The count the disclosure quotes comes from here, and it is not the page.
+    expect((await projectCounts([project], db)).get(project)).toEqual({ open: 0, done: 4 });
+  });
 });
 
 describe('a cancelled task in a project', () => {
