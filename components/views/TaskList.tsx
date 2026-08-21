@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
 import { COMPLETED_ROW_LINGER_MS, listVariants, QUICK_FADE } from '@/lib/motion';
 import { withHeld, type Held } from '@/lib/views/held';
@@ -12,7 +12,6 @@ import { useSubtasksFor, useTagNames } from '@/hooks/use-tasks';
 import { useUiStore } from '@/hooks/use-ui';
 import { SubtaskRows, subtaskProgress } from '@/components/task/SubtaskRows';
 import { TaskRow } from '@/components/task/TaskRow';
-import { SelectionBarHost } from '@/components/views/SelectionBar';
 
 /**
  * A list of task rows with enter, exit and reorder animation.
@@ -31,10 +30,11 @@ import { SelectionBarHost } from '@/components/views/SelectionBar';
  * effect that watches `tasks`. Syncing it in an effect would mean calling
  * setState during an effect body, which cascades renders on every query update.
  *
- * The list also owns selection mode, because it is the thing that knows the
- * order rows are in, and order is what a shift-click spans. The keyboard cursor
- * is not here but in the shell: a page can hold several lists, and one cursor
- * has to walk all of them.
+ * The list knows the order its rows are in, and order is what a shift-click
+ * spans, so it owns that much of selection and nothing else. It reports what it
+ * shows to the store and the store owns the mode, because the mode belongs to
+ * the page: the keyboard cursor and the action bar both live in the shell, and a
+ * page can hold several lists.
  *
  * Subtasks render under their parent here. Every list query already drops them
  * from the top level with a note saying they appear underneath it, so until this
@@ -57,7 +57,12 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
   const beginSelect = useSelectionStore((state) => state.begin);
   const endSelect = useSelectionStore((state) => state.end);
   const pickRow = useSelectionStore((state) => state.pick);
-  const pruneSelection = useSelectionStore((state) => state.prune);
+  const reportRows = useSelectionStore((state) => state.report);
+  const forgetRows = useSelectionStore((state) => state.forget);
+  const pageRows = useSelectionStore((state) => state.total);
+  // Identifies this list to the store. Generated rather than asked of the caller:
+  // nine pages mount one, two mount several, and none of them has a name for it.
+  const listId = useId();
   const [lingering, setLingering] = useState<Held<Task>[]>([]);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
@@ -131,12 +136,13 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
   // render and would re-run this on each one.
   const orderKey = order.join(',');
   useEffect(() => {
-    pruneSelection(orderKey === '' ? [] : orderKey.split(','));
-  }, [orderKey, pruneSelection]);
+    reportRows(listId, orderKey === '' ? [] : orderKey.split(','));
+  }, [listId, orderKey, reportRows]);
 
-  // Selection mode ends with the list. Carrying it to the next view would leave
-  // an action bar over a set of rows it no longer refers to.
-  useEffect(() => endSelect, [endSelect]);
+  // Leaving the page takes this list's rows out of the selection, and the last
+  // list to leave ends the mode. The store decides which of those happened,
+  // since a list cannot see its siblings.
+  useEffect(() => () => forgetRows(listId), [listId, forgetRows]);
 
   if (loading) {
     return (
@@ -163,8 +169,11 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
   return (
     <LayoutGroup>
       {/* One row is not a selection, so the affordance only appears once there
-          is something to compare. */}
-      {shown.length > 1 && (
+          is something to compare. Counted over the page rather than this list:
+          the logbook can put a day holding one task next to a day holding five,
+          and the mode spans both. This list's own count answers first so the
+          button does not appear a frame late on every ordinary view. */}
+      {(shown.length > 1 || pageRows > 1) && (
         <div className="mb-2 flex justify-end">
           <button
             type="button"
@@ -216,8 +225,6 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
           })}
         </AnimatePresence>
       </motion.ul>
-
-      <SelectionBarHost order={order} />
     </LayoutGroup>
   );
 }

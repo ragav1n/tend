@@ -8,6 +8,7 @@ import { RecoveryNotice } from '@/components/shell/RecoveryNotice';
 import { ShortcutsOverlay } from '@/components/shell/ShortcutsOverlay';
 import { SyncBadge } from '@/components/shell/SyncBadge';
 import { UpdatePrompt } from '@/components/shell/UpdatePrompt';
+import { SelectionBarHost } from '@/components/views/SelectionBar';
 import { TaskDetailHost } from '@/components/task/TaskDetailHost';
 import { useAdoptDeviceTimezone } from '@/hooks/use-prefs';
 import { useSelectionStore } from '@/hooks/use-selection';
@@ -39,6 +40,9 @@ export function AppOverlays() {
   return (
     <>
       <Hotkeys />
+      {/* Here rather than in the list, so a page holding several lists gets one
+          bar over one selection. */}
+      <SelectionBarHost />
       <TaskDetailHost />
       <CommandPalette />
       <ShortcutsOverlay />

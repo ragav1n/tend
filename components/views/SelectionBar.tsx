@@ -32,6 +32,10 @@ import { Sheet } from '@/components/ui/Sheet';
  * The shortcuts are bound here rather than in the app-wide map, which is what
  * `scope: 'selection'` on those bindings means. Backspace has to be a delete
  * key only while there is something selected to delete.
+ *
+ * One bar for the page, mounted in the shell. Mounted by the list it was one bar
+ * per list, and the logbook holds a list per day: eight day groups put eight
+ * fixed bars on top of each other, each reading the same count.
  */
 
 const SELECTION_INDEX = chordIndex(inScope(SELECTION_ACTIONS, 'selection'));
@@ -82,7 +86,7 @@ function SheetOption({ label, onClick }: { label: string; onClick: () => void })
   );
 }
 
-export function SelectionBar({ order }: { order: readonly string[] }) {
+function SelectionBar() {
   const reduced = useReducedMotion();
   const ids = useSelectionStore((state) => state.ids);
   const end = useSelectionStore((state) => state.end);
@@ -135,7 +139,9 @@ export function SelectionBar({ order }: { order: readonly string[] }) {
   useHotkeys(SELECTION_INDEX, SELECTION_TYPING_SAFE, (id) => {
     switch (id) {
       case 'select-all':
-        selectAll(order);
+        // Every row the page is showing, which on the logbook is every day it
+        // has open, not the group the cursor happens to be in.
+        selectAll();
         break;
       case 'complete-selected':
         if (count > 0) run(completeTasks(picked), `${count} completed`);
@@ -240,8 +246,8 @@ export function SelectionBar({ order }: { order: readonly string[] }) {
   );
 }
 
-/** Mounted by the list so the bar can animate in and out with the mode. */
-export function SelectionBarHost({ order }: { order: readonly string[] }) {
+/** Mounted in the shell so the bar can animate in and out with the mode. */
+export function SelectionBarHost() {
   const active = useSelectionStore((state) => state.active);
-  return <AnimatePresence>{active && <SelectionBar key="bar" order={order} />}</AnimatePresence>;
+  return <AnimatePresence>{active && <SelectionBar key="bar" />}</AnimatePresence>;
 }
