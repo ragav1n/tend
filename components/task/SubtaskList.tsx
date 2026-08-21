@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { toast } from 'sonner';
 import { Plus, TrashSimple } from '@phosphor-icons/react/dist/ssr';
-import { completeTask, createTask, deleteTask, updateTask } from '@/lib/db/mutations';
+import { completeTask, createTask, deleteTask, restoreTask, updateTask } from '@/lib/db/mutations';
 import type { Task } from '@/lib/db/types';
 import { useSubtasks } from '@/hooks/use-tasks';
 import { useUiStore } from '@/hooks/use-ui';
@@ -28,6 +29,12 @@ import { TaskCheck } from './TaskCheck';
  * A title here is editable in place. The parent's title is a textarea at the top
  * of the panel, but a child had no editor anywhere in the app: a subtask typed
  * with a typo could only be deleted and typed again.
+ *
+ * The delete is always on screen rather than appearing on hover. Hidden behind
+ * `group-hover` it did not exist on a phone, which has no hover state, so a
+ * subtask added by mistake was there for good. It stays quiet at `text-lo` and
+ * goes clay on hover, and it raises an undo, which is what makes a permanent
+ * control next to a title safe to sit there.
  */
 export function SubtaskList({ taskId }: { taskId: string }) {
   const subtasks = useSubtasks(taskId);
@@ -74,6 +81,15 @@ export function SubtaskList({ taskId }: { taskId: string }) {
     await updateTask(subtask.id, { title: next });
   }
 
+  /** Deletes one child and offers it back. The cascade in `deleteTask` has
+   *  nothing to reach here, since depth is capped at 1. */
+  function remove(subtask: Task) {
+    void deleteTask(subtask.id);
+    toast('Subtask deleted', {
+      action: { label: 'Undo', onClick: () => void restoreTask(subtask.id) },
+    });
+  }
+
   const done = subtasks.filter((t) => t._done === 1).length;
 
   return (
@@ -95,7 +111,7 @@ export function SubtaskList({ taskId }: { taskId: string }) {
               animate="visible"
               exit="exit"
               transition={ROW}
-              className="group flex items-center gap-2.5 rounded-md py-1"
+              className="flex items-center gap-2.5 rounded-md py-1"
             >
               <TaskCheck
                 checked={subtask._done === 1}
@@ -152,11 +168,11 @@ export function SubtaskList({ taskId }: { taskId: string }) {
               )}
               <button
                 type="button"
-                onClick={() => void deleteTask(subtask.id)}
+                onClick={() => remove(subtask)}
                 aria-label={`Delete ${subtask.title}`}
                 className={cn(
-                  'grid size-7 shrink-0 place-items-center rounded-md text-text-faint',
-                  'opacity-0 hover:text-clay-300 focus-visible:opacity-100 group-hover:opacity-100',
+                  'grid size-7 shrink-0 place-items-center rounded-md',
+                  'text-text-lo hover:bg-raised hover:text-clay-300',
                 )}
               >
                 <TrashSimple size={14} aria-hidden />
