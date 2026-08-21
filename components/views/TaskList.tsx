@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
 import { COMPLETED_ROW_LINGER_MS, listVariants, QUICK_FADE } from '@/lib/motion';
+import { withHeld, type Held } from '@/lib/views/held';
 import { completeTask } from '@/lib/db/mutations';
 import { today } from '@/lib/db/queries';
 import type { Task } from '@/lib/db/types';
@@ -44,12 +45,6 @@ import { SelectionBarHost } from '@/components/views/SelectionBar';
  * row is a live query per row.
  */
 
-/** A completed row on its way out, and the place it is held at. */
-interface Held {
-  task: Task;
-  index: number;
-}
-
 interface TaskListProps {
   tasks: Task[];
   loading?: boolean;
@@ -65,7 +60,7 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
   const endSelect = useSelectionStore((state) => state.end);
   const pickRow = useSelectionStore((state) => state.pick);
   const pruneSelection = useSelectionStore((state) => state.prune);
-  const [lingering, setLingering] = useState<Held[]>([]);
+  const [lingering, setLingering] = useState<Held<Task>[]>([]);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const rows = useRef<HTMLUListElement>(null);
 
@@ -87,8 +82,12 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
   }
 
   function handleToggle(id: string, done: boolean) {
-    const index = tasks.findIndex((t) => t.id === id);
-    const row = index === -1 ? undefined : tasks[index];
+    // Measured against the rendered list rather than the query result, because
+    // the rendered list is what the row is sitting in. Against `tasks`, a second
+    // row ticked inside the same linger window lands one slot high for every
+    // row already being held.
+    const index = shown.findIndex((t) => t.id === id);
+    const row = index === -1 ? undefined : shown[index];
 
     if (done && row) {
       // Held with _done forced on, so it renders checked for the whole linger
@@ -111,13 +110,9 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
   }
 
   // Held rows go back where they were, so the list does not reflow under a
-  // finger mid-animation. The live row wins if the query still returns it, and
-  // the lowest index goes in first or two held rows swap places on the way out.
-  const shown = [...tasks];
-  for (const held of [...lingering].sort((a, b) => a.index - b.index)) {
-    if (shown.some((t) => t.id === held.task.id)) continue;
-    shown.splice(Math.min(held.index, shown.length), 0, held.task);
-  }
+  // finger mid-animation. The placement rule lives in `withHeld`, where a test
+  // can hold it.
+  const shown = withHeld(tasks, lingering);
 
   const order = shown.map((task) => task.id);
   // One query for the whole page. The key is the joined ids, so it re-runs when
