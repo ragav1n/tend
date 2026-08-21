@@ -108,6 +108,20 @@ export interface Task extends SyncedRow, DerivedTaskFields {
   occurrenceSeq: number | null;
 }
 
+/**
+ * A folder for projects, and nothing else.
+ *
+ * Deliberately thinner than a project: a name and a place in the order. An area
+ * carries no colour, no due date and no status, because the moment it does it
+ * competes with the project for which one holds the plan, and the answer has to
+ * stay the project.
+ */
+export interface Area extends SyncedRow {
+  name: string;
+  sortKey: string;
+  _del: 0 | 1;
+}
+
 export interface Project extends SyncedRow {
   areaId: string;
   name: string;
@@ -297,6 +311,7 @@ export interface Prefs {
 
 export type EntityTable =
   | 'tasks'
+  | 'areas'
   | 'projects'
   | 'tags'
   | 'taskTags'

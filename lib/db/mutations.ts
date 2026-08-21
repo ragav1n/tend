@@ -4,9 +4,11 @@ import {
   nextOccurrence,
   type RecurrenceRule,
 } from '@/lib/recurrence';
+import { swatchFor } from '@/lib/projects/palette';
 import { getDb, LOCAL_USER_ID, type TendDb } from './client';
 import {
   deriveActivity,
+  deriveArea,
   deriveFocusSession,
   deriveProject,
   deriveSavedView,
@@ -26,6 +28,7 @@ import {
   NO_PROJECT,
   type ActivityAction,
   type ActivityEntry,
+  type Area,
   type EntityTable,
   type FocusSession,
   type MutationOp,
@@ -1092,10 +1095,141 @@ export async function updateFocusSession(
   });
 }
 
+// ─── Areas ────────────────────────────────────────────────────────────────────
+// An area is a folder for projects. It has existed server-side since 0001 so a
+// project could point at one; these are the writes that finally let somebody
+// make one.
+
+export async function createArea(input: { name: string }, db: TendDb = getDb()): Promise<string> {
+  const id = newId();
+  await db.transaction('rw', [db.areas, db.outbox], async () => {
+    const existing = await db.areas.where('_del').equals(0).toArray();
+    const base = {
+      id,
+      userId: LOCAL_USER_ID,
+      name: input.name,
+      sortKey: endRank(existing.map((a) => a.sortKey)),
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      deletedAt: null,
+      rowVersion: 0,
+    };
+    const row: Area = { ...base, ...deriveArea(base) };
+    await db.areas.add(row);
+
+    await db.outbox.add(outboxRecord('areas', id, 'insert', toInsertPatch(row), 0));
+  });
+  return id;
+}
+
+export type AreaPatch = Partial<Pick<Area, 'name' | 'sortKey'>>;
+
+export async function updateArea(
+  id: string,
+  patch: AreaPatch,
+  db: TendDb = getDb(),
+): Promise<void> {
+  await db.transaction('rw', [db.areas, db.outbox], async () => {
+    const current = await db.areas.get(id);
+    if (!current) return;
+
+    const next = { ...current, ...patch, updatedAt: nowIso() };
+    await db.areas.put({ ...next, ...deriveArea(next) });
+    await db.outbox.add(outboxRecord('areas', id, 'update', { ...patch }, current.rowVersion));
+  });
+}
+
+/**
+ * Tombstones an area and returns the projects it let go of.
+ *
+ * Postgres would clear `area_id` itself through `on delete set null`, but a soft
+ * delete never fires that, so the projects would keep pointing at a tombstone
+ * and drop out of the screen entirely: the index the list reads is grouped by
+ * area, and an area that is not there has no group to render into. Clearing the
+ * reference here is what keeps every project reachable.
+ *
+ * The ids come back so the caller's undo can put them where they were. Without
+ * them a restore would hand back an empty folder, which is the kind of half-undo
+ * this codebase keeps out of the stack.
+ */
+export async function deleteArea(id: string, db: TendDb = getDb()): Promise<string[]> {
+  return db.transaction('rw', [db.areas, db.projects, db.outbox], async () => {
+    const current = await db.areas.get(id);
+    if (!current) return [];
+
+    const filed = (await db.projects.where('_del').equals(0).toArray()).filter(
+      (project) => project.areaId === id,
+    );
+    for (const project of filed) await writeProjectPatch(project.id, { areaId: '' }, db);
+
+    const deletedAt = nowIso();
+    const next = { ...current, deletedAt, updatedAt: deletedAt };
+    await db.areas.put({ ...next, ...deriveArea(next) });
+    await db.outbox.add(outboxRecord('areas', id, 'delete', { deletedAt }, current.rowVersion));
+
+    return filed.map((project) => project.id);
+  });
+}
+
+/** Puts an area back, and the projects `deleteArea` moved out of it with it. */
+export async function restoreArea(
+  id: string,
+  filedProjectIds: readonly string[] = [],
+  db: TendDb = getDb(),
+): Promise<void> {
+  await db.transaction('rw', [db.areas, db.projects, db.outbox], async () => {
+    const current = await db.areas.get(id);
+    if (!current) return;
+
+    const next = { ...current, deletedAt: null, updatedAt: nowIso() };
+    await db.areas.put({ ...next, ...deriveArea(next) });
+    await db.outbox.add(
+      outboxRecord('areas', id, 'undelete', { deletedAt: null }, current.rowVersion),
+    );
+
+    for (const projectId of filedProjectIds) {
+      await writeProjectPatch(projectId, { areaId: id }, db);
+    }
+  });
+}
+
 // ─── Projects ─────────────────────────────────────────────────────────────────
 
+export type ProjectPatch = Partial<
+  Pick<
+    Project,
+    'name' | 'notes' | 'areaId' | 'status' | 'color' | 'dueDate' | 'sortKey' | 'archivedAt'
+  >
+>;
+
+/** Writes one project field set. Called inside the caller's transaction, which
+ *  is what lets a delete move projects and tasks in the same commit. */
+async function writeProjectPatch(
+  id: string,
+  patch: ProjectPatch,
+  db: TendDb,
+): Promise<Project | null> {
+  const current = await db.projects.get(id);
+  if (!current) return null;
+
+  const next = { ...current, ...patch, updatedAt: nowIso() };
+
+  // Stamped locally for the same reason `writeTaskPatch` stamps it: the column
+  // is server-owned, so the patch cannot carry it, and the row still has to be
+  // able to say when it was finished before the next pull lands. Signed out
+  // there is no next pull, and this is the only thing that ever sets it.
+  // Cancelled is not done, which is the rule 0020's trigger applies server-side.
+  if (patch.status !== undefined && patch.status !== current.status) {
+    next.completedAt = patch.status === 'done' ? nowIso() : null;
+  }
+
+  await db.projects.put({ ...next, ...deriveProject(next) });
+  await db.outbox.add(outboxRecord('projects', id, 'update', { ...patch }, current.rowVersion));
+  return current;
+}
+
 export async function createProject(
-  input: { name: string; color?: string; notes?: string },
+  input: { name: string; color?: string; notes?: string; areaId?: string },
   db: TendDb = getDb(),
 ): Promise<string> {
   const id = newId();
@@ -1104,11 +1238,13 @@ export async function createProject(
     const base = {
       id,
       userId: LOCAL_USER_ID,
-      areaId: '',
+      areaId: input.areaId ?? '',
       name: input.name,
       notes: input.notes ?? '',
       status: 'active' as const,
-      color: input.color ?? '#C29B72',
+      // Rotating on what is already there, so a project quick-add filed with
+      // `@kitchen` still gets a dot that tells it apart from the last one.
+      color: input.color ?? swatchFor(existing.length),
       dueDate: null,
       completedAt: null,
       sortKey: endRank(existing.map((p) => p.sortKey)),
@@ -1137,6 +1273,123 @@ export async function ensureProject(name: string, db: TendDb = getDb()): Promise
   const match = existing.find((p) => p.name.toLowerCase() === trimmed.toLowerCase());
   if (match) return match.id;
   return createProject({ name: trimmed }, db);
+}
+
+export async function updateProject(
+  id: string,
+  patch: ProjectPatch,
+  db: TendDb = getDb(),
+): Promise<void> {
+  await db.transaction('rw', [db.projects, db.outbox], async () => {
+    await writeProjectPatch(id, patch, db);
+  });
+}
+
+/**
+ * Archives a project, or puts it back.
+ *
+ * Archiving is the reversible gesture and deleting is not, so this is the one
+ * the screen offers first. A finished project keeps its tasks and its history
+ * and stops taking up a row.
+ */
+export async function setProjectArchived(
+  id: string,
+  archived: boolean,
+  db: TendDb = getDb(),
+): Promise<void> {
+  await updateProject(id, { archivedAt: archived ? nowIso() : null }, db);
+}
+
+/**
+ * Tombstones a project and files its tasks back into the Inbox.
+ *
+ * Leaving them pointing at the tombstone would lose them. Inbox is
+ * `projectId === ''` read off a compound index, and Today and Upcoming key off
+ * the due day, so a dateless task filed to a deleted project would appear in no
+ * list at all. Moving them is what keeps "delete the project" from meaning
+ * "delete the work".
+ *
+ * The moves are unlogged, for the reason `reorderTask` gives: an entry in the
+ * undo stack that puts a task back into a project that no longer exists is a
+ * half-undo. The whole gesture is reversed through `restoreProject` with the ids
+ * returned here instead.
+ *
+ * Subtasks are not touched. A subtask carries `projectId === ''` and takes its
+ * project from its parent, so moving the parent moves it.
+ */
+export interface ProjectDeletion {
+  /** Every task moved out, finished ones included, because undo has to put all
+   *  of them back. */
+  taskIds: string[];
+  /** How many of those will actually show up in the Inbox, which lists open work
+   *  only. The two numbers differ on any project with history, and it is this
+   *  one a message about where the tasks went has to quote. */
+  open: number;
+}
+
+export async function deleteProject(
+  id: string,
+  db: TendDb = getDb(),
+): Promise<ProjectDeletion> {
+  return db.transaction('rw', [db.projects, db.tasks, db.taskTags, db.outbox], async () => {
+    const current = await db.projects.get(id);
+    if (!current) return { taskIds: [], open: 0 };
+
+    const filed = (await db.tasks.where('projectId').equals(id).toArray()).filter(
+      (task) => task._del === 0,
+    );
+    for (const task of filed) await writeTaskPatch(task.id, { projectId: NO_PROJECT }, db);
+
+    const deletedAt = nowIso();
+    const next = { ...current, deletedAt, updatedAt: deletedAt };
+    await db.projects.put({ ...next, ...deriveProject(next) });
+    await db.outbox.add(outboxRecord('projects', id, 'delete', { deletedAt }, current.rowVersion));
+
+    return {
+      taskIds: filed.map((task) => task.id),
+      open: filed.filter((task) => task._done === 0).length,
+    };
+  });
+}
+
+/** Puts a project back, and the tasks `deleteProject` sent to the Inbox with it. */
+export async function restoreProject(
+  id: string,
+  filedTaskIds: readonly string[] = [],
+  db: TendDb = getDb(),
+): Promise<void> {
+  await db.transaction('rw', [db.projects, db.tasks, db.taskTags, db.outbox], async () => {
+    const current = await db.projects.get(id);
+    if (!current) return;
+
+    const next = { ...current, deletedAt: null, updatedAt: nowIso() };
+    await db.projects.put({ ...next, ...deriveProject(next) });
+    await db.outbox.add(
+      outboxRecord('projects', id, 'undelete', { deletedAt: null }, current.rowVersion),
+    );
+
+    for (const taskId of filedTaskIds) await writeTaskPatch(taskId, { projectId: id }, db);
+  });
+}
+
+/** Moves a project between two neighbours. Unlogged for the same reason
+ *  `reorderTask` is: dragging it back is the undo. */
+export async function reorderProject(
+  id: string,
+  prevSortKey: string | null,
+  nextSortKey: string | null,
+  db: TendDb = getDb(),
+): Promise<void> {
+  const sortKey =
+    prevSortKey === null && nextSortKey === null
+      ? rankAfter(null)
+      : prevSortKey === null
+        ? rankBefore(nextSortKey)
+        : nextSortKey === null
+          ? rankAfter(prevSortKey)
+          : rankBetween(prevSortKey, nextSortKey);
+
+  await updateProject(id, { sortKey }, db);
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────

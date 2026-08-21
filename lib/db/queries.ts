@@ -4,6 +4,7 @@ import {
   NO_DUE_DAY,
   NO_PARENT,
   NO_PROJECT,
+  type Area,
   type FocusSession,
   type Instant,
   type PlainDate,
@@ -250,6 +251,110 @@ export async function projectOptions(db: TendDb = getDb()): Promise<Project[]> {
     .between([0, 0, ''], [0, 0, MAX_STR], true, true)
     .toArray();
   return rows.sort(compareRank);
+}
+
+/** Every project including the archived ones, in the user's order. The projects
+ *  screen is the only caller: everywhere else an archived project is finished
+ *  business and offering it in a picker would refile work into it. */
+export async function allProjects(db: TendDb = getDb()): Promise<Project[]> {
+  const rows = await db.projects
+    .where('[_del+_archived+sortKey]')
+    .between([0, 0, ''], [0, 1, MAX_STR], true, true)
+    .toArray();
+  return rows.sort(compareRank);
+}
+
+/** Every live area, in the user's order. A handful of rows, read whole. */
+export async function areaOptions(db: TendDb = getDb()): Promise<Area[]> {
+  const rows = await db.areas
+    .where('[_del+sortKey]')
+    .between([0, ''], [0, MAX_STR], true, true)
+    .toArray();
+  return rows.sort(compareRank);
+}
+
+export interface ProjectCount {
+  open: number;
+  done: number;
+}
+
+/**
+ * Open and finished counts per project.
+ *
+ * Two index counts per project over `[_del+projectId+_done+sortKey]`, which is
+ * a bounded range each rather than a scan of the store. The alternative is one
+ * read of every live task tallied in memory, and that read grows with the whole
+ * store while this one grows with the number of projects.
+ *
+ * Subtasks are left out, the same way every list query leaves them out: a
+ * subtask carries no project of its own, so counting one would be counting its
+ * parent twice.
+ *
+ * A cancelled task counts as neither. `_done` is 1 for done **or** cancelled,
+ * because both leave the open lists, so the index range has to be narrowed by
+ * status afterwards. Counting an abandoned task as finished would report a
+ * project as further along than it is, which is the one thing a progress ring
+ * must not do.
+ */
+export async function projectCounts(
+  projectIds: readonly string[],
+  db: TendDb = getDb(),
+): Promise<Map<string, ProjectCount>> {
+  const out = new Map<string, ProjectCount>();
+
+  const counts = await Promise.all(
+    projectIds.map(async (id) => {
+      const range = (closed: 0 | 1) =>
+        db.tasks
+          .where('[_del+projectId+_done+sortKey]')
+          .between([0, id, closed, ''], [0, id, closed, MAX_STR], true, true)
+          .toArray();
+      const [open, closed] = await Promise.all([range(0), range(1)]);
+      return {
+        id,
+        open: open.filter((t) => t.parentTaskId === NO_PARENT).length,
+        done: closed.filter((t) => t.parentTaskId === NO_PARENT && t.status === 'done').length,
+      };
+    }),
+  );
+
+  for (const row of counts) out.set(row.id, { open: row.open, done: row.done });
+  return out;
+}
+
+/**
+ * A project's finished tasks, newest first, so its own screen can show what got
+ * done rather than only what is left.
+ *
+ * Cancelled tasks are excluded for the reason `projectCounts` gives: `_done`
+ * covers both, and a list headed "Done" that contains work somebody abandoned is
+ * mislabelled. They also carry no `completedAt`, so they sorted to the end and
+ * were the first thing the limit cut, which hid the bug on a big project and
+ * showed it on a small one.
+ */
+export async function projectDone(
+  projectId: string,
+  limit = 50,
+  db: TendDb = getDb(),
+): Promise<Task[]> {
+  const rows = await db.tasks
+    .where('[_del+projectId+_done+sortKey]')
+    .between([0, projectId, 1, ''], [0, projectId, 1, MAX_STR], true, true)
+    .toArray();
+  return rows
+    .filter((t) => t.parentTaskId === NO_PARENT && t.status === 'done')
+    .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))
+    .slice(0, limit);
+}
+
+/** One project by id, or undefined once it is deleted. */
+export async function projectById(
+  id: string,
+  db: TendDb = getDb(),
+): Promise<Project | undefined> {
+  if (id === NO_PROJECT) return undefined;
+  const project = await db.projects.get(id);
+  return project && project._del === 0 ? project : undefined;
 }
 
 /** Every live tag, alphabetical. Also small enough to read whole. */

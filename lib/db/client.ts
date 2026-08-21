@@ -4,6 +4,7 @@ import { openWithRecovery, type OpenOutcome } from './recovery';
 import { defineSchema } from './schema';
 import type {
   ActivityEntry,
+  Area,
   FocusSession,
   OutboxRecord,
   Prefs,
@@ -46,6 +47,7 @@ export interface ReminderStateRow {
 
 export class TendDb extends Dexie {
   tasks!: EntityTable<Task, 'id'>;
+  areas!: EntityTable<Area, 'id'>;
   projects!: EntityTable<Project, 'id'>;
   tags!: EntityTable<Tag, 'id'>;
   /** Compound primary key, so this is a plain Table rather than an EntityTable. */

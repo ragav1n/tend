@@ -1,6 +1,7 @@
 import {
   NO_DUE_DAY,
   type ActivityEntry,
+  type Area,
   type DerivedTaskFields,
   type FocusSession,
   type Project,
@@ -92,6 +93,10 @@ export function deriveProject(
     _del: project.deletedAt ? 1 : 0,
     _archived: project.archivedAt ? 1 : 0,
   };
+}
+
+export function deriveArea(area: Omit<Area, '_del'>): Pick<Area, '_del'> {
+  return { _del: area.deletedAt ? 1 : 0 };
 }
 
 export function deriveTag(tag: Omit<Tag, '_del'>): Pick<Tag, '_del'> {

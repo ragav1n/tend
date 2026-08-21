@@ -4,6 +4,14 @@ import { setDb, TendDb } from './client';
 import {
   clearTaskRecurrence,
   completeTask,
+  createArea,
+  deleteArea,
+  deleteProject,
+  restoreArea,
+  restoreProject,
+  setProjectArchived,
+  updateArea,
+  updateProject,
   startFocusSession,
   updateFocusSession,
   createProject,
@@ -19,6 +27,8 @@ import {
 } from './mutations';
 import {
   addDays,
+  allProjects,
+  areaOptions,
   dueBetween,
   focusBetween,
   focusSeconds,
@@ -30,13 +40,16 @@ import {
   subtasksOf,
   taggedWith,
   subtasksForParents,
+  projectCounts,
+  projectDone,
+  projectOptions,
   today,
   todayList,
   upcomingList,
   VIEW_CANDIDATE_LIMIT,
   viewCandidates,
 } from './queries';
-import { NO_DUE_DAY } from './types';
+import { NO_DUE_DAY, NO_PROJECT } from './types';
 
 let db: TendDb;
 let dbName: string;
@@ -791,5 +804,252 @@ describe('subtasks for a page of parents', () => {
     const top = await inboxList(db);
     expect(top.map((t) => t.title)).toEqual(['Move flat']);
     expect((await subtasksForParents(top.map((t) => t.id), db)).get(parent)).toHaveLength(1);
+  });
+});
+
+describe('projects', () => {
+  it('gives each new one a different colour without being asked', async () => {
+    // Quick-add writes `@kitchen` and never opens the editor, so if the default
+    // were one hex every dot on the screen would identify nothing.
+    const ids = [
+      await createProject({ name: 'One' }, db),
+      await createProject({ name: 'Two' }, db),
+      await createProject({ name: 'Three' }, db),
+    ];
+    const colors = await Promise.all(ids.map(async (id) => (await db.projects.get(id))!.color));
+    expect(new Set(colors).size).toBe(3);
+  });
+
+  it('keeps a colour somebody actually picked', async () => {
+    // The editor omits `color` until a swatch is clicked, precisely so the
+    // rotation above happens here rather than being guessed from a live query
+    // that has not settled. An explicit choice still has to win.
+    const id = await createProject({ name: 'One', color: '#4A8CC1' }, db);
+    expect((await db.projects.get(id))?.color).toBe('#4A8CC1');
+  });
+
+  it('takes an area at creation, so a New project inside one lands there', async () => {
+    const area = await createArea({ name: 'Home' }, db);
+    const id = await createProject({ name: 'Kitchen', areaId: area }, db);
+    expect((await db.projects.get(id))?.areaId).toBe(area);
+  });
+
+  it('queues an update alongside the local write', async () => {
+    const id = await createProject({ name: 'Kitchen' }, db);
+    const before = await db.outbox.count();
+
+    await updateProject(id, { name: 'Kitchen rewire', notes: 'Sparky booked' }, db);
+
+    expect((await db.projects.get(id))?.name).toBe('Kitchen rewire');
+    expect(await db.outbox.count()).toBe(before + 1);
+    const queued = await db.outbox.orderBy('seq').last();
+    expect(queued).toMatchObject({ table: 'projects', entityId: id, op: 'update' });
+    expect(queued?.patch).toEqual({ name: 'Kitchen rewire', notes: 'Sparky booked' });
+  });
+
+  it('drops an archived project out of the pickers and keeps it on its own screen', async () => {
+    const id = await createProject({ name: 'Kitchen' }, db);
+    await setProjectArchived(id, true, db);
+
+    // projectOptions feeds every picker in the app. Offering a finished project
+    // there is how work gets filed back into one.
+    expect((await projectOptions(db)).map((p) => p.id)).toEqual([]);
+    expect((await allProjects(db)).map((p) => p.id)).toEqual([id]);
+    expect((await db.projects.get(id))?._archived).toBe(1);
+
+    await setProjectArchived(id, false, db);
+    expect((await projectOptions(db)).map((p) => p.id)).toEqual([id]);
+  });
+
+  it('files its tasks back into the Inbox when it is deleted', async () => {
+    // Without this they point at a tombstone and appear in no list at all:
+    // Inbox is projectId === '' off an index, and Today and Upcoming key off the
+    // due day, so a dateless task would be gone.
+    const project = await createProject({ name: 'Kitchen' }, db);
+    const filed = await createTask({ title: 'Order tiles', projectId: project }, db);
+    const dateless = await createTask({ title: 'Choose grout', projectId: project }, db);
+
+    const moved = await deleteProject(project, db);
+
+    expect(new Set(moved.taskIds)).toEqual(new Set([filed, dateless]));
+    expect(moved.open).toBe(2);
+    expect((await db.projects.get(project))?._del).toBe(1);
+    expect((await db.tasks.get(filed))?.projectId).toBe(NO_PROJECT);
+    expect((await inboxList(db)).map((t) => t.id).sort()).toEqual([filed, dateless].sort());
+  });
+
+  it('puts the project and its tasks back together', async () => {
+    const project = await createProject({ name: 'Kitchen' }, db);
+    const filed = await createTask({ title: 'Order tiles', projectId: project }, db);
+
+    const moved = await deleteProject(project, db);
+    await restoreProject(project, moved.taskIds, db);
+
+    expect((await db.projects.get(project))?._del).toBe(0);
+    expect((await projectList(project, db)).map((t) => t.id)).toEqual([filed]);
+    expect((await inboxList(db)).map((t) => t.id)).toEqual([]);
+  });
+
+  it('leaves a subtask alone, because its parent carries the project', async () => {
+    const project = await createProject({ name: 'Kitchen' }, db);
+    const parent = await createTask({ title: 'Order tiles', projectId: project }, db);
+    const child = await createTask({ title: 'Measure the wall', parentTaskId: parent }, db);
+
+    const moved = await deleteProject(project, db);
+
+    expect(moved.taskIds).toEqual([parent]);
+    // It never had a project of its own to lose.
+    expect((await db.tasks.get(child))?.projectId).toBe(NO_PROJECT);
+    expect((await subtasksOf(parent, db)).map((t) => t.id)).toEqual([child]);
+  });
+
+  it('does not resurrect a task that was already deleted', async () => {
+    const project = await createProject({ name: 'Kitchen' }, db);
+    const gone = await createTask({ title: 'Old idea', projectId: project }, db);
+    await deleteTask(gone, db);
+
+    expect(await deleteProject(project, db)).toEqual({ taskIds: [], open: 0 });
+    expect((await db.tasks.get(gone))?._del).toBe(1);
+  });
+
+  it('stamps completedAt locally when a project turns done', async () => {
+    // completed_at is server-owned, so the patch cannot carry it and 0020's
+    // trigger fills it on the way in. Signed out there is no next pull, and this
+    // is the only thing that ever sets it.
+    const id = await createProject({ name: 'Kitchen' }, db);
+    expect((await db.projects.get(id))?.completedAt).toBeNull();
+
+    await updateProject(id, { status: 'done' }, db);
+    expect((await db.projects.get(id))?.completedAt).not.toBeNull();
+
+    await updateProject(id, { status: 'active' }, db);
+    expect((await db.projects.get(id))?.completedAt).toBeNull();
+  });
+
+  it('leaves a cancelled project without a completion date', async () => {
+    const id = await createProject({ name: 'Kitchen' }, db);
+    await updateProject(id, { status: 'cancelled' }, db);
+    expect((await db.projects.get(id))?.completedAt).toBeNull();
+  });
+
+  it('never sends completedAt to the server', async () => {
+    const id = await createProject({ name: 'Kitchen' }, db);
+    await updateProject(id, { status: 'done' }, db);
+    const queued = await db.outbox.orderBy('seq').last();
+    expect(queued?.patch).toEqual({ status: 'done' });
+  });
+
+  it('reports the open count separately from every task it moved', async () => {
+    // The Inbox lists open work, so a message promising ten tasks in an Inbox
+    // that will show two is a lie about where they went.
+    const project = await createProject({ name: 'Kitchen' }, db);
+    const open = await createTask({ title: 'Order tiles', projectId: project }, db);
+    const finished = await createTask({ title: 'Book sparky', projectId: project }, db);
+    await completeTask(finished, true, db);
+
+    const moved = await deleteProject(project, db);
+
+    expect(new Set(moved.taskIds)).toEqual(new Set([open, finished]));
+    expect(moved.open).toBe(1);
+    // Both moved, so undo can put both back, and only one shows up.
+    expect((await inboxList(db)).map((t) => t.id)).toEqual([open]);
+  });
+
+  it('counts open and done per project, excluding subtasks', async () => {
+    const project = await createProject({ name: 'Kitchen' }, db);
+    const other = await createProject({ name: 'Garden' }, db);
+    const first = await createTask({ title: 'Order tiles', projectId: project }, db);
+    await createTask({ title: 'Book sparky', projectId: project }, db);
+    // A subtask would double-count its parent: it carries no project of its own.
+    await createTask({ title: 'Measure', parentTaskId: first }, db);
+    await completeTask(first, true, db);
+
+    const counts = await projectCounts([project, other], db);
+    expect(counts.get(project)).toEqual({ open: 1, done: 1 });
+    expect(counts.get(other)).toEqual({ open: 0, done: 0 });
+    expect((await projectDone(project, 50, db)).map((t) => t.id)).toEqual([first]);
+  });
+});
+
+describe('a cancelled task in a project', () => {
+  it('counts as neither open nor done', async () => {
+    // `_done` is 1 for done OR cancelled, because both leave the open lists, so
+    // the index range alone would report an abandoned task as finished and the
+    // ring would say the project is further along than it is.
+    const project = await createProject({ name: 'Kitchen' }, db);
+    const done = await createTask({ title: 'Order tiles', projectId: project }, db);
+    const dropped = await createTask({ title: 'Hire a designer', projectId: project }, db);
+    const open = await createTask({ title: 'Choose grout', projectId: project }, db);
+    await completeTask(done, true, db);
+    await updateTask(dropped, { status: 'cancelled' }, db);
+
+    expect(await projectCounts([project], db)).toEqual(
+      new Map([[project, { open: 1, done: 1 }]]),
+    );
+    expect((await projectList(project, db)).map((t) => t.id)).toEqual([open]);
+  });
+
+  it('stays out of the done list', async () => {
+    const project = await createProject({ name: 'Kitchen' }, db);
+    const done = await createTask({ title: 'Order tiles', projectId: project }, db);
+    const dropped = await createTask({ title: 'Hire a designer', projectId: project }, db);
+    await completeTask(done, true, db);
+    await updateTask(dropped, { status: 'cancelled' }, db);
+
+    // A list headed "Done" holding work somebody abandoned is mislabelled.
+    expect((await projectDone(project, 50, db)).map((t) => t.id)).toEqual([done]);
+  });
+});
+
+describe('areas', () => {
+  it('creates one and queues the insert', async () => {
+    const before = await db.outbox.count();
+    const id = await createArea({ name: 'Home' }, db);
+
+    expect((await areaOptions(db)).map((a) => a.id)).toEqual([id]);
+    expect(await db.outbox.count()).toBe(before + 1);
+    expect(await db.outbox.orderBy('seq').last()).toMatchObject({
+      table: 'areas',
+      entityId: id,
+      op: 'insert',
+    });
+  });
+
+  it('renames one', async () => {
+    const id = await createArea({ name: 'Home' }, db);
+    await updateArea(id, { name: 'House' }, db);
+    expect((await db.areas.get(id))?.name).toBe('House');
+  });
+
+  it('keeps the projects when the area goes', async () => {
+    // Postgres would clear area_id through `on delete set null`, but a soft
+    // delete never fires it, so the projects would point at a tombstone and fall
+    // out of every group on the screen.
+    const area = await createArea({ name: 'Home' }, db);
+    const project = await createProject({ name: 'Kitchen', areaId: area }, db);
+
+    const unfiled = await deleteArea(area, db);
+
+    expect(unfiled).toEqual([project]);
+    expect((await db.areas.get(area))?._del).toBe(1);
+    expect((await db.projects.get(project))?.areaId).toBe('');
+    expect((await allProjects(db)).map((p) => p.id)).toEqual([project]);
+  });
+
+  it('refiles them on a restore', async () => {
+    const area = await createArea({ name: 'Home' }, db);
+    const project = await createProject({ name: 'Kitchen', areaId: area }, db);
+
+    const unfiled = await deleteArea(area, db);
+    await restoreArea(area, unfiled, db);
+
+    expect((await db.areas.get(area))?._del).toBe(0);
+    expect((await db.projects.get(project))?.areaId).toBe(area);
+  });
+
+  it('orders them by their own sort key', async () => {
+    const first = await createArea({ name: 'Home' }, db);
+    const second = await createArea({ name: 'Work' }, db);
+    expect((await areaOptions(db)).map((a) => a.id)).toEqual([first, second]);
   });
 });

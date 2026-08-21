@@ -24,6 +24,7 @@ export type WireTable =
 
 export const WIRE_TABLE: Record<EntityTable, WireTable> = {
   tasks: 'tasks',
+  areas: 'areas',
   projects: 'projects',
   tags: 'tags',
   taskTags: 'task_tags',
@@ -44,9 +45,7 @@ export const LOCAL_TABLE: Record<WireTable, EntityTable | null> = {
   activity_log: 'activityLog',
   saved_views: 'savedViews',
   user_settings: 'prefs',
-  // Areas exist server-side so projects can reference them. No local table
-  // until the phase that introduces the UI for them.
-  areas: null,
+  areas: 'areas',
 };
 
 // ─── Pull ─────────────────────────────────────────────────────────────────────

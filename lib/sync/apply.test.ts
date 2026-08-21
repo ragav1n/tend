@@ -4,7 +4,7 @@ import { setDb, TendDb } from '@/lib/db/client';
 import { createSavedView, createTask, ensureTag, setTaskTags } from '@/lib/db/mutations';
 import { todayList, today } from '@/lib/db/queries';
 import { applyPage, discardLocal, readCursor, writeCursor } from './apply';
-import type { PullRow } from './protocol';
+import type { PullRow, WireTable } from './protocol';
 
 let db: TendDb;
 let dbName: string;
@@ -197,11 +197,37 @@ describe('page shape', () => {
     expect((await db.tasks.get('task-1'))?.projectId).toBe('project-1');
   });
 
+  it('applies an area before the project filed under it', async () => {
+    const page: PullRow[] = [
+      {
+        table: 'projects',
+        row: { id: 'project-1', area_id: 'area-1', name: 'Kitchen', sort_key: 'a0', row_version: 5 },
+      },
+      {
+        table: 'areas',
+        row: {
+          id: 'area-1',
+          name: 'House',
+          sort_key: 'a0',
+          created_at: '2026-08-20T00:00:00.000Z',
+          updated_at: '2026-08-20T00:00:00.000Z',
+          deleted_at: null,
+          row_version: 3,
+        },
+      },
+    ];
+
+    await applyPage(db, page);
+    expect((await db.areas.get('area-1'))?.name).toBe('House');
+    expect((await db.areas.get('area-1'))?._del).toBe(0);
+    expect((await db.projects.get('project-1'))?.areaId).toBe('area-1');
+  });
+
   it('ignores a table it has no local home for', async () => {
     // A server that grew a table before this client shipped is deploy skew,
     // not a reason to halt sync.
     const result = await applyPage(db, [
-      { table: 'areas', row: { id: 'area-1', name: 'Work', row_version: 3 } },
+      { table: 'habits' as WireTable, row: { id: 'habit-1', name: 'Floss', row_version: 3 } },
       taskRow(),
     ]);
     expect(result.applied).toBe(1);
@@ -289,6 +315,62 @@ describe('discardLocal', () => {
       // A missing arm now throws rather than returning quietly, so an id that
       // matches nothing is the only thing that should be a no-op.
       await expect(discardLocal(db, table, 'nothing-with-this-id')).resolves.toBeUndefined();
+    }
+  });
+});
+
+describe('the v6 upgrade', () => {
+  /**
+   * `LOCAL_TABLE.areas` was `null` before areas had a local table, so the apply
+   * path dropped every area row it was ever handed AND let the cursor advance
+   * past it. Nothing would offer those rows again, so a project filed under one
+   * would sit in "No area" on that device forever while another device showed it
+   * correctly.
+   *
+   * Clearing the cursor on the upgrade is what closes it. Safe rather than
+   * destructive: `isStale` skips a row already held at that version, so the
+   * re-pull cannot overwrite a pending local edit.
+   */
+  const legacyName = () => `tend_v5_${Date.now()}_${counter++}`;
+
+  it('clears the sync cursor so the areas it dropped come back', async () => {
+    const name = legacyName();
+
+    // A v5 database, which is what an existing install is. Only the two stores
+    // this case reads are declared: Dexie applies version blocks above the
+    // installed number, so the rest of the schema is not what is under test.
+    const legacy = new Dexie(name);
+    legacy.version(5).stores({ syncMeta: 'key', areas: 'id' });
+    await legacy.open();
+    await legacy.table('syncMeta').put({ key: 'sync.cursor', value: 4_812 });
+    legacy.close();
+
+    const upgraded = new TendDb(name);
+    await upgraded.open();
+    try {
+      expect(await readCursor(upgraded)).toBe(0);
+    } finally {
+      upgraded.close();
+      await Dexie.delete(name);
+    }
+  });
+
+  it('leaves a database created fresh at v6 with a cursor it can keep', async () => {
+    // The upgrade only runs on the way past 5, so a new install never pays for
+    // it and a cursor written after opening is not wiped on the next open.
+    const name = legacyName();
+    const first = new TendDb(name);
+    await first.open();
+    await writeCursor(first, 99);
+    first.close();
+
+    const second = new TendDb(name);
+    await second.open();
+    try {
+      expect(await readCursor(second)).toBe(99);
+    } finally {
+      second.close();
+      await Dexie.delete(name);
     }
   });
 });

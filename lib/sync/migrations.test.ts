@@ -51,6 +51,7 @@ describe('the migration directory', () => {
       '0017_missing_parent.sql',
       '0018_activity_log.sql',
       '0019_saved_views.sql',
+      '0020_project_completed_at.sql',
     ]);
   });
 

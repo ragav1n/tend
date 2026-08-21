@@ -6,6 +6,8 @@ import {
   asUser as userRole,
   bootPostgres,
   createUsers,
+  migrationSql,
+  MIGRATIONS,
 } from './testing/postgres';
 
 /**
@@ -894,5 +896,227 @@ describe('the activity log', () => {
     await asUser(OTHER);
     const { rows } = await db.query(`select id from activity_log where id = '${ENTRY}'`);
     expect(rows).toEqual([]);
+  });
+});
+
+describe('areas and projects', () => {
+  const AREA = '66666666-6666-4666-8666-666666666661';
+  const PROJECT = '66666666-6666-4666-8666-666666666662';
+
+  function areaMutation(over: Record<string, unknown> = {}) {
+    const id = (over.id as string) ?? AREA;
+    return {
+      mutationId: (over.mutationId as string) ?? '66666666-6666-4666-8666-6666666666a1',
+      table: 'areas',
+      entityId: id,
+      op: 'insert',
+      patch: localToWire('areas', {
+        id,
+        userId: 'local',
+        name: 'House',
+        sortKey: 'a0',
+        createdAt: '2026-08-20T00:00:00.000Z',
+        deletedAt: null,
+        ...over,
+      }),
+      baseVersion: 0,
+    };
+  }
+
+  function projectMutation(over: Record<string, unknown> = {}) {
+    const id = (over.id as string) ?? PROJECT;
+    return {
+      mutationId: (over.mutationId as string) ?? '66666666-6666-4666-8666-6666666666a2',
+      table: 'projects',
+      entityId: id,
+      op: 'insert',
+      patch: localToWire('projects', {
+        id,
+        userId: 'local',
+        // The sentinel the local store carries for "no area". Postgres rejects
+        // '' as a uuid outright, so this is the case SENTINEL_COLUMNS exists for.
+        areaId: '',
+        name: 'Kitchen',
+        notes: '',
+        status: 'active',
+        color: '#C29B72',
+        dueDate: null,
+        sortKey: 'a0',
+        archivedAt: null,
+        createdAt: '2026-08-20T00:00:00.000Z',
+        deletedAt: null,
+        ...over,
+      }),
+      baseVersion: 0,
+    };
+  }
+
+  /**
+   * The row's current counter, read back rather than guessed.
+   *
+   * baseVersion drives the per-field merge, so a hardcoded number in a file
+   * where earlier cases already bumped the row means the field gets dropped as
+   * stale and the assertion fails for a reason that has nothing to do with what
+   * it is testing.
+   */
+  async function versionOf(table: string, id: string): Promise<number> {
+    const { rows } = await db.query<{ row_version: number }>(
+      `select row_version from ${table} where id = $1`,
+      [id],
+    );
+    return Number(rows[0]?.row_version ?? 0);
+  }
+
+  async function setStatus(status: string, mutationId: string) {
+    await asSuperuser();
+    const baseVersion = await versionOf('projects', PROJECT);
+    await asUser(USER);
+    return push([
+      { mutationId, table: 'projects', entityId: PROJECT, op: 'update', patch: { status }, baseVersion },
+    ]);
+  }
+
+  async function completedAt(id = PROJECT): Promise<Date | null> {
+    await asSuperuser();
+    const { rows } = await db.query<{ completed_at: Date | null }>(
+      `select completed_at from projects where id = $1`,
+      [id],
+    );
+    return rows[0]?.completed_at ?? null;
+  }
+
+  it('lands an area, which nothing had ever pushed before', async () => {
+    await asUser(USER);
+    const response = await push([areaMutation()]);
+    expect(response.results[0]).toMatchObject({ status: 'applied' });
+
+    await asSuperuser();
+    const { rows } = await db.query<{ name: string }>(
+      `select name from areas where id = '${AREA}'`,
+    );
+    expect(rows[0]?.name).toBe('House');
+  });
+
+  it('files a project under it, and sends both back on a pull', async () => {
+    await asUser(USER);
+    await push([projectMutation({ areaId: AREA })]);
+
+    const page = await pull(0);
+    expect(new Set(page.rows.map((r) => r.table)).has('areas')).toBe(true);
+    const project = page.rows.find((r) => r.table === 'projects' && r.row.id === PROJECT);
+    expect(project?.row.area_id).toBe(AREA);
+  });
+
+  it('turns the empty-string area back into a real null', async () => {
+    const id = '66666666-6666-4666-8666-666666666663';
+    await asUser(USER);
+    await push([projectMutation({ id, mutationId: '66666666-6666-4666-8666-6666666666a3' })]);
+
+    await asSuperuser();
+    const { rows } = await db.query<{ area_id: string | null }>(
+      `select area_id from projects where id = $1`,
+      [id],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.area_id).toBeNull();
+  });
+
+  it('stamps completed_at when a project turns done, which 0020 added', async () => {
+    // The client cannot send completed_at: sync_server_owned_columns strips it
+    // from every push, for every table. Before 0020 nothing else set it either,
+    // so the column stayed null forever on a table that has carried it since
+    // 0001.
+    const response = await setStatus('done', '66666666-6666-4666-8666-6666666666a4');
+    expect(response.results[0]).toMatchObject({ status: 'applied' });
+    expect(await completedAt()).toBeInstanceOf(Date);
+  });
+
+  it('clears it again when the project reopens', async () => {
+    await setStatus('active', '66666666-6666-4666-8666-6666666666a5');
+    expect(await completedAt()).toBeNull();
+  });
+
+  it('leaves a cancelled project without a completion date', async () => {
+    // Abandoned in March is not finished in March. A date here would put the
+    // project in anything that counts completed work.
+    await setStatus('cancelled', '66666666-6666-4666-8666-6666666666a6');
+    expect(await completedAt()).toBeNull();
+  });
+
+  it('keeps one account out of another account\'s areas', async () => {
+    await asUser(OTHER);
+    const { rows } = await db.query(`select id from areas where id = '${AREA}'`);
+    expect(rows).toEqual([]);
+  });
+});
+
+describe('0020 on a database that already has done projects', () => {
+  /**
+   * The migration applied to a schema that predates it, which is the only state
+   * it will ever actually run against.
+   *
+   * Its own PGlite instance, booted to 0019, because the shared one in this file
+   * already has 0020 in it and a migration cannot be tested after the fact. The
+   * first draft of 0020 put the backfill after `create trigger` and this case is
+   * what caught it: the else arm sets `new.completed_at := old.completed_at`,
+   * which for a row that has been done since before the trigger existed is null,
+   * so the trigger reverted the backfill on the way through and the statement
+   * reported "UPDATE n" having changed nothing.
+   */
+  const OLD = '77777777-7777-4777-8777-777777777771';
+  const GONE = '77777777-7777-4777-8777-777777777772';
+  let old: PGlite;
+
+  beforeAll(async () => {
+    const upTo0019 = MIGRATIONS.slice(0, MIGRATIONS.indexOf('0020_project_completed_at'));
+    old = await bootPostgres(upTo0019);
+    await createUsers(old, [USER]);
+    await ownerRole(old);
+
+    await old.query(
+      `insert into public.projects (id, user_id, name, status, sort_key)
+       values ($1, $2, 'Kitchen rewire', 'done', 'a0')`,
+      [OLD, USER],
+    );
+    await old.query(
+      `insert into public.projects (id, user_id, name, status, sort_key, deleted_at)
+       values ($1, $2, 'Abandoned', 'done', 'a1', now())`,
+      [GONE, USER],
+    );
+  }, 60_000);
+
+  afterAll(async () => {
+    await old?.close();
+  });
+
+  async function completedAtIn(id: string): Promise<Date | null> {
+    const { rows } = await old.query<{ completed_at: Date | null }>(
+      `select completed_at from projects where id = $1`,
+      [id],
+    );
+    return rows[0]?.completed_at ?? null;
+  }
+
+  it('starts with the column empty, which is the bug', async () => {
+    expect(await completedAtIn(OLD)).toBeNull();
+  });
+
+  it('fills it, and the fill survives the trigger the same migration creates', async () => {
+    await old.exec(migrationSql('0020_project_completed_at'));
+    expect(await completedAtIn(OLD)).toBeInstanceOf(Date);
+  });
+
+  it('leaves a tombstoned project alone', async () => {
+    expect(await completedAtIn(GONE)).toBeNull();
+  });
+
+  it('derives it from then on', async () => {
+    const id = '77777777-7777-4777-8777-777777777773';
+    await old.query(
+      `insert into public.projects (id, user_id, name, status, sort_key)
+       values ($1, $2, 'Repaint', 'done', 'a2')`,
+      [id, USER],
+    );
+    expect(await completedAtIn(id)).toBeInstanceOf(Date);
   });
 });

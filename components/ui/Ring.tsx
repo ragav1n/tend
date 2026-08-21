@@ -18,9 +18,19 @@ interface RingProps {
   size?: number;
   strokeWidth?: number;
   label?: string;
+  /** The percentage in the middle. Off for a ring small enough that the digits
+   *  crowd the stroke, or one sitting beside a row that already says the count
+   *  in words. The accessible name carries the number either way. */
+  showValue?: boolean;
 }
 
-export function Ring({ ratio, size = 44, strokeWidth = 3.5, label }: RingProps) {
+export function Ring({
+  ratio,
+  size = 44,
+  strokeWidth = 3.5,
+  label,
+  showValue = true,
+}: RingProps) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const clamped = Math.min(1, Math.max(0, ratio));
@@ -55,9 +65,11 @@ export function Ring({ ratio, size = 44, strokeWidth = 3.5, label }: RingProps) 
           transition={SOFT}
         />
       </svg>
-      <span className="tnum absolute text-[0.6875rem] text-text-mid">
-        {Math.round(clamped * 100)}
-      </span>
+      {showValue && (
+        <span className="tnum absolute text-[0.6875rem] text-text-mid">
+          {Math.round(clamped * 100)}
+        </span>
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import type { TendDb } from '@/lib/db/client';
 import {
   deriveActivity,
+  deriveArea,
   deriveFocusSession,
   deriveProject,
   deriveSavedView,
@@ -11,6 +12,7 @@ import {
 import { DEFAULT_PREFS, PREFS_ID } from '@/lib/db/prefs';
 import type {
   ActivityEntry,
+  Area,
   EntityTable,
   FocusSession,
   Prefs,
@@ -119,6 +121,29 @@ async function applyTasks(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
     if (puts.length > 0) await db.tasks.bulkPut(puts);
   });
 
+  return result;
+}
+
+async function applyAreas(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
+  const result: ApplyResult = { applied: 0, skipped: 0 };
+  const ids = rows.map((r) => String(r.row.id));
+  const current = new Map(
+    (await db.areas.bulkGet(ids)).filter((a): a is Area => a !== undefined).map((a) => [a.id, a]),
+  );
+
+  const puts: Area[] = [];
+  for (const { row } of rows) {
+    const id = String(row.id);
+    if (isStale(Number(row.row_version ?? 0), current.get(id)?.rowVersion)) {
+      result.skipped += 1;
+      continue;
+    }
+    const base = { ...(current.get(id) ?? {}), ...wireToLocal('areas', row) } as Area;
+    puts.push({ ...base, ...deriveArea(base) });
+    result.applied += 1;
+  }
+
+  if (puts.length > 0) await db.areas.bulkPut(puts);
   return result;
 }
 
@@ -308,6 +333,7 @@ const APPLIERS: Partial<
   Record<WireTable, (db: TendDb, rows: PullRow[]) => Promise<ApplyResult>>
 > = {
   tasks: applyTasks,
+  areas: applyAreas,
   projects: applyProjects,
   tags: applyTags,
   task_series: applySeries,
@@ -394,6 +420,9 @@ export async function discardLocal(
       if (taskId && tagId) await db.taskTags.delete([taskId, tagId]);
       return;
     }
+    case 'areas':
+      await db.areas.delete(entityId);
+      return;
     case 'projects':
       await db.projects.delete(entityId);
       return;

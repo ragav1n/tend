@@ -21,7 +21,7 @@ import type Dexie from 'dexie';
  * items or closed items, never a mix.
  */
 
-export const DATA_LAYER_VERSION = 5;
+export const DATA_LAYER_VERSION = 6;
 
 export function defineSchema(db: Dexie): void {
   db.version(1).stores({
@@ -104,4 +104,25 @@ export function defineSchema(db: Dexie): void {
   db.version(5).stores({
     savedViews: ['id', '_del', 'rowVersion', '[_del+sortKey]'].join(', '),
   });
+
+  // v6 adds areas, which have existed server-side since 0001 so a project could
+  // point at one. The list is short and always read whole, so sortKey is the
+  // only ordering index it needs.
+  //
+  // The upgrade clears the sync cursor, and that is the whole point of it.
+  // `LOCAL_TABLE.areas` was `null` before this version, so the apply path
+  // dropped every area row it was ever sent AND advanced the cursor past it. An
+  // area whose row_version sits below the cursor would never be offered again,
+  // and every project filed there would show under "No area" forever. Deleting
+  // the key restarts the pull from 0, which is safe rather than destructive:
+  // `applyPage` is idempotent and `isStale` skips a row it already holds at that
+  // version, so a re-pull cannot clobber a pending local edit.
+  db.version(6)
+    .stores({
+      areas: ['id', '_del', 'rowVersion', '[_del+sortKey]'].join(', '),
+    })
+    .upgrade(async (tx) => {
+      // Not through `writeCursor`, which refuses to move the cursor backwards.
+      await tx.table('syncMeta').delete('sync.cursor');
+    });
 }

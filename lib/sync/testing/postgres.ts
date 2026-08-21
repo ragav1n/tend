@@ -36,6 +36,7 @@ export const MIGRATIONS = [
   '0017_missing_parent',
   '0018_activity_log',
   '0019_saved_views',
+  '0020_project_completed_at',
 ];
 
 export function migrationSql(name: string): string {
