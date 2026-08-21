@@ -12,6 +12,7 @@ import {
   ArrowRight,
   DownloadSimple,
   FolderSimple,
+  Hash,
   Keyboard,
   MagnifyingGlass,
   Plus,
@@ -25,7 +26,7 @@ import { formatDueLabel } from '@/lib/format/date';
 import { MODAL, QUICK_FADE, modalVariants } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 import { useScrollLock } from '@/hooks/use-scroll-lock';
-import { useProjects, useSearch } from '@/hooks/use-tasks';
+import { useProjects, useSearch, useTags } from '@/hooks/use-tasks';
 import { useSavedViews } from '@/hooks/use-views';
 import { useUiStore, type PaletteMode } from '@/hooks/use-ui';
 import { Chord } from '@/components/ui/Kbd';
@@ -94,6 +95,7 @@ function Palette({ mode, onClose }: { mode: PaletteMode; onClose: () => void }) 
   // Live projects only. An archived project is finished business, and offering
   // it as a jump target is how work gets filed back into one.
   const projects = useProjects();
+  const tags = useTags();
   const todayDate = today();
 
   useScrollLock();
@@ -165,6 +167,14 @@ function Palette({ mode, onClose }: { mode: PaletteMode; onClose: () => void }) 
     run: () => router.push(`/views?v=${view.id}`),
   }));
 
+  // Labelled with the # so typing what you typed into the task finds it.
+  const tagRows: Row[] = tags.map((tag) => ({
+    id: `tag:${tag.id}`,
+    label: `#${tag.name}`,
+    icon: Hash,
+    run: () => router.push(`/tags?t=${tag.id}`),
+  }));
+
   const projectRows: Row[] = projects.map((project) => ({
     id: `project:${project.id}`,
     label: project.name,
@@ -172,7 +182,7 @@ function Palette({ mode, onClose }: { mode: PaletteMode; onClose: () => void }) 
     run: () => router.push(`/projects?p=${project.id}`),
   }));
 
-  const jumpTargets = [...commands, ...viewRows, ...projectRows];
+  const jumpTargets = [...commands, ...viewRows, ...projectRows, ...tagRows];
   const shownCommands =
     trimmed === '' ? jumpTargets : jumpTargets.filter((c) => matches(c.label, trimmed));
 
