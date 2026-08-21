@@ -1120,3 +1120,230 @@ describe('0020 on a database that already has done projects', () => {
     expect(await completedAtIn(id)).toBeInstanceOf(Date);
   });
 });
+
+describe('a name two live tags cannot both hold', () => {
+  /**
+   * 0021. `tags_user_name_live_idx` is unique over (user_id, lower(name)) among
+   * rows with no tombstone, so both a rename and an undelete can collide. The
+   * update arm caught check and foreign key violations and not this one, and the
+   * delete/undelete arm caught nothing at all, so 23505 raised out of the whole
+   * function. The client settles a raised error across every mutation it claimed
+   * in the same batch, which sent unrelated edits to the deadletter.
+   */
+  const WORK = '55555555-5555-4555-8555-555555555551';
+  const ADMIN = '55555555-5555-4555-8555-555555555552';
+  const REPLACEMENT = '55555555-5555-4555-8555-555555555553';
+  const BYSTANDER = '55555555-5555-4555-8555-555555555554';
+  const READING = '55555555-5555-4555-8555-555555555561';
+  /** Only this block's rows. The shared database carries tags other cases made. */
+  const OWNED = [WORK, ADMIN, REPLACEMENT, BYSTANDER, READING];
+
+  function tagInsert(id: string, name: string, mutationId: string) {
+    return {
+      mutationId,
+      table: 'tags',
+      entityId: id,
+      op: 'insert',
+      patch: { id, name, color: '#C29B72', sort_key: 'a0' },
+      baseVersion: 0,
+    };
+  }
+
+  async function liveNames() {
+    await asSuperuser();
+    const { rows } = await db.query<{ name: string }>(
+      `select name from tags
+        where user_id = '${USER}' and deleted_at is null
+          and id in (${OWNED.map((id) => `'${id}'`).join(', ')})
+        order by name`,
+    );
+    await asUser(USER);
+    return rows.map((row) => row.name);
+  }
+
+  it('sets up two tags', async () => {
+    await asUser(USER);
+    const response = await push([
+      tagInsert(WORK, 'work', '55555555-5555-4555-8555-55555555555a'),
+      tagInsert(ADMIN, 'admin', '55555555-5555-4555-8555-55555555555b'),
+    ]);
+    expect(response.results.map((r) => (r as { status: string }).status)).toEqual([
+      'applied',
+      'applied',
+    ]);
+  });
+
+  it('refuses a rename onto a taken name and commits the rest of the batch', async () => {
+    await asUser(USER);
+    const response = await push([
+      {
+        mutationId: '55555555-5555-4555-8555-55555555555c',
+        table: 'tags',
+        entityId: WORK,
+        op: 'update',
+        // Different case, same name. The index is over lower(name), which is
+        // what ensureTag on the client assumes when it looks a name up.
+        patch: { name: 'Admin' },
+        baseVersion: 0,
+      },
+      tagInsert(BYSTANDER, 'errands', '55555555-5555-4555-8555-55555555555d'),
+    ]);
+
+    expect(response.results[0]).toMatchObject({ status: 'rejected' });
+    // The whole point. This one had nothing to do with the collision.
+    expect(response.results[1]).toMatchObject({ status: 'applied' });
+    expect(await liveNames()).toEqual(['admin', 'errands', 'work']);
+  });
+
+  it('answers a retry from the log rather than raising again', async () => {
+    await asUser(USER);
+    const again = await push([
+      {
+        mutationId: '55555555-5555-4555-8555-55555555555c',
+        table: 'tags',
+        entityId: WORK,
+        op: 'update',
+        patch: { name: 'Admin' },
+        baseVersion: 0,
+      },
+    ]);
+    expect(again.results[0]).toMatchObject({ status: 'rejected' });
+  });
+
+  it('refuses an undelete onto a name that filled in behind it', async () => {
+    await asUser(USER);
+    // The sequence a person can walk: delete #work, type it again before the
+    // toast expires, then press Undo.
+    await push([
+      {
+        mutationId: '55555555-5555-4555-8555-55555555555e',
+        table: 'tags',
+        entityId: WORK,
+        op: 'delete',
+        patch: {},
+        baseVersion: 0,
+      },
+      tagInsert(REPLACEMENT, 'work', '55555555-5555-4555-8555-55555555555f'),
+    ]);
+    expect(await liveNames()).toEqual(['admin', 'errands', 'work']);
+
+    const undo = await push([
+      {
+        mutationId: '55555555-5555-4555-8555-555555555560',
+        table: 'tags',
+        entityId: WORK,
+        op: 'undelete',
+        patch: {},
+        baseVersion: 0,
+      },
+      tagInsert(READING, 'reading', '55555555-5555-4555-8555-555555555562'),
+    ]);
+
+    expect(undo.results[0]).toMatchObject({ status: 'rejected' });
+    expect(undo.results[1]).toMatchObject({ status: 'applied' });
+    // The tombstone stays down. Two live rows named work is the state the index
+    // exists to prevent.
+    expect(await liveNames()).toEqual(['admin', 'errands', 'reading', 'work']);
+  });
+
+  it('still undeletes when the name is free', async () => {
+    await asUser(USER);
+    await push([
+      {
+        mutationId: '55555555-5555-4555-8555-555555555563',
+        table: 'tags',
+        entityId: REPLACEMENT,
+        op: 'delete',
+        patch: {},
+        baseVersion: 0,
+      },
+    ]);
+    const undo = await push([
+      {
+        mutationId: '55555555-5555-4555-8555-555555555564',
+        table: 'tags',
+        entityId: WORK,
+        op: 'undelete',
+        patch: {},
+        baseVersion: 0,
+      },
+    ]);
+    expect(undo.results[0]).toMatchObject({ status: 'applied' });
+    expect(await liveNames()).toEqual(['admin', 'errands', 'reading', 'work']);
+  });
+});
+
+describe('what 0021 actually fixes', () => {
+  /**
+   * The same two pushes against 0020, where a collision raised out of sync_push
+   * and took the mutation behind it with it. Booted separately because the
+   * shared database has the fix applied, and the whole claim is about what the
+   * function did before it.
+   */
+  const TAG_A = '66666666-6666-4666-8666-666666666661';
+  const TAG_B = '66666666-6666-4666-8666-666666666662';
+
+  it('raises on a rename and on an undelete, and loses the batch', async () => {
+    const old = await bootPostgres(MIGRATIONS.filter((name) => name !== '0021_push_unique_violation'));
+    try {
+      await createUsers(old, [USER]);
+      await userRole(old, USER);
+
+      const send = (mutations: unknown[]) =>
+        old.query('select public.sync_push($1::jsonb) as sync_push', [JSON.stringify(mutations)]);
+
+      await send([
+        {
+          mutationId: '66666666-6666-4666-8666-66666666666a',
+          table: 'tags',
+          entityId: TAG_A,
+          op: 'insert',
+          patch: { id: TAG_A, name: 'work', color: '#C29B72', sort_key: 'a0' },
+          baseVersion: 0,
+        },
+        {
+          mutationId: '66666666-6666-4666-8666-66666666666b',
+          table: 'tags',
+          entityId: TAG_B,
+          op: 'insert',
+          patch: { id: TAG_B, name: 'admin', color: '#C29B72', sort_key: 'a0' },
+          baseVersion: 0,
+        },
+      ]);
+
+      await expect(
+        send([
+          {
+            mutationId: '66666666-6666-4666-8666-66666666666c',
+            table: 'tags',
+            entityId: TAG_A,
+            op: 'update',
+            patch: { name: 'admin' },
+            baseVersion: 0,
+          },
+          {
+            mutationId: '66666666-6666-4666-8666-66666666666d',
+            table: 'tags',
+            entityId: '66666666-6666-4666-8666-666666666663',
+            op: 'insert',
+            patch: {
+              id: '66666666-6666-4666-8666-666666666663',
+              name: 'innocent',
+              color: '#C29B72',
+              sort_key: 'a0',
+            },
+            baseVersion: 0,
+          },
+        ]),
+      ).rejects.toThrow();
+
+      // The mutation queued behind the collision never landed, which is what
+      // the client then deadlettered along with it.
+      await old.exec('reset role');
+      const { rows } = await old.query("select id from tags where name = 'innocent'");
+      expect(rows).toHaveLength(0);
+    } finally {
+      await old.close();
+    }
+  }, 60_000);
+});
