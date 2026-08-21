@@ -153,15 +153,10 @@ export function useTags(): Tag[] {
 
 const NO_COUNTS = new Map<string, number>();
 
-/** How many open tasks each tag holds. Keyed on the ids so it re-runs when a tag
- *  is added or removed rather than on every render. */
-export function useTagCounts(tagIds: readonly string[]): Map<string, number> {
-  const key = tagIds.join(',');
-  return useStableLiveQuery(
-    () => tagCounts(key === '' ? [] : key.split(',')),
-    [key],
-    NO_COUNTS,
-  );
+/** How many open tasks each tag holds. No dependency, so the counts never blink
+ *  back to the placeholder when the tag list resolves. */
+export function useTagCounts(): Map<string, number> {
+  return useStableLiveQuery(() => tagCounts(), [], NO_COUNTS);
 }
 
 /** Open tasks carrying one tag. */

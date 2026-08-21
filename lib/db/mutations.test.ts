@@ -392,13 +392,52 @@ describe('tags', () => {
     await createTask({ title: 'Draft the deck', tagIds: [work, home] }, db);
     await completeTask(done, true, db);
 
-    const counts = await tagCounts([work, home], db);
+    const counts = await tagCounts(db);
 
     expect(counts.get(work)).toBe(1);
     expect(counts.get(home)).toBe(1);
-    // Absent rather than zero: the screen reads it with ?? 0 and a tag nobody
+    // Absent rather than zero: the screen reads it with ?? 0, and a tag nobody
     // has used has nothing to count.
-    expect(await tagCounts([], db)).toEqual(new Map());
+    expect(counts.has('nothing')).toBe(false);
+  });
+
+  it('counts and lists the same tasks, subtasks under their parent', async () => {
+    // Every other list query drops subtasks because they render under their
+    // parent. This one did not, so a tagged child appeared as its own row AND
+    // nested under the parent, two nodes carrying one id, over a count that
+    // disagreed with both.
+    const errands = await createTag({ name: 'errands' }, db);
+    const parent = await createTask({ title: 'Move house', tagIds: [errands] }, db);
+    await createTask(
+      { title: 'Pack the kitchen', parentTaskId: parent, tagIds: [errands] },
+      db,
+    );
+
+    expect((await taggedWith(errands, db)).map((t) => t.title)).toEqual(['Move house']);
+    expect((await tagCounts(db)).get(errands)).toBe(1);
+  });
+
+  it('relinks to the live tag rather than pushing a name twice', async () => {
+    // Delete #work, type "Buy milk #work" before the toast expires, then undo.
+    // An undelete would raise 23505 out of sync_push, which has no exception
+    // block on that arm, and the whole claimed batch would deadletter.
+    const first = await createTag({ name: 'work' }, db);
+    const id = await createTask({ title: 'Draft the deck', tagIds: [first] }, db);
+    const touched = await deleteTag(first, db);
+    const second = await ensureTag('work', db);
+    expect(second).not.toBe(first);
+
+    expect(await restoreTag(first, touched, db)).toBe('merged');
+
+    expect((await db.tags.get(first))!._del).toBe(1);
+    expect((await db.tasks.get(id))!._tagIds).toEqual([second]);
+    // Nothing in the outbox may undelete the tombstone.
+    const records = await db.outbox.toArray();
+    expect(records.filter((r) => r.op === 'undelete')).toEqual([]);
+  });
+
+  it('says when the tag it was asked to restore has gone', async () => {
+    expect(await restoreTag('nope', [], db)).toBe('gone');
   });
 });
 

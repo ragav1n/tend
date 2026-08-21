@@ -370,23 +370,29 @@ export async function tagOptions(db: TendDb = getDb()): Promise<Tag[]> {
  * entry per tag on a task, and `distinct` collapses a task carrying two of the
  * asked-for tags back to one row. A count over `db.taskTags` would need the
  * status of every task it named, which is the read this avoids.
+ *
+ * It reads the live tags itself rather than taking their ids. Passed in, the
+ * ids are a changing dependency, and `useStableLiveQuery` shows the placeholder
+ * while a dependency change settles: every count on the tag index blinked to
+ * zero for a paint each time the tag list resolved.
+ *
+ * Counts top-level tasks only, which is what `taggedWith` lists. A count that
+ * includes a tagged subtask disagrees with the screen underneath it.
  */
-export async function tagCounts(
-  tagIds: readonly string[],
-  db: TendDb = getDb(),
-): Promise<Map<string, number>> {
+export async function tagCounts(db: TendDb = getDb()): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
-  if (tagIds.length === 0) return counts;
+  const tags = await tagOptions(db);
+  if (tags.length === 0) return counts;
 
-  const wanted = new Set(tagIds);
+  const wanted = new Set(tags.map((tag) => tag.id));
   const rows = await db.tasks
     .where('_tagIds')
-    .anyOf([...tagIds])
+    .anyOf([...wanted])
     .distinct()
     .toArray();
 
   for (const task of rows) {
-    if (task._del === 1 || task._done === 1) continue;
+    if (task._del === 1 || task._done === 1 || task.parentTaskId !== NO_PARENT) continue;
     for (const tagId of task._tagIds) {
       if (wanted.has(tagId)) counts.set(tagId, (counts.get(tagId) ?? 0) + 1);
     }
@@ -394,10 +400,19 @@ export async function tagCounts(
   return counts;
 }
 
-/** Tag filter, served by the multiEntry `_tagIds` index. */
+/**
+ * Tag filter, served by the multiEntry `_tagIds` index.
+ *
+ * Top level only, like every other list here: a subtask renders under its
+ * parent. Without that filter the tag screen showed a tagged subtask twice,
+ * once as a row of its own and once nested under its parent, two DOM nodes
+ * carrying the same id for the keyboard cursor to walk onto.
+ */
 export async function taggedWith(tagId: string, db: TendDb = getDb()): Promise<Task[]> {
   const rows = await db.tasks.where('_tagIds').equals(tagId).toArray();
-  return rows.filter((t) => t._del === 0 && t._done === 0).sort(compareRank);
+  return rows
+    .filter((t) => t._del === 0 && t._done === 0 && t.parentTaskId === NO_PARENT)
+    .sort(compareRank);
 }
 
 /**

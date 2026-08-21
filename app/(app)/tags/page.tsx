@@ -28,7 +28,7 @@ import { ViewHeader } from '@/components/views/ViewHeader';
  */
 
 function TagIndex({ tags }: { tags: Tag[] }) {
-  const counts = useTagCounts(tags.map((tag) => tag.id));
+  const counts = useTagCounts();
 
   return (
     <>
@@ -80,15 +80,28 @@ function OneTag({ tag }: { tag: Tag }) {
   const tasks = useTaggedWith(tag.id);
   const [name, setName] = useState<string | null>(null);
 
-  async function commitName() {
+  /**
+   * Commits a rename, or hands the words back.
+   *
+   * A refusal from Enter keeps the field open with what was typed still in it,
+   * because the person is mid-edit and being told "taken" over a field that has
+   * closed means typing it all again. A refusal from blur closes: reopening on
+   * blur would take focus back off whatever was clicked, and the field would be
+   * impossible to leave until the name was acceptable.
+   */
+  async function commitName(from: 'enter' | 'blur') {
     const wanted = name ?? '';
-    setName(null);
+    if (from === 'blur') setName(null);
+
     const result = await renameTag(tag.id, wanted);
-    if (result === 'taken') {
-      toast('There is already a tag with that name', {
-        description: 'Two tags with one name would be two names for one thing.',
-      });
+    if (result === 'ok' || result === 'empty') {
+      setName(null);
+      return;
     }
+
+    toast('There is already a tag with that name', {
+      description: 'Two tags with one name would be two names for one thing.',
+    });
   }
 
   async function remove() {
@@ -117,13 +130,13 @@ function OneTag({ tag }: { tag: Tag }) {
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
                 event.preventDefault();
-                void commitName();
+                void commitName('enter');
               }
               // The old name stays. Renaming is the one thing on this screen
               // that touches every task carrying the tag.
               if (event.key === 'Escape') setName(null);
             }}
-            onBlur={() => void commitName()}
+            onBlur={() => void commitName('blur')}
             className={cn(
               'w-full rounded-md border border-line bg-sunken px-2.5 py-1.5',
               'font-display text-[2rem] leading-none text-text-hi',

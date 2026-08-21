@@ -1516,28 +1516,55 @@ export async function deleteTag(id: string, db: TendDb = getDb()): Promise<strin
   });
 }
 
-/** Puts a tag back on the tasks `deleteTag` took it off. */
+/**
+ * Puts a tag back on the tasks `deleteTag` took it off.
+ *
+ * The name may have been taken in the meantime: delete `#work`, type
+ * `Buy milk #work` before the toast expires, and `ensureTag` makes a second one
+ * because the first is no longer live. An undelete then is not a write that
+ * fails, it is a **fatal push**. `tags_user_name_live_idx` is a partial unique
+ * index, the `delete`/`undelete` arm of `sync_push` is the one arm with no
+ * exception block, so `23505` raises out of the whole function, and
+ * `failBatch` deadletters every mutation claimed alongside it: task edits,
+ * completions and notes, gone from the server for good.
+ *
+ * So a clash relinks the tasks to the tag that holds the name now and leaves
+ * the tombstone alone. The person asked for those tasks to carry `#work` again,
+ * and they do.
+ */
+export type TagRestore = 'ok' | 'merged' | 'gone';
+
 export async function restoreTag(
   id: string,
   taskIds: readonly string[] = [],
   db: TendDb = getDb(),
-): Promise<void> {
-  await db.transaction('rw', [db.tags, db.tasks, db.taskTags, db.outbox], async () => {
+): Promise<TagRestore> {
+  return db.transaction('rw', [db.tags, db.tasks, db.taskTags, db.outbox], async () => {
     const current = await db.tags.get(id);
-    if (!current) return;
+    if (!current) return 'gone';
 
-    const next = { ...current, deletedAt: null, updatedAt: nowIso() };
-    await db.tags.put({ ...next, ...deriveTag(next) });
-    await db.outbox.add(
-      outboxRecord('tags', id, 'undelete', { deletedAt: null }, current.rowVersion),
+    const live = await db.tags.where('_del').equals(0).toArray();
+    const holder = live.find(
+      (tag) => tag.id !== id && tag.name.toLowerCase() === current.name.toLowerCase(),
     );
+    const wanted = holder?.id ?? id;
+
+    if (!holder) {
+      const next = { ...current, deletedAt: null, updatedAt: nowIso() };
+      await db.tags.put({ ...next, ...deriveTag(next) });
+      await db.outbox.add(
+        outboxRecord('tags', id, 'undelete', { deletedAt: null }, current.rowVersion),
+      );
+    }
 
     for (const taskId of taskIds) {
       const held = (await db.taskTags.where('taskId').equals(taskId).toArray()).map(
         (link) => link.tagId,
       );
-      if (!held.includes(id)) await setTaskTags(taskId, [...held, id], db);
+      if (!held.includes(wanted)) await setTaskTags(taskId, [...held, wanted], db);
     }
+
+    return holder ? 'merged' : 'ok';
   });
 }
 
