@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatClock, formatDueLabel } from './date';
+import { formatClock, formatDueLabel, formatSince } from './date';
 
 const TODAY = '2026-08-19';
 
@@ -46,5 +46,35 @@ describe('formatClock', () => {
     expect(formatClock('00:00')).toBe('12am');
     expect(formatClock('12:00')).toBe('12pm');
     expect(formatClock('23:59')).toBe('11:59pm');
+  });
+});
+
+describe('formatSince', () => {
+  const now = new Date('2026-08-21T12:00:00.000Z');
+  const ago = (ms: number) => new Date(now.getTime() - ms).toISOString();
+
+  it('says nothing precise about the last minute', () => {
+    expect(formatSince(ago(0), now)).toBe('Just now');
+    expect(formatSince(ago(59_000), now)).toBe('Just now');
+  });
+
+  it('rounds down, so a minute that has not finished is not reported', () => {
+    expect(formatSince(ago(60_000), now)).toBe('1 min ago');
+    expect(formatSince(ago(119_000), now)).toBe('1 min ago');
+    expect(formatSince(ago(59 * 60_000), now)).toBe('59 min ago');
+  });
+
+  it('counts hours up to a day', () => {
+    expect(formatSince(ago(60 * 60_000), now)).toBe('1 hour ago');
+    expect(formatSince(ago(23 * 60 * 60_000), now)).toBe('23 hours ago');
+  });
+
+  it('goes absolute past a day', () => {
+    expect(formatSince(ago(24 * 60 * 60_000), now, 'en-GB')).toBe('20 Aug');
+    expect(formatSince('2025-01-04T12:00:00.000Z', now, 'en-GB')).toBe('4 Jan 2025');
+  });
+
+  it('does not count forward when a clock disagrees', () => {
+    expect(formatSince('2026-08-21T12:00:30.000Z', now)).toBe('Just now');
   });
 });

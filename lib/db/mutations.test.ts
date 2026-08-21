@@ -43,12 +43,14 @@ import {
   projectCounts,
   projectDone,
   projectOptions,
+  taskHistory,
   today,
   todayList,
   upcomingList,
   VIEW_CANDIDATE_LIMIT,
   viewCandidates,
 } from './queries';
+import { undoLast } from './undo';
 import { NO_DUE_DAY, NO_PROJECT } from './types';
 
 let db: TendDb;
@@ -1051,5 +1053,40 @@ describe('areas', () => {
     const first = await createArea({ name: 'Home' }, db);
     const second = await createArea({ name: 'Work' }, db);
     expect((await areaOptions(db)).map((a) => a.id)).toEqual([first, second]);
+  });
+});
+
+describe('one task\'s history', () => {
+  it('reads back newest first, and only this task', async () => {
+    const mine = await createTask({ title: 'Buy oat milk' }, db);
+    const other = await createTask({ title: 'Renew passport' }, db);
+    await updateTask(mine, { priority: 3 }, db);
+    await completeTask(mine, true, db);
+    await updateTask(other, { priority: 1 }, db);
+
+    const history = await taskHistory(mine, 10, db);
+
+    expect(history.map((e) => e.action)).toEqual(['complete', 'update', 'create']);
+    expect(new Set(history.map((e) => e.entityId))).toEqual(new Set([mine]));
+  });
+
+  it('keeps an entry that was taken back, marked', async () => {
+    const id = await createTask({ title: 'Buy oat milk' }, db);
+    await completeTask(id, true, db);
+    await undoLast(db);
+
+    const history = await taskHistory(id, 10, db);
+    expect(history.map((e) => e.action)).toEqual(['complete', 'create']);
+    expect(history[0]?._undone).toBe(1);
+  });
+
+  it('honours the limit, taking the newest', async () => {
+    const id = await createTask({ title: 'Buy oat milk' }, db);
+    await updateTask(id, { priority: 1 }, db);
+    await updateTask(id, { priority: 2 }, db);
+
+    const history = await taskHistory(id, 2, db);
+    expect(history).toHaveLength(2);
+    expect(history.map((e) => e.after.priority)).toEqual([2, 1]);
   });
 });

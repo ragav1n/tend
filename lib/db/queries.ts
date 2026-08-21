@@ -4,6 +4,7 @@ import {
   NO_DUE_DAY,
   NO_PARENT,
   NO_PROJECT,
+  type ActivityEntry,
   type Area,
   type FocusSession,
   type Instant,
@@ -503,6 +504,30 @@ export async function todayProgress(day = today(), db: TendDb = getDb()) {
   const done = closed.length;
   const total = open.length + done;
   return { done, total, ratio: total === 0 ? 0 : done / total };
+}
+
+/** How much of one task's history the detail panel reads. Older entries are
+ *  not fetched at all, and the panel says so once it is holding this many. */
+export const TASK_HISTORY_LIMIT = 40;
+
+/**
+ * One task's history, newest first.
+ *
+ * Undone entries stay in it. The entry is still true, it just no longer stands,
+ * and dropping the second half would leave the panel claiming a change that was
+ * taken back an hour ago.
+ */
+export async function taskHistory(
+  taskId: string,
+  limit = TASK_HISTORY_LIMIT,
+  db: TendDb = getDb(),
+): Promise<ActivityEntry[]> {
+  return db.activityLog
+    .where('[_del+entityId+createdAt]')
+    .between([0, taskId, ''], [0, taskId, MAX_STR])
+    .reverse()
+    .limit(limit)
+    .toArray();
 }
 
 /** Every saved view, in the order the sidebar and the views screen show them. */

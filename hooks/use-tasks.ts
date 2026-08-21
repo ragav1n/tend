@@ -19,13 +19,21 @@ import {
   subtasksOf,
   tagOptions,
   taskById,
+  taskHistory,
   tasksByIds,
   today,
   todayList,
   todayProgress,
   upcomingList,
 } from '@/lib/db/queries';
-import type { FocusSession, Project, Tag, Task, TaskSeries } from '@/lib/db/types';
+import type {
+  ActivityEntry,
+  FocusSession,
+  Project,
+  Tag,
+  Task,
+  TaskSeries,
+} from '@/lib/db/types';
 
 /** Module-scope so the reference is stable and never triggers a re-render. */
 const NO_TASKS: Task[] = [];
@@ -167,4 +175,16 @@ export function useOverdue(): Task[] {
 /** Focus sessions that began inside a window. Both bounds are instants. */
 export function useFocusBetween(from: string, to: string): FocusSession[] {
   return useStableLiveQuery(() => focusBetween(from, to), [from, to], NO_SESSIONS);
+}
+
+/**
+ * One task's history, newest first.
+ *
+ * Raw rather than stable, for the same reason `useTask` is: undefined means the
+ * read has not settled, and the panel has to tell that apart from a task with
+ * nothing recorded against it. A placeholder would render "No history yet" on
+ * every open, for one frame, on a task with forty entries.
+ */
+export function useTaskHistory(taskId: string): ActivityEntry[] | undefined {
+  return useLiveQuery(() => taskHistory(taskId), [taskId]);
 }

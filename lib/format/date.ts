@@ -1,4 +1,4 @@
-import type { PlainDate, PlainTime } from '@/lib/db/types';
+import type { Instant, PlainDate, PlainTime } from '@/lib/db/types';
 
 /**
  * How a date reads in a list.
@@ -35,4 +35,38 @@ export function formatClock(time: PlainTime): string {
   const meridiem = h < 12 ? 'am' : 'pm';
   const hour = h % 12 === 0 ? 12 : h % 12;
   return min === 0 ? `${hour}${meridiem}` : `${hour}:${String(min).padStart(2, '0')}${meridiem}`;
+}
+
+/**
+ * How long ago something happened, for a log rather than for a plan.
+ *
+ * Relative for a day, then absolute, because "17 hours ago" is still something
+ * a person can place and "94 hours ago" is arithmetic. Rounds down: an entry
+ * written 119 seconds ago reads "1 min ago", which is true, where rounding up
+ * would report a minute that has not finished.
+ *
+ * `now` defaults the way `today()` does, so a render body reads the clock
+ * through a named function rather than constructing a date inline, and a test
+ * pins it by passing one.
+ */
+export function formatSince(at: Instant, now = new Date(), locale?: string): string {
+  const then = new Date(at);
+  const seconds = Math.floor((now.getTime() - then.getTime()) / 1000);
+
+  // A clock that disagrees with the server, or a row written a moment ago on
+  // another device. Either way "in 3 seconds" is noise.
+  if (seconds < 60) return 'Just now';
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+
+  const sameYear = then.getFullYear() === now.getFullYear();
+  return then.toLocaleDateString(locale, {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
 }

@@ -30,6 +30,7 @@ import { cn } from '@/lib/utils';
 import { RecurrenceEditor } from './RecurrenceEditor';
 import { SubtaskList } from './SubtaskList';
 import { TaskCheck } from './TaskCheck';
+import { TaskHistory } from './TaskHistory';
 
 /**
  * Everything about one task, editable.
@@ -386,8 +387,12 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
         <SubtaskList taskId={task.id} />
       </FieldGroup>
 
+      <FieldGroup title="History">
+        <TaskHistory taskId={task.id} />
+      </FieldGroup>
+
       <footer className="flex items-center justify-between gap-3 border-t border-line pt-4">
-        <p className="text-xs text-text-faint">
+        <p className="text-xs text-text-lo">
           Added{' '}
           <span className="tnum" suppressHydrationWarning>
             {new Date(task.createdAt).toLocaleDateString(undefined, {

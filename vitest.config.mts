@@ -15,6 +15,19 @@ export default defineConfig({
     setupFiles: ['./vitest.setup.ts'],
 
     /**
+     * One zone for the whole suite, or a date test passes in New York and fails
+     * in Auckland.
+     *
+     * `toLocaleDateString` reads the system zone, so an assertion on a rendered
+     * day is an assertion about where the machine is. Pinned here rather than
+     * worked around per file, because the same trap catches anything that
+     * formats an instant. The app's own wall-clock rules are unaffected: a task
+     * due 9am is due at 9am wherever it is read, and the reminder pipeline
+     * asserts UTC instants as literals for exactly that reason.
+     */
+    env: { TZ: 'UTC' },
+
+    /**
      * Bounded parallelism, because three of these files boot a Postgres.
      *
      * `bootPostgres()` starts PGlite, a whole Postgres compiled to wasm, once
