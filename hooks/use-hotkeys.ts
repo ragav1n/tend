@@ -4,11 +4,13 @@ import { useEffect, useRef } from 'react';
 import { chordOf, isTypingTarget, MODIFIER_KEYS, resolveChord, type Pending } from '@/lib/keys/map';
 
 /**
- * One global key listener for the whole app.
+ * One key listener per set of bindings, on the document.
  *
- * Registered once in the shell rather than per component, because a shortcut
- * that only works while a particular view is mounted is not a shortcut. All the
- * matching is in `lib/keys/map.ts`; this is the part that needs a DOM.
+ * The global set is registered once in the shell rather than per component,
+ * because a shortcut that only works while a particular view is mounted is not a
+ * shortcut. The scoped sets are bound by the one thing that owns them: the
+ * selection bar, the calendar, the board. All the matching is in
+ * `lib/keys/map.ts`; this is the part that needs a DOM.
  *
  * The sequence prefix is held in a closure variable, not state. Re-rendering
  * the shell on the way through `g` would be a render per keystroke for nothing
@@ -20,12 +22,21 @@ export function useHotkeys(
   /** Binding ids that still fire while a text field has focus. */
   typingSafe: ReadonlySet<string>,
   run: (id: string, event: KeyboardEvent) => void,
+  /**
+   * Whether these bindings are live right now. Checked before `preventDefault`,
+   * which is the whole point: the calendar and the board bind arrow keys, and a
+   * dispatcher that swallowed the press before asking would take scrolling off
+   * every page that mounts one.
+   */
+  when?: () => boolean,
 ) {
   const runRef = useRef(run);
+  const whenRef = useRef(when);
   // Assigned in an effect rather than during render: `react-hooks/purity` is an
   // error here and a ref write is a side effect.
   useEffect(() => {
     runRef.current = run;
+    whenRef.current = when;
   });
 
   useEffect(() => {
@@ -68,6 +79,7 @@ export function useHotkeys(
       const id = index.get(resolved);
       if (!id) return;
       if (typing && !typingSafe.has(id)) return;
+      if (whenRef.current && !whenRef.current()) return;
 
       event.preventDefault();
       runRef.current(id, event);

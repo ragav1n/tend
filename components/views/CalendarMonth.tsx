@@ -1,10 +1,13 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LayoutGroup, motion, useReducedMotion, type PanInfo } from 'motion/react';
 import { LIFT, ROW } from '@/lib/motion';
 import { monthGrid, weekdayLabels, type Month } from '@/lib/calendar/grid';
+import { addDays } from '@/lib/db/queries';
 import { targetUnderPointer } from '@/lib/dnd/drop';
+import { CALENDAR_ACTIONS, chordIndex, inScope, typingSafe } from '@/lib/keys/map';
+import { useHotkeys } from '@/hooks/use-hotkeys';
 import { MD_QUERY, useMediaQuery } from '@/hooks/use-media-query';
 import type { PlainDate, Task } from '@/lib/db/types';
 import { cn } from '@/lib/utils';
@@ -21,7 +24,29 @@ import { cn } from '@/lib/utils';
  * The drop target is hit-tested from the pointer rather than tracked with hover
  * handlers, so a drag that leaves the grid is a no-op instead of landing on the
  * last cell it crossed.
+ *
+ * The arrow keys work the grid, which is what `role="grid"` had been claiming
+ * with nothing behind it. One cell is in the tab order at a time, the selected
+ * one, so the month is a single stop on the way down the page rather than
+ * forty-two of them. A move selects the day it lands on, so the list under the
+ * grid follows the cursor, and a move past either edge pages the month instead
+ * of stopping at the border.
+ *
+ * The bindings are live only while focus is inside the grid. The dispatcher
+ * calls `preventDefault` on any chord it matches, so an arrow bound wider than
+ * this would take scrolling off the page.
  */
+
+const CALENDAR_INDEX = chordIndex(inScope(CALENDAR_ACTIONS, 'calendar'));
+const CALENDAR_TYPING_SAFE = typingSafe(CALENDAR_ACTIONS);
+
+/** How many days a binding moves. Up and down are a week. */
+const STEP: Record<string, number> = {
+  'calendar-day-back': -1,
+  'calendar-day-on': 1,
+  'calendar-week-back': -7,
+  'calendar-week-on': 7,
+};
 
 interface CalendarMonthProps {
   month: Month;
@@ -64,14 +89,63 @@ export function CalendarMonth({
   const reduced = useReducedMotion();
   const weeks = monthGrid(month, weekStart);
   const headings = weekdayLabels(weekStart);
+  /**
+   * The cell that holds the tab stop, and where a keyboard move starts from.
+   *
+   * The selected day, unless it is not on screen. The header's month buttons page
+   * the grid without moving the selection, so September can be showing while
+   * August 21 is selected, and keying the tab stop off the selection alone would
+   * leave that grid with no way in from the keyboard at all.
+   */
+  const roving =
+    weeks.flat().find((cell) => cell.date === selected)?.date ??
+    weeks.flat().find((cell) => cell.inMonth)?.date ??
+    selected;
   const [dragging, setDragging] = useState<string | null>(null);
   const chips = useRef(new Map<string, HTMLElement>());
+  const grid = useRef<HTMLDivElement>(null);
+  /**
+   * The day the keyboard asked for, held until a cell for it exists.
+   *
+   * A move that leaves the six weeks on screen pages the month, and the whole
+   * grid is rebuilt around the new one, so the cell to focus is not in the DOM
+   * at the moment the key is pressed. Held in a ref rather than state: nothing
+   * renders differently for it, and it is cleared by the effect that spends it.
+   */
+  const wanted = useRef<PlainDate | null>(null);
   // A drop is followed by a click on the chip, and the browser dispatches it
   // before motion reports the drag ended, so the flag has to be raised on
   // pickup. Otherwise the detail panel opens every time anything is dragged.
   // Cleared on the next press, so a swallowed click cannot swallow the one
   // after it as well.
   const dragged = useRef(false);
+
+  useEffect(() => {
+    const day = wanted.current;
+    if (!day) return;
+    const cell = grid.current?.querySelector<HTMLElement>(`[data-day-cell="${day}"]`);
+    // Left in place when the cell is still missing, so the next render tries
+    // again rather than dropping the cursor on the body.
+    if (!cell) return;
+    wanted.current = null;
+    cell.focus();
+  }, [month, selected]);
+
+  useHotkeys(
+    CALENDAR_INDEX,
+    CALENDAR_TYPING_SAFE,
+    (id) => {
+      const step = STEP[id];
+      if (step === undefined) return;
+      // From the cell the cursor is on, or from the tab stop when focus reached
+      // the grid some other way.
+      const from = (document.activeElement as HTMLElement | null)?.dataset.dayCell ?? roving;
+      const to = addDays(from, step);
+      wanted.current = to;
+      onSelect(to);
+    },
+    () => grid.current?.contains(document.activeElement) === true,
+  );
 
   function handleDragEnd(
     taskId: string,
@@ -84,7 +158,7 @@ export function CalendarMonth({
   }
 
   return (
-    <div role="grid" aria-label={`Month of ${month}`} className="select-none">
+    <div ref={grid} role="grid" aria-label={`Month of ${month}`} className="select-none">
       <div role="row" className="mb-1.5 grid grid-cols-7 gap-1">
         {headings.map((heading) => (
           <div key={heading} role="columnheader" className="label !text-[0.5625rem] text-center">
@@ -120,6 +194,11 @@ export function CalendarMonth({
                         accessible name and nest one control inside another. */}
                     <button
                       type="button"
+                      data-day-cell={cell.date}
+                      // One cell in the tab order, the selected one, with the
+                      // arrows covering the other forty-one. The roving stays
+                      // honest because a keyboard move selects where it lands.
+                      tabIndex={cell.date === roving ? 0 : -1}
                       onClick={() => onSelect(cell.date)}
                       className="absolute inset-0 rounded-md"
                       aria-label={`${cell.date}, ${open} open ${open === 1 ? 'task' : 'tasks'}`}

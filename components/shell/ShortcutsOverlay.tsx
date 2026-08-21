@@ -17,6 +17,8 @@ const GROUP_ORDER: BindingGroup[] = [
   'Go to',
   'Tasks',
   'In a list',
+  'On the calendar',
+  'On the board',
   'App',
   'While selecting',
 ];

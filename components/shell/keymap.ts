@@ -1,5 +1,7 @@
 import {
   ACTIONS,
+  BOARD_ACTIONS,
+  CALENDAR_ACTIONS,
   chordIndex,
   CURSOR_ACTIONS,
   inScope,
@@ -28,11 +30,13 @@ export const BINDINGS: Binding[] = [
   ...navBindings(ALL_ITEMS),
   ...ACTIONS,
   ...CURSOR_ACTIONS,
+  ...CALENDAR_ACTIONS,
+  ...BOARD_ACTIONS,
   ...SELECTION_ACTIONS,
 ];
 
-/** Only the global ones. The list and the selection bar bind their own while
- *  they exist. */
+/** Only the global ones. The list, the calendar, the board and the selection bar
+ *  bind their own while they exist. */
 export const CHORD_INDEX = chordIndex(inScope(BINDINGS, 'global'));
 export const TYPING_SAFE = typingSafe(BINDINGS);
 

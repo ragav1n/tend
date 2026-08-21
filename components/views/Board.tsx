@@ -1,12 +1,15 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LayoutGroup, motion, useReducedMotion, type PanInfo } from 'motion/react';
 import { ArrowsOutCardinal, CalendarBlank, Flag } from '@phosphor-icons/react/dist/ssr';
 import { Sheet } from '@/components/ui/Sheet';
+import { cardAcross, cardAlong, columnBeside, locate } from '@/lib/board/cursor';
 import { targetUnderPointer } from '@/lib/dnd/drop';
 import { formatClock, formatDueLabel } from '@/lib/format/date';
+import { BOARD_ACTIONS, chordIndex, inScope, typingSafe } from '@/lib/keys/map';
 import { LIFT, ROW } from '@/lib/motion';
+import { useHotkeys } from '@/hooks/use-hotkeys';
 import { MD_QUERY, useMediaQuery } from '@/hooks/use-media-query';
 import type { BoardColumn } from '@/lib/board/columns';
 import { NO_DUE_DAY, type Task } from '@/lib/db/types';
@@ -15,11 +18,21 @@ import { cn } from '@/lib/utils';
 /**
  * Columns of cards, dragged between.
  *
- * Every card also carries a move button. It is what a keyboard and a screen
- * reader use, and it is what a phone uses: the board scrolls sideways, so a
- * touch drag would have to win a fight with the scroller on every pickup. Drag
- * is the shortcut on a pointer, the button is the interface.
+ * Every card also carries a move button. It is what a screen reader uses, and it
+ * is what a phone uses: the board scrolls sideways, so a touch drag would have to
+ * win a fight with the scroller on every pickup. Drag is the shortcut on a
+ * pointer, the button is the interface.
+ *
+ * From a keyboard the arrows walk the cards and shift plus an arrow moves the one
+ * under the cursor, which is the gesture the drag stands in for. Focus follows
+ * the card into its new column: the card is rebuilt there by a live query, so the
+ * id to chase is held until the columns say it landed. Both are live only while
+ * focus is inside the board, or the dispatcher would take the arrow keys off
+ * every page.
  */
+
+const BOARD_INDEX = chordIndex(inScope(BOARD_ACTIONS, 'board'));
+const BOARD_TYPING_SAFE = typingSafe(BOARD_ACTIONS);
 
 interface BoardProps {
   columns: BoardColumn[];
@@ -34,9 +47,76 @@ export function Board({ columns, todayDate, onMove, onOpen }: BoardProps) {
   const [dragging, setDragging] = useState<string | null>(null);
   const [moving, setMoving] = useState<{ task: Task; columnId: string } | null>(null);
   const cards = useRef(new Map<string, HTMLElement>());
+  const board = useRef<HTMLDivElement>(null);
+  /**
+   * The card a keyboard move sent somewhere, and the column it was sent to.
+   *
+   * Held rather than focused on the spot because the move is a database write: the
+   * card is unmounted from one column and rebuilt in another when the live query
+   * comes back, which is one or more renders later. Cleared once the columns agree
+   * the card arrived, so a render in between does not spend the chase early.
+   */
+  const chasing = useRef<{ taskId: string; columnId: string } | null>(null);
   // The click after a drop arrives before motion reports the drag ended, so the
   // flag goes up on pickup and comes down on the next press.
   const dragged = useRef(false);
+
+  function focusCard(taskId: string) {
+    board.current
+      ?.querySelector<HTMLElement>(`[data-card="${taskId}"] [data-card-title]`)
+      ?.focus();
+  }
+
+  useEffect(() => {
+    const chase = chasing.current;
+    if (!chase) return;
+    const spot = locate(columns, chase.taskId);
+    // Not landed yet, or gone from the board altogether. Either way there is
+    // nothing to put the cursor on this time round.
+    if (!spot) return;
+    if (columns[spot.column]?.id !== chase.columnId) return;
+    chasing.current = null;
+    focusCard(chase.taskId);
+  }, [columns]);
+
+  useHotkeys(
+    BOARD_INDEX,
+    BOARD_TYPING_SAFE,
+    (id) => {
+      const from = (document.activeElement as HTMLElement | null)
+        ?.closest<HTMLElement>('[data-card]')
+        ?.dataset.card;
+      if (!from) return;
+
+      switch (id) {
+        case 'board-card-up':
+        case 'board-card-down': {
+          const to = cardAlong(columns, from, id === 'board-card-down' ? 1 : -1);
+          if (to) focusCard(to);
+          break;
+        }
+        case 'board-card-left':
+        case 'board-card-right': {
+          const to = cardAcross(columns, from, id === 'board-card-right' ? 1 : -1);
+          if (to) focusCard(to);
+          break;
+        }
+        case 'board-move-left':
+        case 'board-move-right': {
+          const to = columnBeside(columns, from, id === 'board-move-right' ? 1 : -1);
+          if (!to) return;
+          chasing.current = { taskId: from, columnId: to };
+          onMove(from, to);
+          break;
+        }
+      }
+    },
+    // A card has to hold the cursor for any of it to mean anything, and the
+    // guard runs before the press is swallowed.
+    () =>
+      board.current?.contains(document.activeElement) === true &&
+      document.activeElement?.closest('[data-card]') !== null,
+  );
 
   function handleDragEnd(
     taskId: string,
@@ -50,7 +130,7 @@ export function Board({ columns, todayDate, onMove, onOpen }: BoardProps) {
 
   return (
     <>
-      <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-2">
+      <div ref={board} className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-2">
         <LayoutGroup>
           {columns.map((column) => (
             <section
@@ -76,6 +156,7 @@ export function Board({ columns, todayDate, onMove, onOpen }: BoardProps) {
                   return (
                     <motion.li
                       key={task.id}
+                      data-card={task.id}
                       ref={(node) => {
                         if (node) cards.current.set(task.id, node);
                         else cards.current.delete(task.id);
@@ -108,6 +189,7 @@ export function Board({ columns, todayDate, onMove, onOpen }: BoardProps) {
                       <div className="flex items-start gap-2">
                         <button
                           type="button"
+                          data-card-title
                           onClick={() => {
                             if (!dragged.current) onOpen(task.id);
                           }}

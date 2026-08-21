@@ -12,7 +12,14 @@
  * platform string, so a Mac keyboard plugged into Linux still works.
  */
 
-export type BindingGroup = 'Go to' | 'Tasks' | 'In a list' | 'App' | 'While selecting';
+export type BindingGroup =
+  | 'Go to'
+  | 'Tasks'
+  | 'In a list'
+  | 'On the calendar'
+  | 'On the board'
+  | 'App'
+  | 'While selecting';
 
 /**
  * Where a binding is live.
@@ -22,8 +29,13 @@ export type BindingGroup = 'Go to' | 'Tasks' | 'In a list' | 'App' | 'While sele
  * not a app-wide delete key and ⌘A only stops meaning "select this page" while
  * there is a list selection to grow. `list` is bound by the task list, so `j`
  * moves a cursor on Today and types a letter on Settings.
+ *
+ * `calendar` and `board` go one step further: they are live only while focus is
+ * inside the grid or the board. Both are arrow keys, and the dispatcher calls
+ * `preventDefault` on every chord it matches, so bound any wider they would take
+ * scrolling off the app.
  */
-export type BindingScope = 'global' | 'selection' | 'list';
+export type BindingScope = 'global' | 'selection' | 'list' | 'calendar' | 'board';
 
 export interface Binding {
   /** Stable handler key. Never shown. */
@@ -213,6 +225,105 @@ export const CURSOR_ACTIONS: Binding[] = [
     label: 'Add a subtask to the task under the cursor',
     group: 'In a list',
     scope: 'list',
+  },
+];
+
+/**
+ * Live only while focus is inside the month grid.
+ *
+ * `role="grid"` was a promise with nothing behind it: the month announced itself
+ * as a grid and answered no arrow key. Moving selects the day as well as
+ * focusing it, which is what makes the list under the grid follow along, and a
+ * move past either edge pages the month rather than stopping at the border.
+ */
+export const CALENDAR_ACTIONS: Binding[] = [
+  {
+    id: 'calendar-day-back',
+    chord: 'arrowleft',
+    label: 'The day before',
+    group: 'On the calendar',
+    scope: 'calendar',
+  },
+  {
+    id: 'calendar-day-on',
+    chord: 'arrowright',
+    label: 'The day after',
+    group: 'On the calendar',
+    scope: 'calendar',
+  },
+  {
+    id: 'calendar-week-back',
+    chord: 'arrowup',
+    label: 'The same day last week',
+    group: 'On the calendar',
+    scope: 'calendar',
+  },
+  {
+    id: 'calendar-week-on',
+    chord: 'arrowdown',
+    label: 'The same day next week',
+    group: 'On the calendar',
+    scope: 'calendar',
+  },
+];
+
+/**
+ * Live only while focus is inside the board.
+ *
+ * A card could be moved by dragging it or by opening a sheet, and neither is a
+ * keyboard. Shift plus an arrow moves the card itself, which is the gesture the
+ * drag stands in for, and focus follows the card into its new column.
+ */
+export const BOARD_ACTIONS: Binding[] = [
+  {
+    id: 'board-card-left',
+    chord: 'arrowleft',
+    label: 'The column to the left',
+    group: 'On the board',
+    scope: 'board',
+  },
+  {
+    id: 'board-card-right',
+    chord: 'arrowright',
+    label: 'The column to the right',
+    group: 'On the board',
+    scope: 'board',
+  },
+  {
+    id: 'board-card-up',
+    chord: 'arrowup',
+    label: 'The card above',
+    group: 'On the board',
+    scope: 'board',
+  },
+  {
+    id: 'board-card-down',
+    chord: 'arrowdown',
+    label: 'The card below',
+    group: 'On the board',
+    scope: 'board',
+  },
+  {
+    id: 'board-move-left',
+    chord: 'shift+arrowleft',
+    label: 'Move the card one column left',
+    group: 'On the board',
+    scope: 'board',
+  },
+  {
+    id: 'board-move-right',
+    chord: 'shift+arrowright',
+    label: 'Move the card one column right',
+    group: 'On the board',
+    scope: 'board',
+  },
+  {
+    id: 'board-open',
+    chord: 'enter',
+    label: 'Open the card',
+    group: 'On the board',
+    scope: 'board',
+    native: true,
   },
 ];
 
