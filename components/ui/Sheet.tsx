@@ -180,6 +180,14 @@ function SheetPanel({ onClose, label, children }: Omit<SheetProps, 'open'>) {
             'touch-none select-none md:cursor-grab md:active:cursor-grabbing',
           )}
         >
+          {/* A shoulder the same size as the close button, so the grip below sits
+              in the middle of the sheet rather than in the middle of what is
+              left over. With `mx-auto` on the grip and `ml-auto` on the button
+              there were three auto margins in this row splitting the free space
+              three ways, which put the grip 69pt left of centre on a 393pt
+              screen. Two equal flankers and one centred item is the only
+              arrangement where the maths comes out even. */}
+          <span aria-hidden className="size-8 shrink-0 md:hidden" />
           <span
             aria-hidden
             className="mx-auto h-1 w-9 rounded-pill bg-line-strong md:hidden"
@@ -189,7 +197,9 @@ function SheetPanel({ onClose, label, children }: Omit<SheetProps, 'open'>) {
             onClick={onClose}
             aria-label="Close"
             className={cn(
-              'ml-auto grid size-8 shrink-0 place-items-center rounded-md',
+              // Auto margin only where the flankers are gone: on a phone it
+              // would be a third auto margin and the grip would drift again.
+              'grid size-8 shrink-0 place-items-center rounded-md md:ml-auto',
               'text-text-lo hover:bg-raised hover:text-text-hi',
             )}
           >
