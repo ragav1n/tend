@@ -67,10 +67,18 @@ function SheetPanel({ onClose, label, children }: Omit<SheetProps, 'open'>) {
     const node = panelRef.current;
     if (!node) return;
     const opener = document.activeElement as HTMLElement | null;
-    node.focus();
+    // Only when nothing inside it holds focus. A child effect runs before this
+    // one, so a panel that opens with a field ready had that field focused and
+    // then taken off it, and the blur closed the field the shortcut asked for.
+    if (!node.contains(document.activeElement)) node.focus();
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
+        // Escape belongs to the innermost thing that is open. A field that says
+        // so closes itself, and a subtask being typed is not worth the whole
+        // panel: closing it would take the draft with it.
+        const target = event.target as HTMLElement | null;
+        if (target?.closest?.('[data-escape-owner]')) return;
         event.preventDefault();
         onClose();
         return;

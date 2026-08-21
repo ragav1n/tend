@@ -134,13 +134,18 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
   // an action bar over a set of rows it no longer refers to.
   useEffect(() => endSelect, [endSelect]);
 
-  // x picks the row under the cursor. A subtask is not in `order`, and the
-  // effect above prunes anything the order does not hold, so picking one would
-  // clear itself a tick later. Subtasks have no checkbox for the same reason.
-  function pickCursorRow(id: string) {
-    if (order.includes(id)) pickRow(id, order, false);
-  }
-  useListCursor(rows, pickCursorRow);
+  // Both keys act on top-level rows only, which `order` is the test for. A
+  // subtask picked would clear itself a tick later, since the effect above
+  // prunes anything the order does not hold, and depth is capped at 1 so a
+  // subtask cannot take one of its own.
+  useListCursor(rows, {
+    pick: (id) => {
+      if (order.includes(id)) pickRow(id, order, false);
+    },
+    addSubtask: (id) => {
+      if (order.includes(id)) openTask(id, 'subtask');
+    },
+  });
 
   if (loading) {
     return (

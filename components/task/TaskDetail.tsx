@@ -214,6 +214,13 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
         )}
       </section>
 
+      {/* Above the dates and the recurrence rule on purpose. The checklist is
+          the work; the metadata is how the work is filed. On a phone the old
+          order put a task's own steps below everything else in the panel. */}
+      <FieldGroup title="Subtasks">
+        <SubtaskList taskId={task.id} />
+      </FieldGroup>
+
       <section className="border-t border-line pt-3">
         <Field label="Due" icon={CalendarBlank} htmlFor="due-date">
           <input
@@ -381,10 +388,6 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
             )}
           />
         </div>
-      </FieldGroup>
-
-      <FieldGroup title="Subtasks">
-        <SubtaskList taskId={task.id} />
       </FieldGroup>
 
       <FieldGroup title="History">

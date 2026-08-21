@@ -14,9 +14,9 @@ import { useListCursor } from './use-list-cursor';
  * an `activeElement`.
  */
 
-function Harness({ onPick }: { onPick: (id: string) => void }) {
+function Harness({ onPick, onSubtask = () => {} }: { onPick: (id: string) => void; onSubtask?: (id: string) => void }) {
   const rows = useRef<HTMLUListElement>(null);
-  useListCursor(rows, onPick);
+  useListCursor(rows, { pick: onPick, addSubtask: onSubtask });
 
   return (
     <div>
@@ -103,6 +103,16 @@ describe('the list cursor', () => {
     press('j');
 
     expect(document.activeElement).toBe(field);
+  });
+
+  it('asks for a subtask on the row it is on', () => {
+    const subtask = vi.fn();
+    render(<Harness onPick={vi.fn()} onSubtask={subtask} />);
+
+    press('j');
+    press('s');
+
+    expect(subtask).toHaveBeenCalledWith('a');
   });
 
   it('drops a press behind an open sheet', () => {

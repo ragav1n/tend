@@ -22,11 +22,16 @@ const CURSOR_TYPING_SAFE = typingSafe(CURSOR_ACTIONS);
  * Bound by the list rather than in the app map, which is what `scope: 'list'`
  * means. The rows are the only reason these keys have anything to do.
  */
+/** What the keys do to the row they land on. The list supplies these, because it
+ *  owns the order a range spans and knows which rows are top level. */
+interface CursorActions {
+  pick: (id: string) => void;
+  addSubtask: (id: string) => void;
+}
+
 export function useListCursor(
   container: RefObject<HTMLElement | null>,
-  /** Called with the task id under the cursor. The list decides what a pick
-   *  means, since it owns the order a range spans. */
-  onPick: (id: string) => void,
+  actions: CursorActions,
 ) {
   useHotkeys(CURSOR_INDEX, CURSOR_TYPING_SAFE, (id) => {
     // A sheet owns the keyboard while it is open. Without this, j behind an open
@@ -53,7 +58,12 @@ export function useListCursor(
         break;
       case 'cursor-pick': {
         const rowId = current?.dataset.rowId;
-        if (rowId) onPick(rowId);
+        if (rowId) actions.pick(rowId);
+        break;
+      }
+      case 'cursor-subtask': {
+        const rowId = current?.dataset.rowId;
+        if (rowId) actions.addSubtask(rowId);
         break;
       }
     }

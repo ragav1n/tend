@@ -207,6 +207,13 @@ export const CURSOR_ACTIONS: Binding[] = [
     group: 'In a list',
     scope: 'list',
   },
+  {
+    id: 'cursor-subtask',
+    chord: 's',
+    label: 'Add a subtask to the task under the cursor',
+    group: 'In a list',
+    scope: 'list',
+  },
 ];
 
 /** Live only while a selection exists. */

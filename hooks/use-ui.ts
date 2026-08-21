@@ -20,11 +20,24 @@ import { create } from 'zustand';
  *  query is one surface with two doors. */
 export type PaletteMode = 'commands' | 'search';
 
+/**
+ * What the detail panel should put the cursor in when it opens.
+ *
+ * The list has no handle on the panel's fields, and at the moment the key is
+ * pressed the panel does not exist, so the intent travels through the store the
+ * way `quickAddWanted` travels across a navigation. It lasts as long as the
+ * panel does: opening another task, or closing this one, drops it.
+ */
+export type TaskIntent = 'subtask';
+
 interface UiState {
   /** The task the detail panel is showing, or null when it is closed. */
   openTaskId: string | null;
-  openTask: (id: string) => void;
+  openTaskIntent: TaskIntent | null;
+  openTask: (id: string, intent?: TaskIntent) => void;
   closeTask: () => void;
+  /** The panel handled the intent, or the person closed the field it opened. */
+  clearTaskIntent: () => void;
 
   palette: PaletteMode | null;
   openPalette: (mode?: PaletteMode) => void;
@@ -45,13 +58,15 @@ interface UiState {
 
 export const useUiStore = create<UiState>((set) => ({
   openTaskId: null,
-  openTask: (id) => set({ openTaskId: id }),
-  closeTask: () => set({ openTaskId: null }),
+  openTaskIntent: null,
+  openTask: (id, intent) => set({ openTaskId: id, openTaskIntent: intent ?? null }),
+  closeTask: () => set({ openTaskId: null, openTaskIntent: null }),
+  clearTaskIntent: () => set({ openTaskIntent: null }),
 
   palette: null,
   // Opening the palette closes the detail panel. Both are modal, and two stacked
   // dialogs give Escape two meanings.
-  openPalette: (mode = 'commands') => set({ palette: mode, openTaskId: null }),
+  openPalette: (mode = 'commands') => set({ palette: mode, openTaskId: null, openTaskIntent: null }),
   closePalette: () => set({ palette: null }),
 
   shortcutsOpen: false,
