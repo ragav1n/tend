@@ -23,6 +23,10 @@ import { SelectionBarHost } from '@/components/views/SelectionBar';
  * at never finishes. The row is held in local state rather than by delaying the
  * write, so the database updates immediately and the delay is purely visual.
  *
+ * A held row goes back at the index it was ticked at. Appended instead, the row
+ * you just checked off travelled to the bottom of the list and faded there,
+ * which reads as a move rather than a completion.
+ *
  * Entries only ever leave the linger set from the timer callback, never from an
  * effect that watches `tasks`. Syncing it in an effect would mean calling
  * setState during an effect body, which cascades renders on every query update.
@@ -40,6 +44,12 @@ import { SelectionBarHost } from '@/components/views/SelectionBar';
  * row is a live query per row.
  */
 
+/** A completed row on its way out, and the place it is held at. */
+interface Held {
+  task: Task;
+  index: number;
+}
+
 interface TaskListProps {
   tasks: Task[];
   loading?: boolean;
@@ -55,7 +65,7 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
   const endSelect = useSelectionStore((state) => state.end);
   const pickRow = useSelectionStore((state) => state.pick);
   const pruneSelection = useSelectionStore((state) => state.prune);
-  const [lingering, setLingering] = useState<Task[]>([]);
+  const [lingering, setLingering] = useState<Held[]>([]);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const rows = useRef<HTMLUListElement>(null);
 
@@ -73,17 +83,20 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
     const existing = timers.current.get(id);
     if (existing) clearTimeout(existing);
     timers.current.delete(id);
-    setLingering((prev) => prev.filter((t) => t.id !== id));
+    setLingering((prev) => prev.filter((held) => held.task.id !== id));
   }
 
   function handleToggle(id: string, done: boolean) {
-    const row = tasks.find((t) => t.id === id);
+    const index = tasks.findIndex((t) => t.id === id);
+    const row = index === -1 ? undefined : tasks[index];
 
     if (done && row) {
       // Held with _done forced on, so it renders checked for the whole linger
       // even after the live query stops returning it.
       setLingering((prev) =>
-        prev.some((t) => t.id === id) ? prev : [...prev, { ...row, _done: 1 }],
+        prev.some((held) => held.task.id === id)
+          ? prev
+          : [...prev, { task: { ...row, _done: 1 }, index }],
       );
       const existing = timers.current.get(id);
       if (existing) clearTimeout(existing);
@@ -97,11 +110,13 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
     void completeTask(id, done);
   }
 
-  // Lingering rows keep their place, so the list does not reflow under a finger
-  // mid-animation. The live row wins if the query still returns it.
+  // Held rows go back where they were, so the list does not reflow under a
+  // finger mid-animation. The live row wins if the query still returns it, and
+  // the lowest index goes in first or two held rows swap places on the way out.
   const shown = [...tasks];
-  for (const row of lingering) {
-    if (!shown.some((t) => t.id === row.id)) shown.push(row);
+  for (const held of [...lingering].sort((a, b) => a.index - b.index)) {
+    if (shown.some((t) => t.id === held.task.id)) continue;
+    shown.splice(Math.min(held.index, shown.length), 0, held.task);
   }
 
   const order = shown.map((task) => task.id);

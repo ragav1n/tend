@@ -8,11 +8,12 @@ import {
   ListChecks,
   WarningCircle,
 } from '@phosphor-icons/react/dist/ssr';
-import { PRESS_DEPTH, ROW, SNAPPY, STRIKE, rowVariants } from '@/lib/motion';
+import { PRESS_DEPTH, ROW, SNAPPY, rowVariants } from '@/lib/motion';
 import { formatClock, formatDueLabel } from '@/lib/format/date';
 import { today } from '@/lib/db/queries';
 import { NO_DUE_DAY, type Task } from '@/lib/db/types';
 import { cn } from '@/lib/utils';
+import { StruckTitle } from './StruckTitle';
 import { TaskCheck } from './TaskCheck';
 
 /**
@@ -150,24 +151,14 @@ export function TaskRow({
               centres inside it. Without this the row is `items-start` and a
               15px line sits three pixels above a 22px box, which is small
               enough to look like a mistake and big enough to see. */}
-          <span className="relative flex min-h-[22px] max-w-full items-center">
-            <span
+          <span className="flex min-h-[22px] max-w-full items-center">
+            <StruckTitle
+              title={task.title}
+              done={done}
               className={cn(
-                'block truncate text-[0.9375rem] leading-snug transition-colors duration-200',
+                'text-[0.9375rem] leading-snug transition-colors duration-200',
                 done ? 'text-text-lo' : 'text-text-hi',
               )}
-            >
-              {task.title}
-            </span>
-            {/* Sweeps from the left rather than fading in, so it reads as a pen
-                stroke through the words. scaleX only, so it stays on the
-                compositor. */}
-            <motion.span
-              aria-hidden
-              className="absolute left-0 top-1/2 h-[1.5px] w-full origin-left rounded-full bg-olive-300"
-              initial={false}
-              animate={{ scaleX: done ? 1 : 0, opacity: done ? 1 : 0 }}
-              transition={done ? STRIKE : { duration: 0.12 }}
             />
           </span>
 

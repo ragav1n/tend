@@ -7,6 +7,7 @@ import { completeTask, createTask, deleteTask } from '@/lib/db/mutations';
 import { useSubtasks } from '@/hooks/use-tasks';
 import { ROW, rowVariants } from '@/lib/motion';
 import { cn } from '@/lib/utils';
+import { StruckTitle } from './StruckTitle';
 import { TaskCheck } from './TaskCheck';
 
 /**
@@ -58,13 +59,17 @@ export function SubtaskList({ taskId }: { taskId: string }) {
                 onChange={(next) => void completeTask(subtask.id, next)}
                 label={subtask._done === 1 ? `Reopen ${subtask.title}` : `Complete ${subtask.title}`}
               />
-              <span
-                className={cn(
-                  'min-w-0 flex-1 truncate text-sm transition-colors duration-200',
-                  subtask._done === 1 ? 'text-text-lo line-through' : 'text-text-mid',
-                )}
-              >
-                {subtask.title}
+              {/* The wrapper takes the flex space so the strike can size to
+                  the words inside it. */}
+              <span className="min-w-0 flex-1">
+                <StruckTitle
+                  title={subtask.title}
+                  done={subtask._done === 1}
+                  className={cn(
+                    'text-sm transition-colors duration-200',
+                    subtask._done === 1 ? 'text-text-lo' : 'text-text-mid',
+                  )}
+                />
               </span>
               <button
                 type="button"

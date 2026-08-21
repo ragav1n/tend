@@ -130,9 +130,20 @@ export const CHECK_RELEASE = {
 export const CHECK_DRAW = { duration: 0.5, ease: EASE_IN_OUT_SOFT };
 export const STRIKE = { duration: 0.26, ease: EASE_GLIDE, delay: 0.06 };
 
-/** How long a completed row stays visible before it leaves a filtered list.
- *  Long enough to see the animation finish, short enough not to feel stuck. */
-export const COMPLETED_ROW_LINGER_MS = 400;
+/** Reopening. No delay and no glide: the line is being taken back, and a
+ *  reversal that eases like the stroke did reads as a second stroke. */
+export const STRIKE_OFF = { duration: 0.12 };
+
+/**
+ * How long a completed row stays visible before it leaves a filtered list.
+ *
+ * It has to outlast the animation it exists for. The mark draws over
+ * CHECK_DRAW's 500ms and the strike lands at 320ms, so the old 400 pulled the
+ * row out from under a check that was still being drawn: the gesture people use
+ * most in the app was the one that never finished. 900 leaves a beat on the
+ * struck row before it goes.
+ */
+export const COMPLETED_ROW_LINGER_MS = 900;
 
 // ─── Shared variants ──────────────────────────────────────────────────────────
 // Module scope, never inline in JSX, so the library's variant identity check

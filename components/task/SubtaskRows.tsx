@@ -6,6 +6,7 @@ import { CaretDown } from '@phosphor-icons/react/dist/ssr';
 import { QUICK_FADE, ROW, rowVariants } from '@/lib/motion';
 import type { Task } from '@/lib/db/types';
 import { cn } from '@/lib/utils';
+import { StruckTitle } from './StruckTitle';
 import { TaskCheck } from './TaskCheck';
 
 /**
@@ -79,14 +80,14 @@ function SubtaskRow({
           onClick={() => onOpen?.(task.id)}
           className="min-w-0 flex-1 text-left"
         >
-          <span
+          <StruckTitle
+            title={task.title}
+            done={done}
             className={cn(
-              'block truncate text-sm leading-snug transition-colors duration-200',
-              done ? 'text-text-lo line-through' : 'text-text-mid',
+              'text-sm leading-snug transition-colors duration-200',
+              done ? 'text-text-lo' : 'text-text-mid',
             )}
-          >
-            {task.title}
-          </span>
+          />
         </button>
       </div>
     </motion.li>
