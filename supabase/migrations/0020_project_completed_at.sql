@@ -56,4 +56,13 @@ create trigger projects_derive
   before insert or update on public.projects
   for each row execute function public.derive_project_columns();
 
+-- Belt and braces, and the one place this file departs from
+-- `derive_task_columns`. None of the four trigger functions that came before
+-- carry a revoke, because the revokes in this schema are on functions a session
+-- can actually call: sync_pull, notifications_tick, the enqueues. A trigger
+-- function returns `trigger` and errors if invoked directly, and Postgres checks
+-- EXECUTE when the trigger is created rather than each time it fires, so this
+-- costs nothing and takes nothing away. A PGlite case pushes a project update as
+-- `authenticated` after this line and the trigger still stamps the row. Do not
+-- read it as a rule the other four are missing.
 revoke execute on function public.derive_project_columns() from anon, authenticated;

@@ -1,10 +1,10 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { CheckCircle, FolderSimple, PencilSimple, Plus, SquaresFour } from '@phosphor-icons/react/dist/ssr';
-import { today } from '@/lib/db/queries';
+import { today, type ProjectCount } from '@/lib/db/queries';
 import type { Area, Project } from '@/lib/db/types';
 import { cn } from '@/lib/utils';
 import { useFirstLoadComplete } from '@/hooks/use-tasks';
@@ -96,8 +96,16 @@ function ProjectIndex({
 }) {
   const todayDate = today();
 
-  const live = all.filter((project) => !project.archivedAt);
-  const archived = all.filter((project) => project.archivedAt);
+  // Split once per change to `all`, not once per render. `useAreaGroups` memoizes
+  // on its argument's identity, and a fresh `.filter()` every render defeated it
+  // and made the note on that hook untrue.
+  const [live, archived] = useMemo(
+    () => [
+      all.filter((project) => !project.archivedAt),
+      all.filter((project) => project.archivedAt),
+    ],
+    [all],
+  );
   const groups = useAreaGroups(live);
   const counts = useProjectCounts(all.map((project) => project.id));
   const [showArchived, setShowArchived] = useState(false);
@@ -209,6 +217,15 @@ function ProjectIndex({
   );
 }
 
+/** Header progress, or nothing at all while the counts are still arriving or the
+ *  project holds no work to be part way through. */
+function progressOf(count: ProjectCount | undefined) {
+  if (!count) return undefined;
+  const total = count.open + count.done;
+  if (total === 0) return undefined;
+  return { done: count.done, total, ratio: count.done / total };
+}
+
 function OneProject({ project, onEdit }: { project: Project; onEdit: () => void }) {
   const tasks = useProjectTasks(project.id);
   const finished = useProjectDone(project.id);
@@ -219,9 +236,11 @@ function OneProject({ project, onEdit }: { project: Project; onEdit: () => void 
   // a project with sixty finished tasks read "50/55" here and "60 of 65 done" on
   // the index row, and the ring was wrong on the screen that shows it biggest.
   const counts = useProjectCounts([project.id]);
+  // Undefined until the counts land. `projectCounts` returns an entry for every
+  // id it was asked about, so this is the read settling rather than an empty
+  // project, and the difference matters: falling back to zero drew a 0% ring and
+  // "0/2 done" for a frame before jumping to the real numbers.
   const count = counts.get(project.id);
-  const done = count?.done ?? 0;
-  const total = (count?.open ?? tasks.length) + done;
   const firstNoteLine = project.notes.split('\n')[0]?.trim();
 
   return (
@@ -230,7 +249,7 @@ function OneProject({ project, onEdit }: { project: Project; onEdit: () => void 
         title={project.name}
         eyebrow="PROJECT"
         subtitle={firstNoteLine === '' ? undefined : firstNoteLine}
-        progress={total > 0 ? { done, total, ratio: done / total } : undefined}
+        progress={progressOf(count)}
       />
 
       <div className="mb-4 flex items-center gap-2">
