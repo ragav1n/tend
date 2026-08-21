@@ -79,6 +79,14 @@ The full architecture plan lives at `~/.claude/plans/i-want-to-create-noble-flam
   renders a task on the server, those entries have to go.
 - **`skipWaiting` stays off.** A worker that takes over on its own can swap the JS under a tab
   midway through an IndexedDB upgrade, and that costs the local database rather than a render.
+- **Nothing reloads for an update until the new worker controls the page.** That is the whole
+  job of `lib/pwa/updates.ts`. Because `skipWaiting` is off, a reload issued while the old
+  worker is still in charge is answered from the old precache and comes back on the same
+  version, which reads as an update button that flickers and does nothing. It waits for
+  `controllerchange`, or for the waiting worker to reach `activated`, with a 15 second
+  backstop, and it writes the attempt into sessionStorage so a try that came back on the same
+  version is reported rather than repeated. Whether an update exists is two signals, not one:
+  a waiting worker, and `/api/version` disagreeing with the version this bundle was built as.
 - **`lib/supabase/admin.ts` is the only service-role code path**, and only the cron routes
   may import it. Everything a signed-in person does runs under their own cookie, so a bug in
   an ordinary route cannot read another account's rows.
@@ -116,7 +124,8 @@ These differ from Next 14/15 and will silently break things:
   config added by a plugin. `@serwist/next`'s `withSerwist()` adds one. Turbopack supports
   webpack *loaders* but not *plugins*, so that plugin has no migration path. Settled in phase
   3: the service worker is built by Serwist's own CLI as a second step, `next build && serwist
-  build serwist.config.mjs`, and `next.config.ts` stays empty. Do not reintroduce
+  build serwist.config.mjs`, and `next.config.ts` holds nothing but `env`, which inlines the
+  package.json version both halves of the update check compare. Do not reintroduce
   `withSerwist()`.
 - **Middleware is `proxy.ts` at the root**, not `middleware.ts`. Named export `proxy`, Node
   runtime only (setting `runtime` throws), and `skipMiddlewareUrlNormalize` is now

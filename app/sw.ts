@@ -34,7 +34,8 @@ import { classify, type CacheRule } from '@/lib/pwa/cache-policy';
  *
  * `skipWaiting` stays off. An automatic swap can replace the JS under a tab that
  * is midway through an IndexedDB upgrade, so the new worker waits and
- * `UpdatePrompt` asks first. The `message` handler below is how it says yes.
+ * `lib/pwa/updates.ts` asks first. The `message` handler below is how it says
+ * yes.
  *
  * The `push` and `notificationclick` handlers at the bottom are the other half of
  * the reminder pipeline. Postgres decides who to tell and when, the cron route
@@ -163,9 +164,11 @@ const serwist = new Serwist({
 serwist.addEventListeners();
 
 /**
- * The other half of the update prompt. `UpdatePrompt` posts this after the
- * person accepts, the waiting worker activates, and the page reloads on
- * `controllerchange`.
+ * The other half of the update prompt. `lib/pwa/updates.ts` posts this after the
+ * person accepts, and then waits: for `controllerchange`, or for this worker to
+ * reach `activated`. It must not reload before one of those, because a reload
+ * under the outgoing worker is answered from the precache below and comes back
+ * on the version it was trying to leave.
  *
  * Serwist installs the same listener itself when `skipWaiting` is false. That
  * behaviour is not in its types, and the update flow failing silently on an

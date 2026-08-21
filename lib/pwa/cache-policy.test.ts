@@ -37,6 +37,10 @@ describe('nothing carrying a session is cached', () => {
     expect(ruleFor('/api/cron/reminders')).toBe('private');
     expect(ruleFor('/api/email/unsubscribe?token=abc')).toBe('private');
     expect(ruleFor('/api/something/added/later')).toBe('private');
+    // The update check reads this one. A cached answer would report the
+    // version of whichever deployment was live when the tab last loaded,
+    // which is the exact question it exists to answer.
+    expect(ruleFor('/api/version')).toBe('private');
   });
 
   it('refuses the auth callbacks, whose URLs carry a single-use code', () => {

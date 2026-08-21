@@ -2,6 +2,7 @@
 
 import { useId, useState } from 'react';
 import {
+  ArrowClockwise,
   Bell,
   DownloadSimple,
   EnvelopeSimple,
@@ -13,6 +14,7 @@ import { Segmented } from '@/components/ui/Segmented';
 import { Toggle } from '@/components/ui/Toggle';
 import { controlClass } from '@/components/ui/Field';
 import { ViewHeader } from '@/components/views/ViewHeader';
+import { useAppUpdate } from '@/hooks/use-app-update';
 import { usePrefs } from '@/hooks/use-prefs';
 import { toast } from 'sonner';
 import { useInstall } from '@/hooks/use-install';
@@ -22,6 +24,7 @@ import { useSyncState } from '@/hooks/use-sync';
 import { useTheme } from '@/hooks/use-theme';
 import { updatePrefs } from '@/lib/db/mutations';
 import { deviceTimezone, fromTimeInput, toTimeInput } from '@/lib/db/prefs';
+import { formatSince } from '@/lib/format/date';
 import { buildIcs, saveFile } from '@/lib/ics/download';
 import type { PrefsPatch } from '@/lib/db/mutations';
 import { cn } from '@/lib/utils';
@@ -428,7 +431,91 @@ function DeviceGroup() {
       >
         {() => <ExportButton />}
       </Row>
+
+      <VersionRow />
     </Group>
+  );
+}
+
+/**
+ * Which version this is, and whether it is the deployed one.
+ *
+ * The app is installed, so it does not reload the way a website does. Without
+ * this the only signal a new version exists is a toast that shows once and can
+ * be dismissed by accident, and then there is nothing anywhere that says which
+ * version you are on or offers to move you.
+ *
+ * The button is the same one the toast fires. `lib/pwa/updates.ts` waits for the
+ * new worker to take over before reloading, which is what makes it an update
+ * rather than a refresh onto the same files.
+ */
+/**
+ * "just now" mid-sentence, and every other answer as it comes.
+ *
+ * Lowercasing the lot would turn "20 Aug" into "20 aug", and "Just now" is the
+ * only answer `formatSince` gives that starts a sentence rather than sitting in
+ * one.
+ */
+function since(at: number): string {
+  const label = formatSince(new Date(at).toISOString());
+  return label === 'Just now' ? 'just now' : label;
+}
+
+function VersionRow() {
+  const { status, version, latest, checkedAt, offline, check, apply } = useAppUpdate();
+
+  const newer = status === 'available' || status === 'failed';
+  const busy = status === 'checking' || status === 'applying';
+  // A waiting worker raises this without `latest` being re-read, so it can hold
+  // the version already on screen in the label above. "0.34.0 is out" under
+  // "Version 0.34.0" is worse than not naming it.
+  const named = latest !== null && latest !== version ? latest : null;
+
+  const hint = newer
+    ? status === 'failed'
+      ? 'The last try came back on the same version. This one clears the cached app files first.'
+      : `${named ? `Version ${named}` : 'A newer version'} is out. Updating reloads the app and loses nothing.`
+    : offline
+      ? 'Could not reach the server, so this is the last answer it gave.'
+      : checkedAt === null
+        ? 'Checked against the deployment, not against the cache.'
+        : `Checked ${since(checkedAt)}.`;
+
+  return (
+    <Row label={`Version ${version === '' ? '—' : version}`} hint={hint}>
+      {() => (
+        <div className="flex items-center gap-2">
+          {!newer && !busy && (
+            <span className={cn('text-sm', offline ? 'text-text-lo' : 'text-olive-300')}>
+              {status === 'unknown' ? '—' : offline ? 'Offline' : 'Up to date'}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={newer ? apply : check}
+            disabled={busy}
+            className={cn(
+              'flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm',
+              'disabled:opacity-40',
+              newer
+                ? 'border-clay-400 bg-clay-600 text-on-accent hover:bg-clay-500'
+                : 'border-line text-text-mid hover:border-clay-400 hover:bg-raised',
+            )}
+          >
+            <ArrowClockwise size={16} aria-hidden />
+            {status === 'applying'
+              ? 'Updating'
+              : status === 'checking'
+                ? 'Checking'
+                : status === 'failed'
+                  ? 'Try again'
+                  : newer
+                    ? 'Update'
+                    : 'Check'}
+          </button>
+        </div>
+      )}
+    </Row>
   );
 }
 
