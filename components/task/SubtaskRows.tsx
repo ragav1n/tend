@@ -147,7 +147,7 @@ export function SubtaskRows({ subtasks, onToggle, onOpen, inset = false }: Subta
             <CaretDown size={11} weight="bold" />
           </motion.span>
           {expanded ? 'Show fewer' : `${hidden} more`}
-          <span className="tnum ml-1 text-text-faint">
+          <span className="tnum ml-1 text-text-lo">
             {done}/{subtasks.length}
           </span>
         </motion.button>

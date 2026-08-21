@@ -169,6 +169,27 @@ const RULES: Rule[] = [
     },
   },
   {
+    re: /(?:^|\s)(yesterday|yest)(?=\s|$)/gi,
+    kind: 'date',
+    apply: (_m, { today, out }) => {
+      // A date in the past is a real thing to type. Work gets written down after
+      // it was due, and something finished yesterday is logged today.
+      out.dueDate = addDays(today, -1);
+      return true;
+    },
+  },
+  {
+    re: /(?:^|\s)(\d{1,3})\s+(day|days|week|weeks|month|months)\s+ago(?=\s|$)/gi,
+    kind: 'date',
+    apply: (m, { today, out }) => {
+      const n = Number(m[1]);
+      const unit = m[2]!.toLowerCase();
+      const days = unit.startsWith('week') ? n * 7 : unit.startsWith('month') ? n * 30 : n;
+      out.dueDate = addDays(today, -days);
+      return true;
+    },
+  },
+  {
     re: /(?:^|\s)in\s+(\d{1,3})\s+(day|days|week|weeks|month|months)(?=\s|$)/gi,
     kind: 'date',
     apply: (m, { today, out }) => {

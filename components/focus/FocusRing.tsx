@@ -62,7 +62,12 @@ export function FocusRing({ ratio, time, caption, paused = false, size = 240 }: 
 
       <div className="absolute text-center">
         <p className="tnum text-[2.75rem] leading-none text-text-hi">{time}</p>
-        <p className="label mt-2 !text-[0.5625rem]">{caption}</p>
+        {/* The one place the timer says what it is doing in words, so it is the
+            one that has to be announced. Without it, a session ending was a
+            silent change to a ring and a button label. */}
+        <p role="status" className="label mt-2 !text-[0.5625rem]">
+          {caption}
+        </p>
       </div>
     </div>
   );

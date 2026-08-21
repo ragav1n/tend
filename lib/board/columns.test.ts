@@ -87,6 +87,29 @@ describe('statusBoard', () => {
     );
     expect(columns[3]!.tasks.map((t) => t.id)).toEqual(['closed']);
   });
+
+  it('sends Done to the logbook once it is holding a full page', () => {
+    const done = [
+      task({ id: 'd1', status: 'done', _done: 1 }),
+      task({ id: 'd2', status: 'done', _done: 1 }),
+    ];
+
+    // Asked for two and given two, so there may well be more behind it. The
+    // header count read as the whole truth before this.
+    expect(statusBoard([], done, 2)[3]!.more).toEqual({
+      label: 'Older in the logbook',
+      href: '/logbook',
+    });
+
+    // Asked for three and given two, so that is all of it.
+    expect(statusBoard([], done, 3)[3]!.more).toBeUndefined();
+    // And no other column ever carries one.
+    expect(statusBoard([], done, 2).slice(0, 3).map((c) => c.more)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
 });
 
 describe('projectBoard', () => {

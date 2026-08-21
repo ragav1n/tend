@@ -1,6 +1,7 @@
 import { AppOverlays } from '@/components/shell/AppOverlays';
 import { MainFrame } from '@/components/shell/MainFrame';
 import { Sidebar } from '@/components/shell/Sidebar';
+import { TagNamesProvider } from '@/components/task/TagNames';
 
 /**
  * The authenticated shell.
@@ -20,7 +21,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <Sidebar />
       {/* MainFrame owns the width, which differs between a list and a grid, and
           the bottom padding that clears the mobile nav plus the home indicator. */}
-      <MainFrame>{children}</MainFrame>
+      {/* One tag lookup for every list on the page, rather than one per list. */}
+      <TagNamesProvider>
+        <MainFrame>{children}</MainFrame>
+      </TagNamesProvider>
       <AppOverlays />
     </div>
   );

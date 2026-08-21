@@ -18,6 +18,16 @@ export interface BoardColumn {
   id: string;
   title: string;
   tasks: Task[];
+  /**
+   * Where the rest of this column is, when it is holding a page rather than
+   * everything.
+   *
+   * Done is the only column with more behind it, and the count in its header read
+   * as the whole truth. Paging it here would rebuild the logbook inside a column,
+   * which is the thing the split below refuses to do, so it points at the screen
+   * that already does the job.
+   */
+  more?: { label: string; href: string };
 }
 
 /** The column that stands in for "no project", since an empty id cannot be an
@@ -38,7 +48,13 @@ export const STATUS_ORDER: { id: TaskStatus; title: string }[] = [
  * Done is fed separately because "every task I have ever completed" is not a
  * column, it is a logbook, and a board that renders one is unusable by week two.
  */
-export function statusBoard(open: readonly Task[], recentlyDone: readonly Task[]): BoardColumn[] {
+export function statusBoard(
+  open: readonly Task[],
+  recentlyDone: readonly Task[],
+  /** What the caller asked for. Told, rather than assumed, so the column knows
+   *  the difference between "all the done work" and "as much as was asked for". */
+  doneLimit = Infinity,
+): BoardColumn[] {
   return STATUS_ORDER.map(({ id, title }) => ({
     id,
     title,
@@ -46,6 +62,9 @@ export function statusBoard(open: readonly Task[], recentlyDone: readonly Task[]
       id === 'done'
         ? [...recentlyDone]
         : open.filter((task) => task.status === id).sort(compareRank),
+    ...(id === 'done' && recentlyDone.length >= doneLimit
+      ? { more: { label: 'Older in the logbook', href: '/logbook' } }
+      : {}),
   }));
 }
 

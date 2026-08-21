@@ -63,7 +63,7 @@ export function WeekChart({ days, todayDate }: { days: DayStat[]; todayDate: str
             >
               {weekdayLabel(day.date)}
             </span>
-            <span className="tnum text-[0.5625rem] text-text-faint">
+            <span className="tnum text-[0.5625rem] text-text-lo">
               {day.focusSeconds > 0 ? formatMinutes(day.focusSeconds) : ''}
             </span>
           </div>

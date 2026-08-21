@@ -1,6 +1,5 @@
 'use client';
 
-import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useStableLiveQuery } from './use-live';
 import {
@@ -166,12 +165,6 @@ export function useTaggedWith(tagId: string | null): Task[] {
     [tagId],
     NO_TASKS,
   );
-}
-
-/** id to name, which is what a row needs to print a tag it holds by id. */
-export function useTagNames(): Map<string, string> {
-  const tags = useTags();
-  return useMemo(() => new Map(tags.map((tag) => [tag.id, tag.name])), [tags]);
 }
 
 const NO_SESSIONS: FocusSession[] = [];

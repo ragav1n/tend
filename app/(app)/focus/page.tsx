@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { Pause, Play, Stop, Timer } from '@phosphor-icons/react/dist/ssr';
 import { FocusRing } from '@/components/focus/FocusRing';
 import { EmptyState } from '@/components/views/EmptyState';
@@ -92,6 +93,15 @@ export default function FocusPage() {
     finishedCount === 0
       ? 'NOTHING LOGGED TODAY'
       : `${finishedCount} ${finishedCount === 1 ? 'SESSION' : 'SESSIONS'}, ${formatMinutes(logged).toUpperCase()} TODAY`;
+
+  // A session ending changed a ring, a caption and a button label, and nothing
+  // else. Somebody scrolled down the page, or looking at another one, had no way
+  // to find out. The caption carries role="status" for a screen reader; this is
+  // the part a person sees.
+  useEffect(() => {
+    if (!done) return;
+    toast('Time is up', { description: 'Log it to keep what the session measured.' });
+  }, [done]);
 
   // The tab title is the only place a backgrounded timer can still be read.
   useEffect(() => {

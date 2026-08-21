@@ -45,6 +45,26 @@ describe('relative dates', () => {
     expect(p('Pay tomorrow rent').title).toBe('Pay rent');
   });
 
+  it('parses yesterday, because work gets written down late', () => {
+    expect(p('Pay rent yesterday').dueDate).toBe('2026-08-17');
+    expect(p('Pay rent yest').dueDate).toBe('2026-08-17');
+    expect(p('Pay rent yesterday').title).toBe('Pay rent');
+  });
+
+  it('parses "N units ago"', () => {
+    expect(p('Sent the invoice 3 days ago').dueDate).toBe('2026-08-15');
+    expect(p('Sent the invoice 2 weeks ago').dueDate).toBe('2026-08-04');
+    expect(p('Sent the invoice 1 month ago').dueDate).toBe('2026-07-19');
+    expect(p('Sent the invoice 3 days ago').title).toBe('Sent the invoice');
+  });
+
+  it('keeps "ago" and "in" pointing opposite ways', () => {
+    // The two rules share their unit half, and the ago rule runs first so it
+    // cannot be half-eaten by the other one.
+    expect(p('Renew in 3 days').dueDate).toBe('2026-08-21');
+    expect(p('Renew 3 days ago').dueDate).toBe('2026-08-15');
+  });
+
   it('parses "in N units"', () => {
     expect(p('Renew insurance in 3 days').dueDate).toBe('2026-08-21');
     expect(p('Renew insurance in 2 weeks').dueDate).toBe('2026-09-01');

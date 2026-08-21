@@ -33,7 +33,10 @@ export default function BoardPage() {
   const todayDate = today();
 
   const columns = useMemo(
-    () => (groupBy === 'status' ? statusBoard(open, done) : projectBoard(open, projects)),
+    () =>
+      groupBy === 'status'
+        ? statusBoard(open, done, RECENT_DONE)
+        : projectBoard(open, projects),
     [groupBy, open, done, projects],
   );
 

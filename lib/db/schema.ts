@@ -21,8 +21,6 @@ import type Dexie from 'dexie';
  * items or closed items, never a mix.
  */
 
-export const DATA_LAYER_VERSION = 6;
-
 export function defineSchema(db: Dexie): void {
   db.version(1).stores({
     // Synced tables. Rows are stored close to verbatim, so a column added

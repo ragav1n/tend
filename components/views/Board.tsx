@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { LayoutGroup, motion, useReducedMotion, type PanInfo } from 'motion/react';
 import { ArrowsOutCardinal, CalendarBlank, Flag } from '@phosphor-icons/react/dist/ssr';
 import { Sheet } from '@/components/ui/Sheet';
@@ -248,6 +249,18 @@ export function Board({ columns, todayDate, onMove, onOpen }: BoardProps) {
                   );
                 })}
               </ul>
+
+              {column.more && (
+                <Link
+                  href={column.more.href}
+                  className={cn(
+                    'label mt-auto rounded-md px-1 py-1 !text-[0.5625rem]',
+                    'hover:text-text-mid',
+                  )}
+                >
+                  {column.more.label}
+                </Link>
+              )}
             </section>
           ))}
         </LayoutGroup>
