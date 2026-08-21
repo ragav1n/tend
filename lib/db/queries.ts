@@ -1,4 +1,5 @@
 import { getDb, type TendDb } from './client';
+import { foldText } from './derive';
 import { compareRank } from './rank';
 import {
   NO_DUE_DAY,
@@ -426,26 +427,50 @@ export async function taggedWith(tagId: string, db: TendDb = getDb()): Promise<T
 }
 
 /**
- * Prefix search over the multiEntry `_words` index.
+ * Prefix search over the multiEntry `_words` index, plus the tag names.
  *
  * Bounded at 50 because this runs on every keystroke. A multi-word query
  * intersects per-term result sets, so "buy milk" beats either term alone.
+ *
+ * A tag counts as a match for the term it spells. `tokenize` covers the title
+ * and the notes, so searching "work" used to miss every task tagged #work while
+ * the palette happily offered #work as a place to jump to. Resolved here rather
+ * than folded into `_words`, which would mean re-deriving every tagged task on
+ * every rename to keep an index of something the tag row already knows.
  */
 export async function searchTasks(
   query: string,
   limit = 50,
   db: TendDb = getDb(),
 ): Promise<Task[]> {
-  const terms = query
-    .toLowerCase()
+  // Folded the way `tokenize` folds what it indexed. Lowercasing alone left a
+  // query for "café" looking for "caf", which matched by luck rather than rule.
+  const terms = foldText(query)
     .split(/[^a-z0-9]+/)
     .filter((t) => t.length > 1);
   if (terms.length === 0) return [];
 
+  // Read whole, which is what every other tag query does: there are a handful of
+  // them and the alternative is an index scan per term.
+  const tags = await tagOptions(db);
+
   const sets = await Promise.all(
-    terms.map((term) =>
-      db.tasks.where('_words').startsWith(term).limit(500).primaryKeys(),
-    ),
+    terms.map(async (term) => {
+      // A term is satisfied by a word in the title or notes OR by a tag on the
+      // task. Terms still AND together, so "milk work" means both.
+      const named = tags
+        .filter((tag) => foldText(tag.name).startsWith(term))
+        .map((tag) => tag.id);
+
+      const [byWord, byTag] = await Promise.all([
+        db.tasks.where('_words').startsWith(term).limit(500).primaryKeys(),
+        named.length === 0
+          ? Promise.resolve([] as string[])
+          : db.tasks.where('_tagIds').anyOf(named).distinct().limit(500).primaryKeys(),
+      ]);
+
+      return [...byWord, ...byTag] as string[];
+    }),
   );
 
   let ids = new Set(sets[0] ?? []);

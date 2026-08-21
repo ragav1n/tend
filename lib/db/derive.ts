@@ -23,8 +23,9 @@ import {
  * transaction.
  */
 
-/** Strips diacritics and case so "Café" matches a search for "cafe". */
-function foldText(input: string): string {
+/** Strips diacritics and case so "Café" matches a search for "cafe". Exported
+ *  because a query has to be folded the same way the index was. */
+export function foldText(input: string): string {
   return input
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')

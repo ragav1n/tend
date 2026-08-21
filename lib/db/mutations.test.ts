@@ -530,6 +530,40 @@ describe('search', () => {
     await createTask({ title: 'A task' }, db);
     expect(await searchTasks('a', 50, db)).toHaveLength(0);
   });
+
+  it('finds a task by the name of a tag on it', async () => {
+    // The gap this closes: the palette listed #work as somewhere to jump to and
+    // searching "work" returned nothing that carried it.
+    const work = await createTag({ name: 'work' }, db);
+    const tagged = await createTask({ title: 'Draft the deck', tagIds: [work] }, db);
+    await createTask({ title: 'Buy milk' }, db);
+
+    expect((await searchTasks('work', 50, db)).map((t) => t.id)).toEqual([tagged]);
+    // A prefix of the name, the same way a title matches.
+    expect((await searchTasks('wor', 50, db)).map((t) => t.id)).toEqual([tagged]);
+  });
+
+  it('lets a tag satisfy one term of several', async () => {
+    const work = await createTag({ name: 'work' }, db);
+    const both = await createTask({ title: 'Draft the deck', tagIds: [work] }, db);
+    await createTask({ title: 'Draft the letter' }, db);
+    await createTask({ title: 'Read the deck', tagIds: [work] }, db);
+
+    // "draft" from the title, "work" from the tag. Terms still AND.
+    expect((await searchTasks('draft work', 50, db)).map((t) => t.id)).toEqual([both]);
+  });
+
+  it('does not turn a renamed tag into a stale index entry', async () => {
+    // The reason the names are resolved at query time rather than written into
+    // `_words`: nothing about the task changes when the tag is renamed.
+    const tag = await createTag({ name: 'work' }, db);
+    const id = await createTask({ title: 'Draft the deck', tagIds: [tag] }, db);
+
+    expect(await renameTag(tag, 'admin', db)).toBe('ok');
+
+    expect(await searchTasks('work', 50, db)).toHaveLength(0);
+    expect((await searchTasks('admin', 50, db)).map((t) => t.id)).toEqual([id]);
+  });
 });
 
 describe('recurrence', () => {
