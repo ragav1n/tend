@@ -6,8 +6,20 @@
  * calls this hands it row elements, the test hands it strings.
  */
 
-/** The attribute a row's focus target carries. Its value is the task id. */
+/** Every row the cursor can land on, subtasks included. Its value is the id. */
 export const ROW_SELECTOR = '[data-row-id]';
+
+/**
+ * Rows that can be selected or given a subtask.
+ *
+ * Only top-level rows carry it. A subtask is not in a list's selection order and
+ * would be pruned a tick after being picked, and depth is capped at 1 so a
+ * subtask cannot take one of its own.
+ */
+export const TOP_ROW_SELECTOR = '[data-row-id][data-row-top]';
+
+/** One task list. A page can hold several: the logbook mounts one per day. */
+export const LIST_SELECTOR = '[data-task-list]';
 
 /**
  * The row a move of `delta` reaches.

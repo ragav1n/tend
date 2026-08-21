@@ -147,8 +147,10 @@ export function TaskRow({
           type="button"
           // The row the keyboard cursor lands on. `use-list-cursor.ts` collects
           // these in document order and focuses one, which is what makes Enter
-          // here the browser's own click rather than a binding.
+          // here the browser's own click rather than a binding. `data-row-top`
+          // marks it as one x and s can act on, which a subtask is not.
           data-row-id={task.id}
+          data-row-top
           // In selection mode the whole row picks. Leaving the body as "open"
           // would make the checkbox the only target, which is a 22px box.
           onClick={(event) =>

@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { undoLast } from '@/lib/db/undo';
 import { CHORD_INDEX, TYPING_SAFE, routeFor } from '@/components/shell/keymap';
 import { useHotkeys } from '@/hooks/use-hotkeys';
+import { useListCursor } from '@/hooks/use-list-cursor';
 import { useSelectionStore } from '@/hooks/use-selection';
 import { useUiStore } from '@/hooks/use-ui';
 
@@ -61,6 +62,9 @@ export function Hotkeys() {
   );
 
   useHotkeys(CHORD_INDEX, TYPING_SAFE, run);
+  // Here rather than in the list, so one cursor walks every row on the page.
+  // A page can hold several lists and the logbook holds one per day.
+  useListCursor();
   return null;
 }
 

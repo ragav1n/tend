@@ -7,7 +7,6 @@ import { withHeld, type Held } from '@/lib/views/held';
 import { completeTask } from '@/lib/db/mutations';
 import { today } from '@/lib/db/queries';
 import type { Task } from '@/lib/db/types';
-import { useListCursor } from '@/hooks/use-list-cursor';
 import { useSelectionStore } from '@/hooks/use-selection';
 import { useSubtasksFor, useTagNames } from '@/hooks/use-tasks';
 import { useUiStore } from '@/hooks/use-ui';
@@ -33,10 +32,9 @@ import { SelectionBarHost } from '@/components/views/SelectionBar';
  * setState during an effect body, which cascades renders on every query update.
  *
  * The list also owns selection mode, because it is the thing that knows the
- * order rows are in, and order is what a shift-click spans. It owns the keyboard
- * cursor for the same reason: `j` and `k` move focus between the rows this
- * container holds, so the cursor skips a collapsed subtask without being told
- * which children are showing.
+ * order rows are in, and order is what a shift-click spans. The keyboard cursor
+ * is not here but in the shell: a page can hold several lists, and one cursor
+ * has to walk all of them.
  *
  * Subtasks render under their parent here. Every list query already drops them
  * from the top level with a note saying they appear underneath it, so until this
@@ -62,7 +60,6 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
   const pruneSelection = useSelectionStore((state) => state.prune);
   const [lingering, setLingering] = useState<Held<Task>[]>([]);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  const rows = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     // Copied into a local so the cleanup closes over the same Map the effect saw,
@@ -101,7 +98,16 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
       if (existing) clearTimeout(existing);
       timers.current.set(id, setTimeout(() => forget(id), COMPLETED_ROW_LINGER_MS));
     } else {
-      forget(id);
+      // Held unchecked rather than forgotten. The live query has not caught up
+      // yet, so dropping the entry leaves the row in neither list for a commit
+      // and AnimatePresence plays the exit it was just rescued from: the row
+      // slides out, the ones under it jump up, and it comes back. The timer
+      // already running clears the entry once the query holds the row again.
+      setLingering((prev) =>
+        prev.map((held) =>
+          held.task.id === id ? { ...held, task: { ...held.task, _done: 0 } } : held,
+        ),
+      );
     }
 
     // completeTask rather than a status patch: a recurring task materializes
@@ -131,19 +137,6 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
   // Selection mode ends with the list. Carrying it to the next view would leave
   // an action bar over a set of rows it no longer refers to.
   useEffect(() => endSelect, [endSelect]);
-
-  // Both keys act on top-level rows only, which `order` is the test for. A
-  // subtask picked would clear itself a tick later, since the effect above
-  // prunes anything the order does not hold, and depth is capped at 1 so a
-  // subtask cannot take one of its own.
-  useListCursor(rows, {
-    pick: (id) => {
-      if (order.includes(id)) pickRow(id, order, false);
-    },
-    addSubtask: (id) => {
-      if (order.includes(id)) openTask(id, 'subtask');
-    },
-  });
 
   if (loading) {
     return (
@@ -184,7 +177,9 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
       )}
 
       <motion.ul
-        ref={rows}
+        // The keyboard cursor reads this to know which rows a selection spans,
+        // since one page can hold several lists.
+        data-task-list
         variants={listVariants}
         initial="hidden"
         animate="visible"
