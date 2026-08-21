@@ -74,3 +74,26 @@ export function compareRank(
   if (a.id > b.id) return 1;
   return 0;
 }
+
+/**
+ * The two ranks a row lands between when it moves `delta` places in a list.
+ *
+ * The off-by-one here is the whole reason this is a function. Moving a row up one
+ * place puts it between the two rows above it, not next to the one it swapped
+ * with, and reading the pair off the wrong indices produces a move that looks
+ * right for three rows and wrong for four.
+ *
+ * Null for a move that runs off either end, which is what the caller checks
+ * rather than clamping: a disabled button and a silent no-op are different.
+ */
+export function slotFor(
+  keys: readonly string[],
+  index: number,
+  delta: number,
+): { prev: string | null; next: string | null } | null {
+  const target = index + delta;
+  if (delta === 0 || index < 0 || target < 0 || target >= keys.length) return null;
+  return delta < 0
+    ? { prev: keys[target - 1] ?? null, next: keys[target] ?? null }
+    : { prev: keys[target] ?? null, next: keys[target + 1] ?? null };
+}

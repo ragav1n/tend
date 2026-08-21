@@ -158,6 +158,21 @@ function outboxRecord(
   };
 }
 
+/**
+ * The rank a row takes between two neighbours, either of which may be missing.
+ *
+ * Shared by every reorder, because the four-way choice was written out three
+ * times and the ends are the part that is easy to get wrong: moving to the top of
+ * a list is `prev === null`, not `rankAfter(null)`, which would land it at the
+ * bottom.
+ */
+function rankAmong(prevSortKey: string | null, nextSortKey: string | null): string {
+  if (prevSortKey === null && nextSortKey === null) return rankAfter(null);
+  if (prevSortKey === null) return rankBefore(nextSortKey);
+  if (nextSortKey === null) return rankAfter(prevSortKey);
+  return rankBetween(prevSortKey, nextSortKey);
+}
+
 /** Rank at the end of a list, given the rows already in it. */
 function endRank(existing: readonly string[]): string {
   if (existing.length === 0) return rankAfter(null);
@@ -793,14 +808,7 @@ export async function reorderTask(
   field: 'sortKey' | 'plannedSortKey' = 'sortKey',
   db: TendDb = getDb(),
 ): Promise<void> {
-  const sortKey =
-    prevSortKey === null && nextSortKey === null
-      ? rankAfter(null)
-      : prevSortKey === null
-        ? rankBefore(nextSortKey)
-        : nextSortKey === null
-          ? rankAfter(prevSortKey)
-          : rankBetween(prevSortKey, nextSortKey);
+  const sortKey = rankAmong(prevSortKey, nextSortKey);
 
   // Unlogged: a drag has its own undo, which is dragging it back, and a
   // reorder in the stack would sit between the edits people actually want to
@@ -1193,6 +1201,18 @@ export async function restoreArea(
   });
 }
 
+/** Moves an area between two neighbours. Unlogged for the reason `reorderTask`
+ *  gives: the gesture is its own undo, and a position in the undo stack would
+ *  sit between the edits people actually want back. */
+export async function reorderArea(
+  id: string,
+  prevSortKey: string | null,
+  nextSortKey: string | null,
+  db: TendDb = getDb(),
+): Promise<void> {
+  await updateArea(id, { sortKey: rankAmong(prevSortKey, nextSortKey) }, db);
+}
+
 // ─── Projects ─────────────────────────────────────────────────────────────────
 
 export type ProjectPatch = Partial<
@@ -1380,16 +1400,7 @@ export async function reorderProject(
   nextSortKey: string | null,
   db: TendDb = getDb(),
 ): Promise<void> {
-  const sortKey =
-    prevSortKey === null && nextSortKey === null
-      ? rankAfter(null)
-      : prevSortKey === null
-        ? rankBefore(nextSortKey)
-        : nextSortKey === null
-          ? rankAfter(prevSortKey)
-          : rankBetween(prevSortKey, nextSortKey);
-
-  await updateProject(id, { sortKey }, db);
+  await updateProject(id, { sortKey: rankAmong(prevSortKey, nextSortKey) }, db);
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────

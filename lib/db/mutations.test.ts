@@ -7,6 +7,8 @@ import {
   createArea,
   deleteArea,
   deleteProject,
+  reorderArea,
+  reorderProject,
   restoreArea,
   restoreProject,
   setProjectArchived,
@@ -1173,6 +1175,52 @@ describe('areas', () => {
     const first = await createArea({ name: 'Home' }, db);
     const second = await createArea({ name: 'Work' }, db);
     expect((await areaOptions(db)).map((a) => a.id)).toEqual([first, second]);
+  });
+
+  it('reorders one by touching a single row', async () => {
+    const home = await createArea({ name: 'Home' }, db);
+    const work = await createArea({ name: 'Work' }, db);
+    const side = await createArea({ name: 'Side' }, db);
+    await db.outbox.clear();
+
+    // Side to the top: between nothing and Home.
+    const keys = (await areaOptions(db)).map((a) => a.sortKey);
+    await reorderArea(side, null, keys[0]!, db);
+
+    expect((await areaOptions(db)).map((a) => a.id)).toEqual([side, home, work]);
+
+    // One row, one field. Two devices reordering different parts of the list is
+    // the case fractional indexing exists for, and it only holds while a move
+    // writes nothing but its own rank.
+    const records = await db.outbox.toArray();
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ table: 'areas', entityId: side, op: 'update' });
+    expect(Object.keys(records[0]!.patch)).toEqual(['sortKey']);
+  });
+});
+
+describe('reordering a project', () => {
+  it('moves it and leaves its neighbours where they were', async () => {
+    // reorderProject shipped with the projects screen and had no caller until
+    // the index grew carets, so this is the first time the write runs.
+    const first = await createProject({ name: 'Kitchen' }, db);
+    const second = await createProject({ name: 'Garden' }, db);
+    const third = await createProject({ name: 'Loft' }, db);
+
+    const keys = (await allProjects(db)).map((p) => p.sortKey);
+    // Loft up one place: between Kitchen and Garden.
+    await reorderProject(third, keys[0]!, keys[1]!, db);
+    expect((await allProjects(db)).map((p) => p.id)).toEqual([first, third, second]);
+
+    await db.outbox.clear();
+    // And to the very top, where there is no rank before it.
+    const moved = (await allProjects(db)).map((p) => p.sortKey);
+    await reorderProject(second, null, moved[0]!, db);
+    expect((await allProjects(db)).map((p) => p.id)).toEqual([second, first, third]);
+
+    const records = await db.outbox.toArray();
+    expect(records).toHaveLength(1);
+    expect(Object.keys(records[0]!.patch)).toEqual(['sortKey']);
   });
 });
 

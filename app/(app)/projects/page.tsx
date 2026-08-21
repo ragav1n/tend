@@ -15,9 +15,12 @@ import {
   useProjectDone,
   useProjectTasks,
 } from '@/hooks/use-projects';
+import { reorderArea, reorderProject } from '@/lib/db/mutations';
+import { slotFor } from '@/lib/db/rank';
 import { AreaEditor } from '@/components/projects/AreaEditor';
 import { ProjectEditor } from '@/components/projects/ProjectEditor';
 import { ProjectRow } from '@/components/projects/ProjectRow';
+import { ReorderStack } from '@/components/ui/ReorderStack';
 import { QuickAdd } from '@/components/task/QuickAdd';
 import { EmptyState } from '@/components/views/EmptyState';
 import { TaskList } from '@/components/views/TaskList';
@@ -38,16 +41,51 @@ import { ViewHeader } from '@/components/views/ViewHeader';
  * a name and an order, so a page listing them would be a page of headings with
  * nothing under them, and the place somebody wants to rename one is the place
  * they can see what is filed in it.
+ *
+ * Both lists reorder with carets rather than by dragging. `reorderProject` had
+ * sat with no caller since the day it was written and areas had no reorder at
+ * all, so the sort key both tables carry was decided once, at creation, and
+ * never again.
  */
+
+/**
+ * Moves one row of a list and touches nothing else.
+ *
+ * The rows arrive sorted by `sortKey`, so their positions in the array are the
+ * positions on screen, and `slotFor` turns a step into the pair of ranks the
+ * moved row lands between.
+ */
+function moveWithin<T extends { id: string; sortKey: string }>(
+  rows: readonly T[],
+  index: number,
+  delta: -1 | 1,
+  write: (id: string, prev: string | null, next: string | null) => Promise<void>,
+) {
+  const row = rows[index];
+  const slot = slotFor(
+    rows.map((each) => each.sortKey),
+    index,
+    delta,
+  );
+  if (!row || !slot) return;
+  void write(row.id, slot.prev, slot.next);
+}
 
 function AreaHeading({
   area,
   onEdit,
   onAdd,
+  onMove,
+  first = true,
+  last = true,
 }: {
   area: Area | null;
   onEdit: () => void;
   onAdd: () => void;
+  /** Absent on the "No area" group, which is a bucket rather than a row. */
+  onMove?: (delta: -1 | 1) => void;
+  first?: boolean;
+  last?: boolean;
 }) {
   return (
     <div className="mb-1.5 flex items-center gap-1.5 px-1">
@@ -62,6 +100,16 @@ function AreaHeading({
         >
           <PencilSimple size={12} aria-hidden />
         </button>
+      )}
+
+      {area && onMove && (
+        <ReorderStack
+          label={area.name}
+          first={first}
+          last={last}
+          onUp={() => onMove(-1)}
+          onDown={() => onMove(1)}
+        />
       )}
 
       <button
@@ -109,6 +157,13 @@ function ProjectIndex({
   const groups = useAreaGroups(live);
   const counts = useProjectCounts(all.map((project) => project.id));
   const [showArchived, setShowArchived] = useState(false);
+  // The areas in the order they are shown. `groupByArea` walks them in sort
+  // order and appends the unfiled group last, so dropping that one leaves the
+  // list a caret has to step through.
+  const areas = useMemo(
+    () => groups.map((group) => group.area).filter((area): area is Area => area !== null),
+    [groups],
+  );
 
   return (
     <>
@@ -164,6 +219,19 @@ function ProjectIndex({
               area={group.area}
               onEdit={() => group.area && onEditArea(group.area)}
               onAdd={() => onNewProject(group.area?.id)}
+              onMove={
+                group.area
+                  ? (delta) =>
+                      moveWithin(
+                        areas,
+                        areas.findIndex((area) => area.id === group.area?.id),
+                        delta,
+                        reorderArea,
+                      )
+                  : undefined
+              }
+              first={areas[0]?.id === group.area?.id}
+              last={areas[areas.length - 1]?.id === group.area?.id}
             />
             {group.projects.length === 0 ? (
               <p className="rounded-lg border border-dashed border-line px-3.5 py-3 text-xs text-text-lo">
@@ -171,13 +239,20 @@ function ProjectIndex({
               </p>
             ) : (
               <ul className="space-y-2">
-                {group.projects.map((project) => (
+                {group.projects.map((project, index) => (
                   <ProjectRow
                     key={project.id}
                     project={project}
                     count={counts.get(project.id)}
                     today={todayDate}
                     onEdit={() => onEditProject(project)}
+                    // Within the area, which is the list on screen. A rank
+                    // spanning two areas would be an order nobody can see.
+                    onMove={(delta) =>
+                      moveWithin(group.projects, index, delta, reorderProject)
+                    }
+                    first={index === 0}
+                    last={index === group.projects.length - 1}
                   />
                 ))}
               </ul>

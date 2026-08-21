@@ -6,6 +6,7 @@ import { formatDueLabel } from '@/lib/format/date';
 import type { Project } from '@/lib/db/types';
 import type { ProjectCount } from '@/lib/db/queries';
 import { cn } from '@/lib/utils';
+import { ReorderStack } from '@/components/ui/ReorderStack';
 import { Ring } from '@/components/ui/Ring';
 
 /**
@@ -19,6 +20,10 @@ import { Ring } from '@/components/ui/Ring';
  * Two digits inside a 22px circle crowd the stroke, and the row already says
  * "1 of 3 done" in words a foot to the left. The accessible name still has the
  * count for anyone who cannot see the arc.
+ *
+ * The carets and the pencil sit in one absolutely positioned group, for the same
+ * reason as the pencil alone: they are siblings of the link, never children of
+ * it. `onMove` is optional, so the archived list renders the row without them.
  */
 
 const STATUS_LABEL: Partial<Record<Project['status'], string>> = {
@@ -32,11 +37,18 @@ export function ProjectRow({
   count,
   today,
   onEdit,
+  onMove,
+  first = true,
+  last = true,
 }: {
   project: Project;
   count: ProjectCount | undefined;
   today: string;
   onEdit: () => void;
+  /** Left out where there is no order to change, which is the archived pile. */
+  onMove?: (delta: -1 | 1) => void;
+  first?: boolean;
+  last?: boolean;
 }) {
   const open = count?.open ?? 0;
   const done = count?.done ?? 0;
@@ -50,7 +62,7 @@ export function ProjectRow({
         href={`/projects?p=${project.id}`}
         className={cn(
           'flex items-center gap-3 rounded-lg border border-line bg-surface',
-          'py-3 pl-3.5 pr-12 hover:border-line-bright',
+          'py-3 pl-3.5 pr-16 hover:border-line-bright',
         )}
         style={{ boxShadow: 'var(--shadow-flush)' }}
       >
@@ -98,17 +110,29 @@ export function ProjectRow({
         )}
       </Link>
 
-      <button
-        type="button"
-        onClick={onEdit}
-        aria-label={`Edit ${project.name}`}
-        className={cn(
-          'absolute right-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md',
-          'text-text-lo hover:bg-raised hover:text-text-hi',
+      <span className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
+        {onMove && (
+          <ReorderStack
+            label={project.name}
+            first={first}
+            last={last}
+            onUp={() => onMove(-1)}
+            onDown={() => onMove(1)}
+          />
         )}
-      >
-        <PencilSimple size={15} aria-hidden />
-      </button>
+
+        <button
+          type="button"
+          onClick={onEdit}
+          aria-label={`Edit ${project.name}`}
+          className={cn(
+            'grid size-8 place-items-center rounded-md',
+            'text-text-lo hover:bg-raised hover:text-text-hi',
+          )}
+        >
+          <PencilSimple size={15} aria-hidden />
+        </button>
+      </span>
     </li>
   );
 }
