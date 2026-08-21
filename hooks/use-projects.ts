@@ -7,7 +7,6 @@ import {
   allProjects,
   areaOptions,
   projectCounts,
-  PROJECT_DONE_PAGE,
   projectDone,
   projectList,
   type ProjectCount,
@@ -67,12 +66,18 @@ export function useProjectTasks(projectId: string | null): Task[] {
   );
 }
 
-/** One page of finished work. The limit is a dependency, so asking for more
- *  re-runs the query rather than filtering a list already read. */
-export function useProjectDone(projectId: string | null, limit = PROJECT_DONE_PAGE): Task[] {
+/**
+ * Everything finished in a project, up to the array bound.
+ *
+ * The project is the only dependency on purpose. `useStableLiveQuery` hands back
+ * its placeholder while deps change, so a limit in here would empty the list on
+ * every press of "older" and play the whole enter animation again instead of
+ * appending. The screen slices what it shows.
+ */
+export function useProjectDone(projectId: string | null): Task[] {
   return useStableLiveQuery(
-    () => (projectId ? projectDone(projectId, limit) : Promise.resolve(NO_TASKS)),
-    [projectId, limit],
+    () => (projectId ? projectDone(projectId) : Promise.resolve(NO_TASKS)),
+    [projectId],
     NO_TASKS,
   );
 }

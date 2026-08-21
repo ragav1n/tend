@@ -60,6 +60,30 @@ describe('selection over several lists', () => {
     expect(picked()).toEqual(['a1']);
   });
 
+  it('ends the mode when the page runs out of rows', () => {
+    state().report('today', ['a1', 'a2']);
+    state().selectAll();
+    expect(state().active).toBe(true);
+
+    // Both completed, so the list empties. An action bar reading "0 selected"
+    // over an empty state is a mode nobody asked to still be in.
+    state().report('today', []);
+
+    expect(state().active).toBe(false);
+    expect(picked()).toEqual([]);
+  });
+
+  it('holds the mode while one list still has rows', () => {
+    state().report('today', ['a1']);
+    state().report('yesterday', ['b1']);
+    state().pick('b1', ['b1'], false);
+
+    state().report('today', []);
+
+    expect(state().active).toBe(true);
+    expect(picked()).toEqual(['b1']);
+  });
+
   it('ends the mode when the last list unmounts', () => {
     state().report('today', ['a1']);
     state().pick('a1', ['a1'], false);
@@ -90,7 +114,13 @@ describe('selection over several lists', () => {
     expect(state().anchor).toBe('a1');
   });
 
-  it('refuses to start with no list to select in', () => {
+  it('refuses to start with no rows to select', () => {
+    state().begin();
+    expect(state().active).toBe(false);
+
+    // A list showing its empty state registers too, and an action bar over an
+    // empty screen can only ever read "0 selected".
+    state().report('today', []);
     state().begin();
     expect(state().active).toBe(false);
 

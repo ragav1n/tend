@@ -60,11 +60,14 @@ export const useSelectionStore = create<SelectionState>((set, get) => ({
   lists: NO_LISTS,
   total: 0,
 
-  // Refused with nothing to select in. The bar mounts in the shell now, so a
-  // press of shift+S on the settings page would otherwise raise an action bar
-  // over a screen holding no rows, with a count that can only ever read zero.
+  // Refused with no rows to select. Counted rather than asked of the lists,
+  // because a list showing its empty state still registers: the bar mounts in
+  // the shell now, so shift+S on Settings, or on a Today with nothing due, would
+  // otherwise raise an action bar over a screen with a count that can only ever
+  // read zero. Mounted by the list, as it used to be, that was impossible by
+  // accident, since the empty state returns before the bar renders.
   begin: () => {
-    if (get().lists.size > 0) set({ active: true });
+    if (get().total > 0) set({ active: true });
   },
   end: () => set({ active: false, ids: NONE.selected, anchor: null }),
 
@@ -82,37 +85,46 @@ export const useSelectionStore = create<SelectionState>((set, get) => ({
     const lists = new Map(get().lists);
     lists.set(listId, order);
     set({ lists, total: rows(lists).length });
-    keepVisible(set, get);
+    settle(set, get);
   },
 
   forget: (listId) => {
     const lists = new Map(get().lists);
     if (!lists.delete(listId)) return;
     set({ lists, total: rows(lists).length });
-
-    // The last list going means the view went with it. Carrying the mode to the
-    // next screen would leave an action bar over a set of rows it no longer
-    // refers to. A sibling leaving is a group closing or its last row moving,
-    // and the picks in every other group have to survive that.
-    if (lists.size === 0) set({ active: false, ids: NONE.selected, anchor: null });
-    else keepVisible(set, get);
+    settle(set, get);
   },
 
   clear: () => set({ ids: NONE.selected, anchor: null }),
 }));
 
 /**
- * Drops picked rows no list shows any more.
+ * Brings the selection back in line with what the page is showing.
  *
- * The identity check is not a micro-optimisation: every list reports on every
- * change to its order, and setting a fresh Set each time would re-render every
+ * Two jobs. Rows no list holds any more are dropped, and the mode ends once the
+ * page holds no rows at all: completing a selection of three out of three empties
+ * the list, and an action bar reading "0 selected" over an empty state is a mode
+ * nobody asked to still be in. Mounted by the list, the bar used to vanish there
+ * and leave the mode quietly switched on behind it.
+ *
+ * A held row still counts as shown, so the 900ms a completed row lingers for is
+ * inside the mode rather than the moment it ends.
+ *
+ * The identity check on the prune is not a micro-optimisation: every list reports
+ * on every change to its order, and a fresh Set each time would re-render every
  * row on the page for a prune that removed nothing.
  */
-function keepVisible(
+function settle(
   set: (partial: Partial<SelectionState>) => void,
   get: () => SelectionState,
 ) {
-  const { ids, lists } = get();
+  const { active, ids, lists } = get();
+
+  if (rows(lists).length === 0) {
+    if (active) set({ active: false, ids: NONE.selected, anchor: null });
+    return;
+  }
+
   if (ids.size === 0) return;
   const kept = prune(ids, rows(lists));
   if (kept.size !== ids.size) set({ ids: kept });

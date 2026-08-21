@@ -335,18 +335,23 @@ export async function projectCounts(
  * showed it on a small one.
  */
 /**
- * One page of a project's finished work.
+ * How many finished tasks a project shows at a time.
  *
- * Paged rather than capped. It used to stop at 50 with nothing that could ask
- * for the rest, so a project with a year of history had a wall the screen never
- * mentioned. The disclosure quotes the real total from `projectCounts` and asks
- * for another page.
+ * The screen used to stop at 50 with nothing that could ask for the rest, so a
+ * project with a year of history had a wall it never mentioned. The slice is
+ * taken in the component rather than here: the limit below is not a query bound,
+ * since the read walks the whole index range either way, so paging through the
+ * query would only make `limit` a dependency and empty the list on every press.
  */
 export const PROJECT_DONE_PAGE = 25;
 
+/** A bound on the array, not on the read. Far past what a screen shows, and the
+ *  logbook is where a project with more than this belongs. */
+export const PROJECT_DONE_MAX = 500;
+
 export async function projectDone(
   projectId: string,
-  limit = PROJECT_DONE_PAGE,
+  limit = PROJECT_DONE_MAX,
   db: TendDb = getDb(),
 ): Promise<Task[]> {
   const rows = await db.tasks

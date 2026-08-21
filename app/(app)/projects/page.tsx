@@ -308,7 +308,11 @@ function OneProject({ project, onEdit }: { project: Project; onEdit: () => void 
   // Pages of finished work, not a cap. The component is keyed on the project, so
   // opening another one starts at one page again.
   const [pages, setPages] = useState(1);
-  const finished = useProjectDone(project.id, pages * PROJECT_DONE_PAGE);
+  const finished = useProjectDone(project.id);
+  // Sliced here rather than in the query. Asking the query for more would make
+  // the limit a dependency, and a live query hands back its placeholder while
+  // those change: the list would empty and animate in again on every press.
+  const shownDone = finished.slice(0, pages * PROJECT_DONE_PAGE);
 
   // From the counts, never from `finished.length`. `projectDone` stops at 50, so
   // a project with sixty finished tasks read "50/55" here and "60 of 65 done" on
@@ -322,7 +326,9 @@ function OneProject({ project, onEdit }: { project: Project; onEdit: () => void 
   // The real number finished, which is what the disclosure has to say. Before
   // the counts land there is nothing better than what the page holds.
   const doneTotal = count?.done ?? finished.length;
-  const unshown = doneTotal - finished.length;
+  // Read but not on screen. Measured against what was read rather than against
+  // the count, so the button cannot outlive the rows it would reveal.
+  const unshown = finished.length - shownDone.length;
   const firstNoteLine = project.notes.split('\n')[0]?.trim();
 
   return (
@@ -386,7 +392,7 @@ function OneProject({ project, onEdit }: { project: Project; onEdit: () => void 
 
           {showDone && (
             <div className="mt-2">
-              <TaskList tasks={finished} />
+              <TaskList tasks={shownDone} />
 
               {unshown > 0 && (
                 <button
