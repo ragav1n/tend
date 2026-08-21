@@ -13,7 +13,13 @@ import type { BindingGroup } from '@/lib/keys/map';
  * `BINDINGS`. A binding that exists appears here; one that is removed leaves.
  */
 
-const GROUP_ORDER: BindingGroup[] = ['Go to', 'Tasks', 'App', 'While selecting'];
+const GROUP_ORDER: BindingGroup[] = [
+  'Go to',
+  'Tasks',
+  'In a list',
+  'App',
+  'While selecting',
+];
 
 export function ShortcutsOverlay() {
   const open = useUiStore((state) => state.shortcutsOpen);

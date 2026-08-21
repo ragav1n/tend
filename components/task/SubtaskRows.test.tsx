@@ -66,6 +66,18 @@ describe('SubtaskRows', () => {
     expect(screen.queryByRole('button', { expanded: false })).toBeNull();
   });
 
+  it('puts every child it shows on the keyboard cursor', () => {
+    const many = ['a', 'b', 'c', 'd'].map((t) => sub(t));
+    const { container } = render(<SubtaskRows subtasks={many} onToggle={() => {}} />);
+
+    // Collapsed children are not rendered, which is what keeps j and k off them
+    // without anybody tracking which ones show.
+    const ids = [...container.querySelectorAll('[data-row-id]')].map((node) =>
+      node.getAttribute('data-row-id'),
+    );
+    expect(ids).toEqual(many.slice(0, 3).map((task) => task.id));
+  });
+
   it('checks off a child in place, which is the whole point', () => {
     const onToggle = vi.fn();
     const child = sub('Pack kitchen');

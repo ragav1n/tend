@@ -25,6 +25,12 @@ describe('the app keymap', () => {
     expect(routeFor(CHORD_INDEX.get('g b')!)).toBe('/board');
   });
 
+  it('keeps the list keys out of the app-wide index', () => {
+    // j is a letter on Settings. The list binds it while it has rows to walk.
+    expect(CHORD_INDEX.has('j')).toBe(false);
+    expect(CHORD_INDEX.has('x')).toBe(false);
+  });
+
   it('leaves the actions alone', () => {
     expect(routeFor('palette')).toBeNull();
   });

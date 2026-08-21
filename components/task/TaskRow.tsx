@@ -81,6 +81,14 @@ export function TaskRow({
       <motion.div
         className={cn(
           'group flex items-start gap-3 rounded-lg border bg-surface px-3.5 py-3 text-left',
+          // The keyboard cursor is focus on the body button, so it wears the
+          // app's own focus ring. Drawn out here on the card: a ring around the
+          // title alone reads as a link rather than as the row you are on. The
+          // selector names that one button, or the check and the select box
+          // would each draw a second ring inside this one.
+          'has-[[data-row-id]:focus-visible]:outline has-[[data-row-id]:focus-visible]:outline-2',
+          'has-[[data-row-id]:focus-visible]:outline-clay-400',
+          'has-[[data-row-id]:focus-visible]:outline-offset-2',
           selected ? 'border-clay-400' : 'border-line',
         )}
         style={{ boxShadow: 'var(--shadow-flush)' }}
@@ -127,12 +135,16 @@ export function TaskRow({
 
         <button
           type="button"
+          // The row the keyboard cursor lands on. `use-list-cursor.ts` collects
+          // these in document order and focuses one, which is what makes Enter
+          // here the browser's own click rather than a binding.
+          data-row-id={task.id}
           // In selection mode the whole row picks. Leaving the body as "open"
           // would make the checkbox the only target, which is a 22px box.
           onClick={(event) =>
             selectable ? onPick?.(task.id, event.shiftKey) : onOpen?.(task.id)
           }
-          className="min-w-0 flex-1 text-left"
+          className="min-w-0 flex-1 text-left focus-visible:outline-none"
         >
           {/* The title's first line occupies the same 22px the check does, and
               centres inside it. Without this the row is `items-start` and a

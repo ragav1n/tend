@@ -12,7 +12,7 @@
  * platform string, so a Mac keyboard plugged into Linux still works.
  */
 
-export type BindingGroup = 'Go to' | 'Tasks' | 'App' | 'While selecting';
+export type BindingGroup = 'Go to' | 'Tasks' | 'In a list' | 'App' | 'While selecting';
 
 /**
  * Where a binding is live.
@@ -20,9 +20,10 @@ export type BindingGroup = 'Go to' | 'Tasks' | 'App' | 'While selecting';
  * `global` is bound for the life of the app. `selection` is bound by the
  * selection bar, which only exists while rows are selected, so `Backspace` is
  * not a app-wide delete key and ⌘A only stops meaning "select this page" while
- * there is a list selection to grow.
+ * there is a list selection to grow. `list` is bound by the task list, so `j`
+ * moves a cursor on Today and types a letter on Settings.
  */
-export type BindingScope = 'global' | 'selection';
+export type BindingScope = 'global' | 'selection' | 'list';
 
 export interface Binding {
   /** Stable handler key. Never shown. */
@@ -39,6 +40,16 @@ export interface Binding {
    * work from inside the palette or a note set it.
    */
   whileTyping?: boolean;
+  /**
+   * The browser already does this one.
+   *
+   * Enter on the row under the cursor is the focused button's own click. The
+   * dispatcher calls `preventDefault` on any chord it finds in the index, so
+   * binding Enter would take it away from every other control on the page for
+   * as long as a list is mounted. Listed here so the overlay teaches it, and
+   * `chordIndex` leaves it out so nothing tries to dispatch it.
+   */
+  native?: true;
 }
 
 /**
@@ -171,6 +182,33 @@ export const ACTIONS: Binding[] = [
   { id: 'undo', chord: 'mod+z', label: 'Undo the last change', group: 'Tasks' },
 ];
 
+/**
+ * Live only while a task list is on screen.
+ *
+ * The cursor is DOM focus, which is why Enter needs no handler and why these
+ * belong to the list rather than to the app: a key that moves a cursor through
+ * rows has nothing to move on a page with no rows.
+ */
+export const CURSOR_ACTIONS: Binding[] = [
+  { id: 'cursor-next', chord: 'j', label: 'Next task', group: 'In a list', scope: 'list' },
+  { id: 'cursor-prev', chord: 'k', label: 'Previous task', group: 'In a list', scope: 'list' },
+  {
+    id: 'cursor-open',
+    chord: 'enter',
+    label: 'Open the task under the cursor',
+    group: 'In a list',
+    scope: 'list',
+    native: true,
+  },
+  {
+    id: 'cursor-pick',
+    chord: 'x',
+    label: 'Select the task under the cursor',
+    group: 'In a list',
+    scope: 'list',
+  },
+];
+
 /** Live only while a selection exists. */
 export const SELECTION_ACTIONS: Binding[] = [
   {
@@ -203,10 +241,17 @@ export const SELECTION_ACTIONS: Binding[] = [
   },
 ];
 
-/** chord to binding id, which is the lookup the dispatcher does per key press. */
+/**
+ * chord to binding id, which is the lookup the dispatcher does per key press.
+ *
+ * A `native` binding is left out. It is in the list to be taught, not to be
+ * matched, and a chord in this map is a chord the dispatcher takes off the page.
+ */
 export function chordIndex(bindings: readonly Binding[]): Map<string, string> {
   const index = new Map<string, string>();
-  for (const binding of bindings) index.set(binding.chord, binding.id);
+  for (const binding of bindings) {
+    if (!binding.native) index.set(binding.chord, binding.id);
+  }
   return index;
 }
 

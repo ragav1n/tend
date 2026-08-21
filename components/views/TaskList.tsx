@@ -6,6 +6,7 @@ import { COMPLETED_ROW_LINGER_MS, listVariants, QUICK_FADE } from '@/lib/motion'
 import { completeTask } from '@/lib/db/mutations';
 import { today } from '@/lib/db/queries';
 import type { Task } from '@/lib/db/types';
+import { useListCursor } from '@/hooks/use-list-cursor';
 import { useSelectionStore } from '@/hooks/use-selection';
 import { useSubtasksFor } from '@/hooks/use-tasks';
 import { useUiStore } from '@/hooks/use-ui';
@@ -27,7 +28,10 @@ import { SelectionBarHost } from '@/components/views/SelectionBar';
  * setState during an effect body, which cascades renders on every query update.
  *
  * The list also owns selection mode, because it is the thing that knows the
- * order rows are in, and order is what a shift-click spans.
+ * order rows are in, and order is what a shift-click spans. It owns the keyboard
+ * cursor for the same reason: `j` and `k` move focus between the rows this
+ * container holds, so the cursor skips a collapsed subtask without being told
+ * which children are showing.
  *
  * Subtasks render under their parent here. Every list query already drops them
  * from the top level with a note saying they appear underneath it, so until this
@@ -53,6 +57,7 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
   const pruneSelection = useSelectionStore((state) => state.prune);
   const [lingering, setLingering] = useState<Task[]>([]);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const rows = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     // Copied into a local so the cleanup closes over the same Map the effect saw,
@@ -114,6 +119,14 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
   // an action bar over a set of rows it no longer refers to.
   useEffect(() => endSelect, [endSelect]);
 
+  // x picks the row under the cursor. A subtask is not in `order`, and the
+  // effect above prunes anything the order does not hold, so picking one would
+  // clear itself a tick later. Subtasks have no checkbox for the same reason.
+  function pickCursorRow(id: string) {
+    if (order.includes(id)) pickRow(id, order, false);
+  }
+  useListCursor(rows, pickCursorRow);
+
   if (loading) {
     return (
       <ul className="space-y-2" aria-busy>
@@ -152,7 +165,13 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
         </div>
       )}
 
-      <motion.ul variants={listVariants} initial="hidden" animate="visible" className="space-y-2">
+      <motion.ul
+        ref={rows}
+        variants={listVariants}
+        initial="hidden"
+        animate="visible"
+        className="space-y-2"
+      >
         <AnimatePresence mode="popLayout" initial={false}>
           {shown.map((task) => {
             const children = subtasks.get(task.id);

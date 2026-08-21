@@ -1,6 +1,7 @@
 import {
   ACTIONS,
   chordIndex,
+  CURSOR_ACTIONS,
   inScope,
   navBindings,
   SELECTION_ACTIONS,
@@ -23,9 +24,15 @@ import { ALL_ITEMS } from './nav';
 export const NAV_PREFIX = 'nav:';
 
 /** Everything, in the order the overlay lists it. */
-export const BINDINGS: Binding[] = [...navBindings(ALL_ITEMS), ...ACTIONS, ...SELECTION_ACTIONS];
+export const BINDINGS: Binding[] = [
+  ...navBindings(ALL_ITEMS),
+  ...ACTIONS,
+  ...CURSOR_ACTIONS,
+  ...SELECTION_ACTIONS,
+];
 
-/** Only the global ones. The selection bar binds its own while it exists. */
+/** Only the global ones. The list and the selection bar bind their own while
+ *  they exist. */
 export const CHORD_INDEX = chordIndex(inScope(BINDINGS, 'global'));
 export const TYPING_SAFE = typingSafe(BINDINGS);
 

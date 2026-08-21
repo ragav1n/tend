@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ACTIONS,
   chordIndex,
+  CURSOR_ACTIONS,
   MODIFIER_KEYS,
   chordKeys,
   chordOf,
@@ -147,6 +148,15 @@ describe('the map as a whole', () => {
   it('indexes chords to ids', () => {
     expect(chordIndex(bindings).get('g b')).toBe('nav:/board');
     expect(chordIndex(bindings).get('mod+k')).toBe('palette');
+  });
+
+  it('leaves a native binding out of the index', () => {
+    // Enter on the row under the cursor is the focused button's own click. In
+    // the index, the dispatcher would call preventDefault on it and take Enter
+    // away from every other control for as long as a list is mounted.
+    const index = chordIndex(CURSOR_ACTIONS);
+    expect(index.get('j')).toBe('cursor-next');
+    expect(index.has('enter')).toBe(false);
   });
 
   it('lets only the palette through a focused field', () => {

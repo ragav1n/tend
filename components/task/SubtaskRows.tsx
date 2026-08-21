@@ -72,6 +72,10 @@ function SubtaskRow({
         />
         <button
           type="button"
+          // Reachable from the keyboard cursor, same attribute the rows use. A
+          // child on screen is a row you can walk onto; a collapsed one is not
+          // rendered, so it is skipped without a rule saying so.
+          data-row-id={task.id}
           onClick={() => onOpen?.(task.id)}
           className="min-w-0 flex-1 text-left"
         >
