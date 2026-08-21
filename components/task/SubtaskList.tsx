@@ -53,11 +53,11 @@ export function SubtaskList({ taskId }: { taskId: string }) {
   }
 
   async function add(titles: string[]) {
+    // Cleared first, and whatever the lines turn out to be. Cleared after the
+    // early return, a line of spaces stayed in the field after Enter.
+    setDraft('');
     const lines = titles.map((line) => line.trim()).filter((line) => line.length > 0);
     if (lines.length === 0) return;
-    // Cleared before the write, so the next one can be typed straight away
-    // instead of waiting on IndexedDB.
-    setDraft('');
     // One at a time, in order: the sort key is assigned per insert, so a
     // Promise.all would land a pasted checklist in whatever order it resolved.
     for (const title of lines) {
@@ -194,9 +194,11 @@ export function SubtaskList({ taskId }: { taskId: string }) {
               const text = e.clipboardData.getData('text');
               if (!text.includes('\n')) return;
               // An input joins pasted lines into one title. A checklist copied
-              // from somewhere else is a checklist.
+              // from somewhere else is a checklist. What was already typed is
+              // the start of the first line, not something to throw away.
               e.preventDefault();
-              void add(text.split('\n'));
+              const [head, ...rest] = text.split('\n');
+              void add([`${draft}${head ?? ''}`, ...rest]);
             }}
             onBlur={() => {
               if (draft.trim().length > 0) void add([draft]);
