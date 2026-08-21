@@ -363,6 +363,37 @@ export async function tagOptions(db: TendDb = getDb()): Promise<Tag[]> {
   return db.tags.where('[_del+name]').between([0, ''], [0, MAX_STR], true, true).toArray();
 }
 
+/**
+ * Open tasks per tag, for the tag index.
+ *
+ * Walks the tagged tasks rather than the table: the multiEntry index yields an
+ * entry per tag on a task, and `distinct` collapses a task carrying two of the
+ * asked-for tags back to one row. A count over `db.taskTags` would need the
+ * status of every task it named, which is the read this avoids.
+ */
+export async function tagCounts(
+  tagIds: readonly string[],
+  db: TendDb = getDb(),
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (tagIds.length === 0) return counts;
+
+  const wanted = new Set(tagIds);
+  const rows = await db.tasks
+    .where('_tagIds')
+    .anyOf([...tagIds])
+    .distinct()
+    .toArray();
+
+  for (const task of rows) {
+    if (task._del === 1 || task._done === 1) continue;
+    for (const tagId of task._tagIds) {
+      if (wanted.has(tagId)) counts.set(tagId, (counts.get(tagId) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
 /** Tag filter, served by the multiEntry `_tagIds` index. */
 export async function taggedWith(tagId: string, db: TendDb = getDb()): Promise<Task[]> {
   const rows = await db.tasks.where('_tagIds').equals(tagId).toArray();

@@ -7,6 +7,7 @@ import {
   CheckCircle,
   FolderSimple,
   GearSix,
+  Hash,
   Kanban,
   Funnel,
   Sun,
@@ -46,6 +47,7 @@ export const LISTS: NavItem[] = [
   { href: '/projects', label: 'Projects', icon: FolderSimple, key: 'p' },
   { href: '/someday', label: 'Someday', icon: Archive, key: 's' },
   { href: '/logbook', label: 'Logbook', icon: CheckCircle, key: 'l' },
+  { href: '/tags', label: 'Tags', icon: Hash, key: 'h' },
   { href: '/views', label: 'Views', icon: Funnel, key: 'v' },
 ];
 

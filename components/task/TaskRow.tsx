@@ -41,11 +41,19 @@ interface TaskRowProps {
   /** "2/5", when the task has children. Passed in because the list already
    *  fetched every parent's children in one go. */
   subtaskCount?: string | null;
+  /** The names of this task's tags, in the order it holds them. Resolved by the
+   *  list from one `useTags`, because a name lookup per row is a live query per
+   *  row. A count was all this row used to show, which made a tag something you
+   *  could add and then never see again. */
+  tagNames?: readonly string[];
   /** Rendered inside this row's list item, under the card. The subtasks go
    *  here: they belong to this row rather than beside it, and a second `li`
    *  wrapping both would be an `li` inside an `li`. */
   children?: React.ReactNode;
 }
+
+/** Names on the row before the rest become a count. */
+const MAX_TAG_NAMES = 2;
 
 const PRIORITY_LABEL: Record<number, string> = {
   1: 'Low priority',
@@ -62,6 +70,7 @@ export function TaskRow({
   selected = false,
   onPick,
   subtaskCount = null,
+  tagNames = [],
   children,
 }: TaskRowProps) {
   const reduced = useReducedMotion();
@@ -162,7 +171,7 @@ export function TaskRow({
             />
           </span>
 
-          {(hasDue || task.priority > 0 || task._tagIds.length > 0 || subtaskCount) && (
+          {(hasDue || task.priority > 0 || tagNames.length > 0 || subtaskCount) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
               {hasDue && (
                 <span
@@ -193,9 +202,17 @@ export function TaskRow({
                 </span>
               )}
 
-              {task._tagIds.length > 0 && (
-                <span className="label !text-[0.625rem] !tracking-[0.14em]">
-                  {task._tagIds.length} {task._tagIds.length === 1 ? 'tag' : 'tags'}
+              {/* Two names, then a count for the rest. A row with six tags on it
+                  turns into a wall of hashes and the title stops being the thing
+                  you read first. */}
+              {tagNames.slice(0, MAX_TAG_NAMES).map((name) => (
+                <span key={name} className="text-xs text-text-lo">
+                  #{name}
+                </span>
+              ))}
+              {tagNames.length > MAX_TAG_NAMES && (
+                <span className="tnum text-xs text-text-lo">
+                  +{tagNames.length - MAX_TAG_NAMES}
                 </span>
               )}
 

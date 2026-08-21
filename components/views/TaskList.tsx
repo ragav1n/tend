@@ -8,7 +8,7 @@ import { today } from '@/lib/db/queries';
 import type { Task } from '@/lib/db/types';
 import { useListCursor } from '@/hooks/use-list-cursor';
 import { useSelectionStore } from '@/hooks/use-selection';
-import { useSubtasksFor } from '@/hooks/use-tasks';
+import { useSubtasksFor, useTagNames } from '@/hooks/use-tasks';
 import { useUiStore } from '@/hooks/use-ui';
 import { SubtaskRows, subtaskProgress } from '@/components/task/SubtaskRows';
 import { TaskRow } from '@/components/task/TaskRow';
@@ -123,6 +123,9 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
   // One query for the whole page. The key is the joined ids, so it re-runs when
   // the list changes rather than on every render.
   const subtasks = useSubtasksFor(order);
+  // One lookup for the page. A row holds tag ids, and a tag it cannot name is a
+  // tag nobody can see.
+  const tagNames = useTagNames();
   // Joined so the dependency is a value. An array literal changes identity every
   // render and would re-run this on each one.
   const orderKey = order.join(',');
@@ -206,6 +209,9 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
                 selected={selectedIds.has(task.id)}
                 onPick={(id, extend) => pickRow(id, order, extend)}
                 subtaskCount={subtaskProgress(children)}
+                tagNames={task._tagIds
+                  .map((id) => tagNames.get(id))
+                  .filter((name): name is string => name !== undefined)}
               >
                 {children && (
                   <SubtaskRows

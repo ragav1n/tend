@@ -17,8 +17,11 @@ import {
   createProject,
   createTag,
   createTask,
+  deleteTag,
   deleteTask,
   ensureTag,
+  renameTag,
+  restoreTag,
   reorderTask,
   restoreTask,
   setTaskRecurrence,
@@ -39,6 +42,8 @@ import {
   somedayList,
   subtasksOf,
   taggedWith,
+  tagCounts,
+  tagOptions,
   subtasksForParents,
   projectCounts,
   projectDone,
@@ -318,6 +323,82 @@ describe('tags', () => {
     expect(await ensureTag('work', db)).toBe(first);
     expect(await ensureTag('  WORK  ', db)).toBe(first);
     expect(await db.tags.count()).toBe(1);
+  });
+
+  it('renames a tag and queues one update', async () => {
+    const work = await createTag({ name: 'work' }, db);
+    await db.outbox.clear();
+
+    expect(await renameTag(work, '  errands  ', db)).toBe('ok');
+
+    expect((await db.tags.get(work))!.name).toBe('errands');
+    const records = await db.outbox.toArray();
+    expect(records).toHaveLength(1);
+    expect(records[0]!.op).toBe('update');
+    expect(records[0]!.patch).toEqual({ name: 'errands' });
+  });
+
+  it('refuses a rename onto a name another live tag holds', async () => {
+    // Postgres has a case-insensitive unique index over live names, so the
+    // alternative is a push that fails hours later and a rename that undoes
+    // itself.
+    const work = await createTag({ name: 'work' }, db);
+    await createTag({ name: 'Home' }, db);
+
+    expect(await renameTag(work, 'home', db)).toBe('taken');
+    expect((await db.tags.get(work))!.name).toBe('work');
+  });
+
+  it('takes a name back off a deleted tag', async () => {
+    const work = await createTag({ name: 'work' }, db);
+    await deleteTag(work, db);
+    const second = await createTag({ name: 'home' }, db);
+
+    expect(await renameTag(second, 'work', db)).toBe('ok');
+  });
+
+  it('deletes a tag off every task carrying it', async () => {
+    const work = await createTag({ name: 'work' }, db);
+    const home = await createTag({ name: 'home' }, db);
+    const one = await createTask({ title: 'Draft the deck', tagIds: [work, home] }, db);
+    const two = await createTask({ title: 'Book the room', tagIds: [work] }, db);
+
+    const touched = await deleteTag(work, db);
+
+    expect(new Set(touched)).toEqual(new Set([one, two]));
+    // A task left pointing at a tombstone shows a tag with no name and cannot
+    // be untagged.
+    expect((await db.tasks.get(one))!._tagIds).toEqual([home]);
+    expect((await db.tasks.get(two))!._tagIds).toEqual([]);
+    expect(await taggedWith(work, db)).toHaveLength(0);
+    expect((await tagOptions(db)).map((tag) => tag.id)).toEqual([home]);
+  });
+
+  it('puts a deleted tag back on the tasks it came off', async () => {
+    const work = await createTag({ name: 'work' }, db);
+    const id = await createTask({ title: 'Draft the deck', tagIds: [work] }, db);
+
+    const touched = await deleteTag(work, db);
+    await restoreTag(work, touched, db);
+
+    expect((await db.tasks.get(id))!._tagIds).toEqual([work]);
+    expect((await tagOptions(db)).map((tag) => tag.id)).toEqual([work]);
+  });
+
+  it('counts open tasks per tag and skips the finished ones', async () => {
+    const work = await createTag({ name: 'work' }, db);
+    const home = await createTag({ name: 'home' }, db);
+    const done = await createTask({ title: 'Send the invoice', tagIds: [work] }, db);
+    await createTask({ title: 'Draft the deck', tagIds: [work, home] }, db);
+    await completeTask(done, true, db);
+
+    const counts = await tagCounts([work, home], db);
+
+    expect(counts.get(work)).toBe(1);
+    expect(counts.get(home)).toBe(1);
+    // Absent rather than zero: the screen reads it with ?? 0 and a tag nobody
+    // has used has nothing to count.
+    expect(await tagCounts([], db)).toEqual(new Map());
   });
 });
 

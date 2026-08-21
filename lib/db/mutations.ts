@@ -1449,6 +1449,99 @@ export async function createTag(
 }
 
 /**
+ * Renames a tag, or reports why it cannot.
+ *
+ * Postgres holds a case-insensitive unique index over live tag names
+ * (`tags_user_name_live_idx`), so a clash is not a matter of taste: the write
+ * would go out, the push would fail, and the rename would be undone by the
+ * server hours later. Checked here instead, while the person is still looking
+ * at the field.
+ */
+export async function renameTag(
+  id: string,
+  name: string,
+  db: TendDb = getDb(),
+): Promise<'ok' | 'empty' | 'taken'> {
+  const trimmed = name.trim();
+  if (trimmed.length === 0) return 'empty';
+
+  return db.transaction('rw', [db.tags, db.outbox], async () => {
+    const current = await db.tags.get(id);
+    if (!current || current._del === 1) return 'empty';
+    if (current.name === trimmed) return 'ok';
+
+    const live = await db.tags.where('_del').equals(0).toArray();
+    const clash = live.find(
+      (tag) => tag.id !== id && tag.name.toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (clash) return 'taken';
+
+    const next = { ...current, name: trimmed, updatedAt: nowIso() };
+    await db.tags.put({ ...next, ...deriveTag(next) });
+    await db.outbox.add(
+      outboxRecord('tags', id, 'update', { name: trimmed }, current.rowVersion),
+    );
+    return 'ok';
+  });
+}
+
+/**
+ * Deletes a tag and takes it off every task that carried it.
+ *
+ * The links have to go with it. A task left pointing at a tombstone shows a tag
+ * with no name and cannot be untagged, which is the same trap `deleteProject`
+ * avoids by filing its tasks back into the Inbox. Returns the tasks it touched,
+ * so the toast can say how many and undo can put them back.
+ */
+export async function deleteTag(id: string, db: TendDb = getDb()): Promise<string[]> {
+  return db.transaction('rw', [db.tags, db.tasks, db.taskTags, db.outbox], async () => {
+    const current = await db.tags.get(id);
+    if (!current || current._del === 1) return [];
+
+    const links = await db.taskTags.where('tagId').equals(id).toArray();
+    const taskIds = [...new Set(links.map((link) => link.taskId))];
+    for (const taskId of taskIds) {
+      const remaining = (await db.taskTags.where('taskId').equals(taskId).toArray())
+        .map((link) => link.tagId)
+        .filter((tagId) => tagId !== id);
+      await setTaskTags(taskId, remaining, db);
+    }
+
+    const deletedAt = nowIso();
+    const next = { ...current, deletedAt, updatedAt: deletedAt };
+    await db.tags.put({ ...next, ...deriveTag(next) });
+    await db.outbox.add(outboxRecord('tags', id, 'delete', { deletedAt }, current.rowVersion));
+
+    return taskIds;
+  });
+}
+
+/** Puts a tag back on the tasks `deleteTag` took it off. */
+export async function restoreTag(
+  id: string,
+  taskIds: readonly string[] = [],
+  db: TendDb = getDb(),
+): Promise<void> {
+  await db.transaction('rw', [db.tags, db.tasks, db.taskTags, db.outbox], async () => {
+    const current = await db.tags.get(id);
+    if (!current) return;
+
+    const next = { ...current, deletedAt: null, updatedAt: nowIso() };
+    await db.tags.put({ ...next, ...deriveTag(next) });
+    await db.outbox.add(
+      outboxRecord('tags', id, 'undelete', { deletedAt: null }, current.rowVersion),
+    );
+
+    for (const taskId of taskIds) {
+      const held = (await db.taskTags.where('taskId').equals(taskId).toArray()).map(
+        (link) => link.tagId,
+      );
+      if (!held.includes(id)) await setTaskTags(taskId, [...held, id], db);
+    }
+  });
+}
+
+/**
  * Finds a tag by name or creates it. Quick-add types `#work` faster than anyone
  * manages a tag list, so the parser needs this.
  */
