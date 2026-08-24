@@ -1,7 +1,7 @@
 import { Column, Row, Section, Text } from '@react-email/components';
 import type { TaskReminderPayload } from '@/lib/email/types';
 import { formatWhen, taskMeta } from '@/lib/email/format';
-import { Action, Shell } from './Shell';
+import { Action, Eyebrow, Shell } from './Shell';
 import { email, fonts } from './theme';
 
 /**
@@ -31,9 +31,7 @@ export function ReminderEmail({ tasks, appUrl, unsubscribeUrl }: ReminderEmailPr
       reason="You get this because a task you set a time on has come due."
     >
       <Section style={{ backgroundColor: email.surface }}>
-        <Text style={{ fontSize: 13, lineHeight: '18px', color: email.textSoft, margin: '20px 0 0' }}>
-          {single ? 'Due now' : `${tasks.length} due now`}
-        </Text>
+        <Eyebrow>{single ? 'Due now' : `${tasks.length} due now`}</Eyebrow>
 
         {tasks.map((task) => {
           const meta = taskMeta({ ...task, project: null });

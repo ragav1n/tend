@@ -30,6 +30,34 @@ export function readSvixHeaders(headers: Headers): SvixHeaders {
 }
 
 /**
+ * The same three values under their Standard Webhooks names, which is what
+ * Supabase Auth signs its send-email hook with.
+ *
+ * Svix wrote that spec, so the signature itself is byte for byte what `verifySvix`
+ * already checks. Only the header prefix differs, and only the secret carries an
+ * extra `v1,` in front of the `whsec_`.
+ */
+export function readStandardWebhookHeaders(headers: Headers): SvixHeaders {
+  return {
+    id: headers.get('webhook-id'),
+    timestamp: headers.get('webhook-timestamp'),
+    signature: headers.get('webhook-signature'),
+  };
+}
+
+/**
+ * The HMAC key out of whichever shape the dashboard handed over.
+ *
+ * Resend shows `whsec_<base64>`; Supabase shows `v1,whsec_<base64>`. Only the
+ * base64 is the key, and pasting either one whole has to keep working, because
+ * the failure mode is a signature that never verifies and a webhook that looks
+ * like it is being ignored.
+ */
+function keyOf(secret: string): Buffer {
+  return Buffer.from(secret.replace(/^v1,/, '').replace(/^whsec_/, ''), 'base64');
+}
+
+/**
  * True when this body really came from Resend, recently.
  *
  * The replay window matters as much as the signature: a signed request stays
@@ -47,8 +75,7 @@ export function verifySvix(
   const sent = Number(headers.timestamp) * 1000;
   if (!Number.isFinite(sent) || Math.abs(now - sent) > TIMESTAMP_TOLERANCE_MS) return false;
 
-  // The secret arrives as whsec_<base64>. Only the base64 part is the key.
-  const key = Buffer.from(secret.replace(/^whsec_/, ''), 'base64');
+  const key = keyOf(secret);
   const expected = createHmac('sha256', key)
     .update(`${headers.id}.${headers.timestamp}.${body}`)
     .digest('base64');
@@ -69,7 +96,7 @@ function equal(a: string, b: string): boolean {
 
 /** Signs a body the way Resend does. Used by the tests, and by nothing else. */
 export function signSvix(body: string, id: string, timestamp: string, secret: string): string {
-  const key = Buffer.from(secret.replace(/^whsec_/, ''), 'base64');
+  const key = keyOf(secret);
   return `v1,${createHmac('sha256', key).update(`${id}.${timestamp}.${body}`).digest('base64')}`;
 }
 

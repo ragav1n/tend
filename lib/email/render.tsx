@@ -1,8 +1,11 @@
 import { render } from '@react-email/render';
+import { APP_NAME } from '@/lib/config';
 import { DigestEmail, plannedMinutes } from '@/emails/DigestEmail';
+import { SignInEmail } from '@/emails/SignInEmail';
 import { NudgeEmail } from '@/emails/NudgeEmail';
 import { ReminderEmail } from '@/emails/ReminderEmail';
 import { ReviewEmail } from '@/emails/ReviewEmail';
+import { authCodeSubject, authCodeText } from './auth-code';
 import { appUrl } from './env';
 import {
   formatDay,
@@ -21,6 +24,23 @@ import type {
   TaskReminderPayload,
 } from './types';
 import { unsubscribeUrl } from './unsubscribe';
+
+/**
+ * The sign-in code, which is the one email nobody subscribed to.
+ *
+ * No unsubscribe anywhere in it, so `sendEmail` leaves the RFC 8058 headers off
+ * too. A code is transactional: the person asked for it thirty seconds ago and
+ * there is nothing to opt out of.
+ */
+export async function renderSignInCode(code: string): Promise<RenderedEmail> {
+  const app = appUrl();
+
+  return {
+    subject: authCodeSubject(code, APP_NAME),
+    html: await render(<SignInEmail code={code} appUrl={app} />),
+    text: authCodeText(code, APP_NAME, app),
+  };
+}
 
 /**
  * A group of claimed deliveries turned into one email.
@@ -63,7 +83,7 @@ export async function renderGroup(group: EmailGroup): Promise<RenderedEmail> {
 
   if (group.kind === 'overdue_nudge') {
     return {
-      subject: `${plural(payload.overdue.length, 'task')} past due`,
+      subject: nudgeSubject(payload),
       html: await render(<NudgeEmail payload={payload} {...links} />),
       text: summaryText(
         [
@@ -83,7 +103,7 @@ export async function renderGroup(group: EmailGroup): Promise<RenderedEmail> {
     const streak = payload.streak ?? 0;
 
     return {
-      subject: `Last week: ${plural(payload.completedThisWeek, 'task')} done`,
+      subject: reviewSubject(payload),
       html: await render(<ReviewEmail payload={payload} {...links} />),
       text: summaryText(
         [
@@ -125,15 +145,93 @@ export async function renderGroup(group: EmailGroup): Promise<RenderedEmail> {
   };
 }
 
+/**
+ * The longest a task title may be before it is cut.
+ *
+ * A subject is read in a list two lines high and a notification in one. Past
+ * this the tail is being written for nobody, and the count after it, which is the
+ * part that says how much else there is, gets pushed out of sight.
+ */
+const LEAD_TITLE = 48;
+
+function clip(title: string): string {
+  const trimmed = title.trim();
+  if (trimmed.length <= LEAD_TITLE) return trimmed;
+  // Cut on a word rather than mid-syllable, then only if that leaves most of the
+  // room used: a title of one very long word should still be cut somewhere.
+  const cut = trimmed.slice(0, LEAD_TITLE);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > LEAD_TITLE * 0.6 ? cut.slice(0, space) : cut).trimEnd()}...`;
+}
+
+/**
+ * The one task worth naming, and which list it came from.
+ *
+ * Late outranks today, because a subject that names something due at five while
+ * two things have already slipped is a subject that buries the alarm. Shared with
+ * the push title so the notification and the email cannot name different tasks
+ * for the same morning.
+ */
+export function summaryLead(
+  payload: SummaryPayload,
+): { item: DigestItem; late: boolean } | null {
+  const late = payload.overdue[0];
+  if (late) return { item: late, late: true };
+  const today = payload.today[0];
+  if (today) return { item: today, late: false };
+  const soon = payload.dueSoon[0];
+  return soon ? { item: soon, late: false } : null;
+}
+
+/**
+ * Name the thing, then say how much else there is.
+ *
+ * The old shape was "Today: 4 tasks, 2 late", which spends a whole subject line
+ * on two numbers the reader could have guessed. A title is the only part of this
+ * that could not have been guessed, so it goes first and the counts follow it.
+ */
 export function digestSubject(payload: SummaryPayload): string {
-  if (payload.today.length === 0 && payload.overdue.length === 0) {
-    return 'Today: nothing due';
+  const lead = summaryLead(payload);
+  if (!lead) return 'Nothing due today';
+
+  // Late and today are the actionable set. What is merely coming up is not
+  // something this subject counts, or a quiet day with a busy Friday reads busy.
+  const actionable = payload.overdue.length + payload.today.length;
+  const rest = Math.max(actionable - 1, 0);
+  const title = clip(lead.item.title);
+
+  if (lead.late) {
+    if (rest === 0) return `${title} is late`;
+    return `${title} is late, and ${rest} more to do`;
   }
 
-  const parts: string[] = [];
-  if (payload.today.length > 0) parts.push(plural(payload.today.length, 'task'));
-  if (payload.overdue.length > 0) parts.push(`${payload.overdue.length} late`);
-  return `Today: ${parts.join(', ')}`;
+  if (actionable === 0) return `${title} is coming up`;
+  if (rest === 0) return `${title}, and nothing else today`;
+  return `${title}, and ${plural(rest, 'more task')} today`;
+}
+
+/** The evening nudge, which is late by definition, so it never says so twice. */
+export function nudgeSubject(payload: SummaryPayload): string {
+  const first = payload.overdue[0];
+  if (!first) return 'Nothing is past due';
+
+  const rest = payload.overdue.length - 1;
+  const title = clip(first.title);
+  return rest === 0 ? `${title} is past due` : `${title}, and ${rest} more past due`;
+}
+
+/**
+ * The week, as two numbers rather than a task.
+ *
+ * The exception to naming the thing, on purpose: a review is about the shape of
+ * the week and there is no one task it is about. What got done and what is still
+ * open is the shape.
+ */
+export function reviewSubject(payload: SummaryPayload): string {
+  const done = payload.completedThisWeek;
+  if (done === 0 && payload.openTotal === 0) return 'A clear week';
+  if (done === 0) return `Nothing closed last week, ${payload.openTotal} still open`;
+  return `${done} done last week, ${payload.openTotal} still open`;
 }
 
 export function reminderSubject(tasks: TaskReminderPayload['task'][]): string {

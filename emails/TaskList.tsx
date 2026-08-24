@@ -13,15 +13,23 @@ import { email, fonts } from './theme';
  *
  * The dot is a bullet glyph rather than a shape, because a coloured box is a div
  * with a height and Outlook's Word engine collapses those.
+ *
+ * `late` paints the time clay. It is the one piece of colour that carries meaning
+ * rather than decoration: a section heading says "Late" once at the top, and after
+ * three rows of identical grey the reader has stopped seeing it. Not derived from
+ * `showDay`, which is also on for the days ahead, and nothing about next Tuesday
+ * is late.
  */
 export function TaskList({
   items,
   localDate,
   showDay = false,
+  late = false,
 }: {
   items: DigestItem[];
   localDate: string;
   showDay?: boolean;
+  late?: boolean;
 }) {
   return (
     <Section style={{ backgroundColor: email.surface }}>
@@ -83,10 +91,24 @@ export function TaskList({
                 backgroundColor: email.surface,
                 padding: '7px 0',
                 verticalAlign: 'top',
-                width: 120,
+                // Wide enough for the longest label this can produce, which is a
+                // relative day plus a time: "2 days ago, 5:00 pm". At 120 that
+                // wrapped and left "pm" alone on the next line, under a number
+                // it no longer belonged to.
+                width: 140,
               }}
             >
-              <Text style={{ fontSize: 13, lineHeight: '22px', color: email.textSoft, margin: 0 }}>
+              <Text
+                style={{
+                  fontSize: 13,
+                  lineHeight: '22px',
+                  color: late ? email.action : email.textSoft,
+                  margin: 0,
+                  // Belt and braces with the width above. A client that ignores
+                  // the column width still keeps the time on one line.
+                  whiteSpace: 'nowrap',
+                }}
+              >
                 {label(item, localDate, showDay)}
               </Text>
             </Column>

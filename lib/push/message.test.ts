@@ -139,22 +139,35 @@ describe('the summaries', () => {
       ]),
     );
 
-    expect(message.title).toBe('Today: 1 task, 1 late');
-    // Late first, because it is the part that needs doing before anything else.
-    expect(message.body).toBe('Repot the ficus');
+    // Late outranks today in the title, and the title having named it is why the
+    // body does not name it again.
+    expect(message.title).toBe('Repot the ficus is late, and 1 more to do');
+    expect(message.body).toBe('Water the plants');
   });
 
   it('says so plainly when a day is clear', () => {
     const message = pushMessage(group('daily_digest', [summary()]));
-    expect(message.title).toBe('Today: nothing due');
+    expect(message.title).toBe('Nothing due today');
     expect(message.body).toBe('Nothing due. Enjoy it.');
   });
 
-  it('counts the overdue nudge', () => {
+  it('names the oldest late task in the nudge', () => {
     const message = pushMessage(
       group('overdue_nudge', [summary({ kind: 'overdue_nudge', overdue: [item(), item({ id: 't2' })] })]),
     );
-    expect(message.title).toBe('2 tasks past due');
+    expect(message.title).toBe('Water the plants, and 1 more past due');
+  });
+
+  it('never repeats the named task in the body, even as the only late one', () => {
+    const message = pushMessage(
+      group('overdue_nudge', [
+        summary({ kind: 'overdue_nudge', overdue: [item()], openTotal: 9 }),
+      ]),
+    );
+
+    expect(message.title).toBe('Water the plants is past due');
+    // Nothing left to list, so it says the one thing the title did not.
+    expect(message.body).toBe('9 tasks open');
   });
 
   it('sends the weekly review to the logbook, and mentions a streak worth having', () => {
@@ -164,8 +177,9 @@ describe('the summaries', () => {
       ]),
     );
 
-    expect(message.title).toBe('Last week: 12 tasks done');
-    expect(message.body).toBe('4 tasks open · 5 days in a row');
+    expect(message.title).toBe('12 done last week, 4 still open');
+    // Done and open are already in the title, so the body carries the run.
+    expect(message.body).toBe('5 days in a row');
     expect(message.url).toBe('/logbook');
   });
 
@@ -175,6 +189,6 @@ describe('the summaries', () => {
         summary({ kind: 'weekly_review', completedThisWeek: 2, openTotal: 1, streak: 1 }),
       ]),
     );
-    expect(message.body).toBe('1 task open');
+    expect(message.body).toBe('2 tasks closed');
   });
 });

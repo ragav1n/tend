@@ -55,7 +55,7 @@ export function NudgeEmail({
       />
 
       <Section style={{ backgroundColor: email.surface, paddingTop: 14 }}>
-        <TaskList items={payload.overdue} localDate={payload.localDate} showDay />
+        <TaskList items={payload.overdue} localDate={payload.localDate} showDay late />
       </Section>
 
       <Action href={appUrl}>Sort it out</Action>

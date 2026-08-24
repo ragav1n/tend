@@ -25,11 +25,15 @@ import { email, fonts, WIDTH } from './theme';
  *
  * The preheader is the first thing in the body, because without one the inbox
  * preview shows whatever text comes first, which is usually "View in browser".
+ *
+ * `unsubscribeUrl` is optional because one email here is transactional. A
+ * sign-in code has nothing to turn off: offering the switch would either lie or
+ * lock somebody out of their own account.
  */
 export interface ShellProps {
   preview: string;
   appUrl: string;
-  unsubscribeUrl: string;
+  unsubscribeUrl?: string;
   reason: string;
   children: ReactNode;
 }
@@ -88,11 +92,16 @@ export function Shell({ preview, appUrl, unsubscribeUrl, reason, children }: She
 
           <Section style={{ backgroundColor: email.surface }}>
             <Text style={{ fontSize: 12, lineHeight: '18px', color: email.textSoft, margin: 0 }}>
-              {reason}{' '}
-              <Link href={unsubscribeUrl} style={{ color: email.textSoft }}>
-                Turn these off
-              </Link>
-              .
+              {reason}
+              {unsubscribeUrl && (
+                <>
+                  {' '}
+                  <Link href={unsubscribeUrl} style={{ color: email.textSoft }}>
+                    Turn these off
+                  </Link>
+                  .
+                </>
+              )}
             </Text>
           </Section>
         </Container>
@@ -110,11 +119,12 @@ export function Shell({ preview, appUrl, unsubscribeUrl, reason, children }: She
  */
 export function Stats({ items }: { items: { value: string; label: string }[] }) {
   const width = `${Math.round(100 / items.length)}%`;
+  const last = items.length - 1;
 
   return (
     <Section style={{ backgroundColor: email.surface, paddingTop: 18 }}>
       <Row style={{ backgroundColor: email.tint, borderRadius: 4 }}>
-        {items.map((stat) => (
+        {items.map((stat, index) => (
           <Column
             key={stat.label}
             style={{
@@ -122,6 +132,11 @@ export function Stats({ items }: { items: { value: string; label: string }[] }) 
               padding: '14px 16px',
               verticalAlign: 'top',
               width,
+              // The radius has to sit on the end cells, not on the row. Each cell
+              // paints its own background over the row's corners, so a radius up
+              // there rounds nothing and the band arrives square.
+              ...(index === 0 ? { borderRadius: '4px 0 0 4px' } : {}),
+              ...(index === last ? { borderRadius: '0 4px 4px 0' } : {}),
             }}
           >
             <Text
@@ -165,6 +180,29 @@ export function Heading({ children }: { children: ReactNode }) {
         textTransform: 'uppercase',
         color: email.heading,
         margin: '24px 0 8px',
+      }}
+    >
+      {children}
+    </Text>
+  );
+}
+
+/**
+ * The line above a heading, for an email whose subject is one task rather than a
+ * list. Same uppercase letterspaced treatment as `Heading`, because "Due now" and
+ * "Late" are the same kind of label and reading as two different kinds was the
+ * only thing making the reminder look like it came from a different app.
+ */
+export function Eyebrow({ children }: { children: ReactNode }) {
+  return (
+    <Text
+      style={{
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: '0.1em',
+        textTransform: 'uppercase',
+        color: email.textSoft,
+        margin: '22px 0 0',
       }}
     >
       {children}

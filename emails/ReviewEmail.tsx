@@ -68,7 +68,7 @@ export function ReviewEmail({
       {payload.overdue.length > 0 ? (
         <>
           <Heading>Carried over</Heading>
-          <TaskList items={payload.overdue} localDate={payload.localDate} showDay />
+          <TaskList items={payload.overdue} localDate={payload.localDate} showDay late />
         </>
       ) : null}
 

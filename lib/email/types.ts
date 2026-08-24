@@ -137,6 +137,8 @@ export interface RenderedEmail {
   html: string;
   text: string;
   /** Minted while rendering, because the footer link and the RFC 8058 header
-   *  have to be the same URL. */
-  unsubscribeUrl: string;
+   *  have to be the same URL. Absent on a transactional email: a sign-in code
+   *  must not carry a one-click unsubscribe, or a mail client offers to switch
+   *  off the only way back into the account. */
+  unsubscribeUrl?: string;
 }

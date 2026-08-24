@@ -1,4 +1,10 @@
-import { digestSubject, reminderSubject } from '@/lib/email/render';
+import {
+  digestSubject,
+  nudgeSubject,
+  reminderSubject,
+  reviewSubject,
+  summaryLead,
+} from '@/lib/email/render';
 import { formatTime, plural, taskMeta } from '@/lib/email/format';
 import type { DigestItem, EmailGroup, SummaryPayload, TaskReminderPayload } from '@/lib/email/types';
 
@@ -40,11 +46,23 @@ function titles(items: DigestItem[]): string {
   return rest > 0 ? `${shown.join(', ')}, and ${rest} more` : shown.join(', ');
 }
 
-/** The soonest of late, today and coming up, which is what to name first. */
-function firstList(payload: SummaryPayload): DigestItem[] {
-  if (payload.overdue.length > 0) return payload.overdue;
-  if (payload.today.length > 0) return payload.today;
-  return payload.dueSoon;
+/**
+ * The body for a summary, given that the title now names the leading task.
+ *
+ * Dropping that task here is the whole point: a title reading "Repot the ficus is
+ * late" over a body reading "Repot the ficus" says the same thing twice on a
+ * surface two lines tall.
+ *
+ * Drawn from every list rather than from the one the lead came out of. Filtering
+ * inside that list alone empties the body whenever the lead was the only thing in
+ * it, and an empty body falls through to "nothing due" on a day that has work in
+ * the next list down.
+ */
+function restOf(payload: SummaryPayload): string {
+  const lead = summaryLead(payload);
+  const all = [...payload.overdue, ...payload.today, ...payload.dueSoon];
+  const rest = lead ? all.filter((item) => item.id !== lead.item.id) : all;
+  return titles(rest);
 }
 
 export function pushMessage(group: EmailGroup): PushMessage {
@@ -82,8 +100,8 @@ export function pushMessage(group: EmailGroup): PushMessage {
 
   if (group.kind === 'overdue_nudge') {
     return {
-      title: `${plural(payload.overdue.length, 'task')} past due`,
-      body: titles(payload.overdue),
+      title: nudgeSubject(payload),
+      body: restOf(payload) || `${plural(payload.openTotal, 'task')} open`,
       url: '/today',
       tag: 'overdue_nudge',
     };
@@ -92,11 +110,13 @@ export function pushMessage(group: EmailGroup): PushMessage {
   if (group.kind === 'weekly_review') {
     const streak = payload.streak ?? 0;
     return {
-      title: `Last week: ${plural(payload.completedThisWeek, 'task')} done`,
-      body: [
-        `${plural(payload.openTotal, 'task')} open`,
-        ...(streak >= 2 ? [`${streak} days in a row`] : []),
-      ].join(' · '),
+      title: reviewSubject(payload),
+      // The subject already carries done and open, so the body carries the one
+      // thing it does not: how long the run is.
+      body:
+        streak >= 2
+          ? `${streak} days in a row`
+          : `${plural(payload.completedThisWeek, 'task')} closed`,
       url: '/logbook',
       tag: 'weekly_review',
     };
@@ -104,7 +124,7 @@ export function pushMessage(group: EmailGroup): PushMessage {
 
   return {
     title: digestSubject(payload),
-    body: titles(firstList(payload)) || 'Nothing due. Enjoy it.',
+    body: restOf(payload) || 'Nothing due. Enjoy it.',
     url: '/today',
     tag: 'daily_digest',
   };

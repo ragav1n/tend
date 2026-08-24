@@ -83,7 +83,7 @@ const task = (over: Record<string, unknown> = {}) => ({
 });
 
 describe('the digest', () => {
-  it('counts the day in the subject', async () => {
+  it('names the late task in the subject, then counts the rest', async () => {
     const email = await renderGroup(
       group('daily_digest', [
         summary({
@@ -93,7 +93,9 @@ describe('the digest', () => {
       ]),
     );
 
-    expect(email.subject).toBe('Today: 2 tasks, 1 late');
+    // Late outranks today. A subject naming a task due at five while something
+    // has already slipped is a subject that buries the alarm.
+    expect(email.subject).toBe('Renew the passport is late, and 2 more to do');
     expect(email.html).toContain('Water the plants');
     expect(email.html).toContain('Renew the passport');
     // Real table elements, because that is the only layout Outlook honours.
@@ -106,7 +108,7 @@ describe('the digest', () => {
   it('says so plainly when there is nothing due', async () => {
     const email = await renderGroup(group('daily_digest', [summary()]));
 
-    expect(email.subject).toBe('Today: nothing due');
+    expect(email.subject).toBe('Nothing due today');
     expect(email.text).toContain('Nothing due and nothing late.');
   });
 
@@ -159,7 +161,7 @@ describe('a task reminder', () => {
 });
 
 describe('the nudge and the review', () => {
-  it('counts what is late', async () => {
+  it('names the oldest late task and counts the rest', async () => {
     const email = await renderGroup(
       group('overdue_nudge', [
         summary({
@@ -169,18 +171,18 @@ describe('the nudge and the review', () => {
       ]),
     );
 
-    expect(email.subject).toBe('2 tasks past due');
+    expect(email.subject).toBe('Water the plants, and 1 more past due');
     expect(email.text).toContain('Late:');
   });
 
-  it('counts what got done', async () => {
+  it('gives the week two numbers, since no one task is what it is about', async () => {
     const email = await renderGroup(
       group('weekly_review', [
         summary({ kind: 'weekly_review', completedThisWeek: 12, openTotal: 5 }),
       ]),
     );
 
-    expect(email.subject).toBe('Last week: 12 tasks done');
+    expect(email.subject).toBe('12 done last week, 5 still open');
     expect(email.text).toContain('12 tasks done, 5 tasks open');
   });
 });
@@ -315,7 +317,7 @@ describe('what 0013 added to the payload', () => {
 
     const email = await renderGroup(group('daily_digest', [old]));
 
-    expect(email.subject).toBe('Today: 1 task');
+    expect(email.subject).toBe('Water the plants, and nothing else today');
     expect(email.html).toContain('Water the plants');
     expect(email.html).toContain('Garden');
     // No project colour in that payload, so the dot falls back to the neutral one.
@@ -348,7 +350,8 @@ describe('every email', () => {
 
   it('signs the unsubscribe link with the token version from settings', async () => {
     const email = await renderGroup(group('daily_digest', [summary()]));
-    const token = email.unsubscribeUrl.split('t=')[1]!;
+    // Every grouped email has one. Only the sign-in code goes without.
+    const token = email.unsubscribeUrl!.split('t=')[1]!;
     const claims = JSON.parse(
       Buffer.from(token.split('.')[0]!, 'base64url').toString('utf8'),
     ) as { email: string; kind: string; version: number };

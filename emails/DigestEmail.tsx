@@ -63,7 +63,7 @@ export function DigestEmail({ payload, appUrl, unsubscribeUrl }: DigestEmailProp
       {overdue.length > 0 ? (
         <>
           <Heading>Late</Heading>
-          <TaskList items={overdue} localDate={localDate} showDay />
+          <TaskList items={overdue} localDate={localDate} showDay late />
         </>
       ) : null}
 

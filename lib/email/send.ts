@@ -59,13 +59,19 @@ export async function sendEmail(outgoing: Outgoing): Promise<SendOutcome> {
       subject,
       html: outgoing.html,
       text: outgoing.text,
-      headers: {
-        // RFC 8058. Gmail and Outlook show a native unsubscribe control when both
-        // headers are present, and a native control is the one people use instead
-        // of the spam button.
-        'List-Unsubscribe': `<${outgoing.unsubscribeUrl}>`,
-        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-      },
+      // RFC 8058. Gmail and Outlook show a native unsubscribe control when both
+      // headers are present, and a native control is the one people use instead
+      // of the spam button. Omitted entirely for a transactional send: offering
+      // to unsubscribe from your own sign-in code is offering to lock yourself
+      // out, and Gmail reads the header as proof this is bulk mail.
+      ...(outgoing.unsubscribeUrl
+        ? {
+            headers: {
+              'List-Unsubscribe': `<${outgoing.unsubscribeUrl}>`,
+              'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+            },
+          }
+        : {}),
     },
     { idempotencyKey: outgoing.idempotencyKey },
   );

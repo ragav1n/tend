@@ -89,27 +89,43 @@ by name and every session lands in the deadletter.
 
 ## Signing in
 
-**Sign-in is a six digit code, and the Supabase email templates have to carry one.**
-Add `{{ .Token }}` to **Magic Link** and to **Confirm signup** under Authentication >
-Emails. A returning user gets the first template and a first ever sign-in gets the
-second, so a token in only one of them leaves half the cases with an email that has
-no code in it.
-
-The link can stay in the template. It works in a browser reading its own email, and
-the callback still accepts both shapes. It cannot work in the installed app, and the
-reason is not a bug to be fixed:
+**Sign-in is a six digit code, not a link.** The link cannot work in the installed
+app, and the reason is not a bug to be fixed:
 
 * iOS gives a home screen web app its own storage container. A link tapped in Mail
   opens the browser, which is a different container, so the PKCE verifier the app
   wrote a minute ago is not there to exchange. That is `pkce_code_verifier_not_found`.
-* Even when the exchange works, the session lands in the browser. The app on the home
-  screen never saw the cookie and is still signed out.
-* There is no manifest escape hatch. `handle_links` is a Chromium feature, and iOS has
-  no equivalent and no API to ask for one.
+* Even when the exchange works, the session lands in the browser. The app on the
+  home screen never saw the cookie and is still signed out.
+* There is no manifest escape hatch. `handle_links` is a Chromium feature, and iOS
+  has no equivalent and no API to ask for one.
 
-A code goes through the person instead of through storage, so the session is written by
-the client that asked for it. `autoComplete="one-time-code"` puts it in the iOS
-QuickType bar, which makes it one tap rather than six digits.
+A code goes through the person instead of through storage, so the session is
+written by the client that asked for it. `autoComplete="one-time-code"` puts it in
+the iOS QuickType bar, which makes it one tap rather than six digits.
+
+### Turning the code email on
+
+The email is `emails/SignInEmail.tsx`, rendered by the same React Email path as
+every other email here and sent through Resend. Supabase never sends it, which
+takes two things off the table: editing HTML in a dashboard, and Supabase's
+built-in SMTP cap of two emails an hour.
+
+**1. Enable the hook.** Authentication > Hooks > **Send Email**, pointed at
+`https://your-app.vercel.app/api/webhooks/supabase-auth`.
+
+**2. Copy the signing secret** it generates into `AUTH_EMAIL_HOOK_SECRET` on
+Vercel, exactly as shown, `v1,whsec_` prefix and all.
+
+Nothing else. The auth email templates in the dashboard stop being used, so there
+is no `{{ .Token }}` to paste anywhere.
+
+**The rollback is one toggle.** Turn the hook off and Supabase goes back to its own
+templates immediately. Worth knowing, because with the hook on, a route that fails
+means no sign-in email: the route answers non-2xx on purpose rather than reporting
+a send that did not happen, so a failure is visible in the client instead of
+silent. `EMAIL_MODE=off`, which is the default outside production, is one of those
+failures.
 
 ## Turning notifications on
 

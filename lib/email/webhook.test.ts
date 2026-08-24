@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  readStandardWebhookHeaders,
   recipientOf,
   signSvix,
   suppressionReason,
@@ -77,5 +78,56 @@ describe('what counts as a suppression', () => {
     expect(recipientOf({ type: 'x', data: { to: ['me@example.com'] } })).toBe('me@example.com');
     expect(recipientOf({ type: 'x', data: { to: 'me@example.com' } })).toBe('me@example.com');
     expect(recipientOf({ type: 'x' })).toBeNull();
+  });
+});
+
+/**
+ * The same door, under the names Supabase Auth uses on it.
+ *
+ * Worth its own cases because the two differences are both silent: a header
+ * prefix, and a secret the dashboard prints with an extra `v1,` on the front.
+ * Getting either wrong produces a route that refuses everything, which looks
+ * exactly like a hook that was never enabled.
+ */
+describe('the Supabase send-email hook', () => {
+  const SUPABASE_SECRET = `v1,${SECRET}`;
+
+  it('reads the webhook- headers Supabase sends', () => {
+    const sent = headers();
+    const read = readStandardWebhookHeaders(
+      new Headers({
+        'webhook-id': sent.id,
+        'webhook-timestamp': sent.timestamp,
+        'webhook-signature': sent.signature,
+      }),
+    );
+
+    expect(read).toEqual(sent);
+    expect(verifySvix(BODY, read, SUPABASE_SECRET, NOW)).toBe(true);
+  });
+
+  it('accepts the secret with the v1, prefix the dashboard prints', () => {
+    expect(verifySvix(BODY, headers(), SUPABASE_SECRET, NOW)).toBe(true);
+    // And still accepts one pasted without it, since Resend prints it that way.
+    expect(verifySvix(BODY, headers(), SECRET, NOW)).toBe(true);
+  });
+
+  it('finds nothing when the svix- names are looked for instead', () => {
+    const sent = headers();
+    const read = readStandardWebhookHeaders(
+      new Headers({
+        'svix-id': sent.id,
+        'svix-timestamp': sent.timestamp,
+        'svix-signature': sent.signature,
+      }),
+    );
+
+    expect(read).toEqual({ id: null, timestamp: null, signature: null });
+    expect(verifySvix(BODY, read, SUPABASE_SECRET, NOW)).toBe(false);
+  });
+
+  it('still refuses a body that was changed after signing', () => {
+    const tampered = JSON.stringify({ type: 'email.delivered' });
+    expect(verifySvix(tampered, headers(), SUPABASE_SECRET, NOW)).toBe(false);
   });
 });
