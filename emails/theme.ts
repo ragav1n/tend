@@ -33,8 +33,8 @@ export const email = {
 export const fonts = {
   body: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
   serif: "Georgia, 'Times New Roman', Times, serif",
-  // For the sign-in code and nothing else. Every glyph the same width, so six
-  // digits read as six digits rather than as a word, and 1 cannot be an l.
+  // For the sign-in code and nothing else. Every glyph the same width, so the
+  // digits read as digits rather than as a word, and 1 cannot be an l.
   mono: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace",
 } as const;
 

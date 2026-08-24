@@ -2,20 +2,30 @@
 
 import { getSupabase } from './client';
 
-/** How many digits Supabase puts in an emailed sign-in code. */
-export const CODE_LENGTH = 6;
+/**
+ * How long an emailed code may be.
+ *
+ * **Not six.** The length is a project setting (Authentication > Sign In /
+ * Providers > Email > Email OTP Length) and Supabase allows six to ten. Assuming
+ * six here is the bug that shipped: a project set to eight sent an eight digit
+ * code, `normalizeCode` cut it to six, and the code in the email could never
+ * verify. Nothing in the client can read that setting, so the client has to
+ * accept the whole range instead of picking a number out of it.
+ */
+export const MIN_CODE = 6;
+export const MAX_CODE = 10;
 
 /**
- * Digits only, capped at the length of a real code.
+ * Digits only, capped at the longest code a project can be set to issue.
  *
  * People paste rather than type, and a pasted code arrives with whatever the
  * mail client had around it: a leading space, a trailing newline, sometimes the
- * whole "Your code is 123456" sentence. Stripping here means the button enables
+ * whole "Your code is 12345678" sentence. Stripping here means the button enables
  * itself when the code is actually complete instead of waiting for a character
  * that is never coming.
  */
 export function normalizeCode(input: string): string {
-  return input.replace(/\D/g, '').slice(0, CODE_LENGTH);
+  return input.replace(/\D/g, '').slice(0, MAX_CODE);
 }
 
 /**

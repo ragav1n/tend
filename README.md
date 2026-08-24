@@ -89,7 +89,7 @@ by name and every session lands in the deadletter.
 
 ## Signing in
 
-**Sign-in is a six digit code, not a link.** The link cannot work in the installed
+**Sign-in is an emailed code, not a link.** The link cannot work in the installed
 app, and the reason is not a bug to be fixed:
 
 * iOS gives a home screen web app its own storage container. A link tapped in Mail
@@ -102,7 +102,16 @@ app, and the reason is not a bug to be fixed:
 
 A code goes through the person instead of through storage, so the session is
 written by the client that asked for it. `autoComplete="one-time-code"` puts it in
-the iOS QuickType bar, which makes it one tap rather than six digits.
+the iOS QuickType bar, which makes it one tap rather than a row of digits.
+
+**The client never assumes how many digits.** The length is a project setting
+(Authentication > Sign In / Providers > Email > **Email OTP Length**) and Supabase
+allows six to ten. Nothing in the browser can read it, so `normalizeCode` accepts
+the whole range. Hardcoding six is exactly the bug that shipped in 0.44.0: a
+project set to eight mailed eight digits, the field kept six, and the only symptom
+was Supabase reporting an invalid token, which points at everything except the
+cause. The email states the count, because that template is holding the code and
+`code.length` is the one place the number is known for certain.
 
 ### Turning the code email on
 

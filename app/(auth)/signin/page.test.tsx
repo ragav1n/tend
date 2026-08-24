@@ -45,7 +45,7 @@ async function requestCode() {
     target: { value: 'a@b.com' },
   });
   fireEvent.click(screen.getByRole('button', { name: /email me a code/i }));
-  return waitFor(() => screen.getByLabelText('Sign-in code'));
+  return waitFor(() => screen.getByLabelText('Code'));
 }
 
 describe('sign in', () => {
@@ -61,7 +61,7 @@ describe('sign in', () => {
     });
   });
 
-  it('holds the button until the code is whole', async () => {
+  it('holds the button until the code reaches the shortest one Supabase mints', async () => {
     const field = await requestCode();
     const submit = screen.getByRole('button', { name: /^sign in$/i });
 
@@ -72,6 +72,37 @@ describe('sign in', () => {
 
     fireEvent.change(field, { target: { value: '123456' } });
     expect(submit).toHaveProperty('disabled', false);
+  });
+
+  /**
+   * The regression, at the level somebody actually hit it.
+   *
+   * A project set to eight digits mails eight. The field used to keep six, so the
+   * code in the email was unusable and the only symptom was Supabase saying the
+   * token was invalid, which points at everything except the real cause.
+   */
+  it('keeps all eight digits when the project issues eight', async () => {
+    const field = await requestCode();
+
+    fireEvent.change(field, { target: { value: '48291573' } });
+    expect(field).toHaveProperty('value', '48291573');
+
+    fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/today'));
+    expect(verifyOtp).toHaveBeenCalledWith({
+      email: 'a@b.com',
+      token: '48291573',
+      type: 'email',
+    });
+  });
+
+  it('promises nothing about the length, since it cannot read the setting', async () => {
+    await requestCode();
+
+    // No placeholder saying 000000, and no copy saying six.
+    expect(screen.getByLabelText('Code')).toHaveProperty('placeholder', '');
+    expect(document.body.textContent).not.toMatch(/six digits/i);
   });
 
   it('verifies in this browsing context and then reloads into the app', async () => {
@@ -98,6 +129,6 @@ describe('sign in', () => {
     await waitFor(() => screen.getByRole('alert'));
     expect(screen.getByRole('alert').textContent).toContain('expired or is invalid');
     expect(replace).not.toHaveBeenCalled();
-    expect(screen.getByLabelText('Sign-in code')).toBeTruthy();
+    expect(screen.getByLabelText('Code')).toBeTruthy();
   });
 });

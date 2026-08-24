@@ -71,7 +71,7 @@ export function authCodeText(code: string, appName: string, appUrl: string): str
   return [
     `Your ${appName} sign-in code is ${code}`,
     '',
-    'Type it into the tab or the app you asked from.',
+    `Type all ${code.length} digits into the tab or the app you asked from.`,
     'It expires in an hour and works once.',
     '',
     `You asked to sign in to ${appName}. If that was not you, nothing has happened:`,

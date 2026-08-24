@@ -7,7 +7,7 @@ import { ArrowRight, EnvelopeSimple, GoogleLogo } from '@phosphor-icons/react/di
 import { APP_NAME, APP_TAGLINE } from '@/lib/config';
 import { MarkTile } from '@/components/brand/Mark';
 import { getSupabase } from '@/lib/supabase/client';
-import { CODE_LENGTH, normalizeCode, verifyEmailCode } from '@/lib/supabase/verify-code';
+import { MIN_CODE, normalizeCode, verifyEmailCode } from '@/lib/supabase/verify-code';
 import { FADE, PRESS_DEPTH, QUICK_FADE } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 
@@ -95,7 +95,10 @@ function SignInForm() {
 
   async function verify(event: React.FormEvent) {
     event.preventDefault();
-    if (code.length < CODE_LENGTH || busy) return;
+    // A floor, not a length. How many digits the project issues is a dashboard
+    // setting this page cannot read, so it accepts anything from the shortest
+    // Supabase will mint upwards.
+    if (code.length < MIN_CODE || busy) return;
 
     setBusy(true);
     clearError();
@@ -139,24 +142,25 @@ function SignInForm() {
               <EnvelopeSimple size={26} className="mx-auto mb-3 text-olive-300" aria-hidden />
               <p className="text-sm text-text-hi">Enter the code we sent</p>
               <p className="mx-auto mt-1.5 max-w-[32ch] text-xs text-text-lo">
-                Six digits, sent to {email.trim()}. It expires in an hour.
+                Sent to {email.trim()}. It expires in an hour.
               </p>
             </div>
 
             <form onSubmit={verify} className="mt-4 space-y-2.5">
-              <label htmlFor="code" className="sr-only">
-                Sign-in code
+              <label htmlFor="code" className="label !text-[0.5625rem]">
+                Code
               </label>
               <input
                 id="code"
                 name="code"
                 value={code}
                 onChange={(e) => setCode(normalizeCode(e.target.value))}
-                placeholder="000000"
+                // No placeholder. A row of six zeroes was a promise about the
+                // length, and the length is a dashboard setting.
                 inputMode="numeric"
                 // iOS reads the code out of Mail and offers it above the
-                // keyboard, which turns six digits into one tap. It only does
-                // that for this autocomplete token.
+                // keyboard, which turns the whole thing into one tap. It only
+                // does that for this autocomplete token.
                 autoComplete="one-time-code"
                 enterKeyHint="go"
                 autoFocus
@@ -166,7 +170,7 @@ function SignInForm() {
               />
               <motion.button
                 type="submit"
-                disabled={busy || code.length < CODE_LENGTH}
+                disabled={busy || code.length < MIN_CODE}
                 whileTap={{ y: 1 }}
                 transition={PRESS_DEPTH}
                 className={PRIMARY}
@@ -267,8 +271,8 @@ function SignInForm() {
             {errorCode === 'pkce_code_verifier_not_found' && (
               <p className="text-xs text-text-lo">
                 That link opened somewhere other than where it was asked for, and
-                an installed app counts as somewhere else. Use the six digit code
-                in the same email instead.
+                an installed app counts as somewhere else. Use the code in the
+                same email instead.
               </p>
             )}
             {errorCode && <p className="tnum text-[0.625rem] text-text-faint">{errorCode}</p>}

@@ -20,6 +20,11 @@ import { email, fonts } from './theme';
  * `expiry` is a string rather than a computed time. The token's real lifetime is
  * a project setting, and printing a clock time this side of it would be a
  * confident guess about somebody else's configuration.
+ *
+ * The digit count is the one thing here that can be stated exactly, because this
+ * template is holding the code: `code.length` is the truth, where the sign-in page
+ * can only guess. It is worth saying, since it tells somebody typing it in when
+ * they are done.
  */
 export function SignInEmail({
   code,
@@ -50,7 +55,7 @@ export function SignInEmail({
         </Text>
         <Text style={{ fontSize: 15, lineHeight: '22px', color: email.textSoft, margin: '4px 0 0' }}>
           Type it into the tab or the app you asked from. It works on the phone, the
-          laptop, anywhere, as long as it is the same six digits.
+          laptop, anywhere, as long as it is the same code.
         </Text>
       </Section>
 
@@ -98,8 +103,8 @@ export function SignInEmail({
 
       <Section style={{ backgroundColor: email.surface, paddingTop: 18 }}>
         <Text style={{ fontSize: 13, lineHeight: '20px', color: email.textSoft, margin: 0 }}>
-          It expires in {expiry} and works once. Asking for another one replaces it,
-          so use the newest email if you asked twice.
+          All {code.length} digits. It expires in {expiry} and works once. Asking for
+          another one replaces it, so use the newest email if you asked twice.
         </Text>
       </Section>
     </Shell>
