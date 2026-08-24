@@ -7,6 +7,7 @@ import { ArrowRight, EnvelopeSimple, GoogleLogo } from '@phosphor-icons/react/di
 import { APP_NAME, APP_TAGLINE } from '@/lib/config';
 import { MarkTile } from '@/components/brand/Mark';
 import { getSupabase } from '@/lib/supabase/client';
+import { CODE_LENGTH, normalizeCode, verifyEmailCode } from '@/lib/supabase/verify-code';
 import { FADE, PRESS_DEPTH, QUICK_FADE } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 
@@ -18,10 +19,17 @@ import { cn } from '@/lib/utils';
  * Signing in adds sync; it does not unlock the app. That is why this page is
  * reached from the sync badge rather than from a redirect.
  *
- * Two methods, and the order is on purpose. The magic link needs no
- * configuration at all, so it works the moment a Supabase project exists.
- * Google needs a client id and secret pasted into the dashboard first, so its
- * button explains itself when the project has not been set up for it.
+ * The email step ends in a code box rather than in "check your email", because
+ * an installed app cannot be signed in by a link. The link opens the browser,
+ * which on iOS is a different storage container, so the session it creates is
+ * not the app's session and the PKCE verifier the app wrote is not there to
+ * exchange. `verifyEmailCode` carries the whole explanation. The email still
+ * carries a link for anyone reading it on the same browser they asked from; the
+ * code is what works everywhere, so the code is what the form asks for.
+ *
+ * Google is second because it needs a client id and secret pasted into the
+ * dashboard first, so its button explains itself when the project has not been
+ * set up for it.
  */
 
 const CONTROL = cn(
@@ -30,50 +38,78 @@ const CONTROL = cn(
   'focus:border-clay-400 focus:outline-none',
 );
 
+const PRIMARY = cn(
+  'flex w-full items-center justify-center gap-2 rounded-md border border-clay-400',
+  'bg-clay-600 px-3 py-2.5 text-sm text-on-accent hover:bg-clay-500',
+  'disabled:opacity-60',
+);
+
 function SignInForm() {
   const params = useSearchParams();
   const [email, setEmail] = useState('');
-  const [sent, setSent] = useState(false);
+  const [code, setCode] = useState('');
+  const [stage, setStage] = useState<'email' | 'code'>('email');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(params.get('error'));
-  const errorCode = params.get('code');
+  // Whether the message on screen is still the one the callback redirected with.
+  // The two hints below explain a failed *link*, so they have to stop showing
+  // the moment a failed code replaces it, or a wrong digit gets told the link
+  // opened in the wrong browser.
+  const [fromLink, setFromLink] = useState(params.get('error') !== null);
+  const errorCode = fromLink ? params.get('code') : null;
 
-  async function sendLink(event: React.FormEvent) {
-    event.preventDefault();
+  function fail(message: string) {
+    setFromLink(false);
+    setError(message);
+  }
+
+  function clearError() {
+    setFromLink(false);
+    setError(null);
+  }
+
+  async function sendCode(event?: React.FormEvent) {
+    event?.preventDefault();
     if (email.trim().length === 0 || busy) return;
 
     setBusy(true);
-    setError(null);
+    clearError();
     const { error: failure } = await getSupabase().auth.signInWithOtp({
       email: email.trim(),
-      // The default Supabase email template sends people through its own
-      // verify endpoint, which hands back a PKCE code, so this points at the
-      // callback. Both routes accept either shape, so customizing the
-      // template to {{ .TokenHash }} later needs no change here.
+      // The link is the second way in, not the first, and it only ever works in
+      // the browser that asked for it. Pointed at the callback because the
+      // default Supabase template sends people through its own verify endpoint,
+      // which hands back a PKCE code. Both routes accept either shape, so
+      // customizing the template to {{ .TokenHash }} later needs no change here.
       options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/today` },
     });
     setBusy(false);
 
     if (failure) {
-      setError(failure.message);
+      fail(failure.message);
       return;
     }
-    setSent(true);
+    setCode('');
+    setStage('code');
   }
 
-  async function withGoogle() {
-    setError(null);
-    const { error: failure } = await getSupabase().auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback?next=/today` },
-    });
+  async function verify(event: React.FormEvent) {
+    event.preventDefault();
+    if (code.length < CODE_LENGTH || busy) return;
+
+    setBusy(true);
+    clearError();
+    const failure = await verifyEmailCode(email.trim(), code);
+
     if (failure) {
-      setError(
-        failure.message.includes('not enabled')
-          ? 'Google is not enabled on this Supabase project yet. The email link works now.'
-          : failure.message,
-      );
+      setBusy(false);
+      fail(failure);
+      return;
     }
+    // A full navigation rather than a router push, so the server sees the
+    // session cookie the client just wrote and the shell renders signed in on
+    // its first paint. `replace`, so back does not land on a spent code.
+    window.location.replace('/today');
   }
 
   return (
@@ -93,29 +129,79 @@ function SignInForm() {
         className="rounded-lg border border-line bg-surface p-5"
         style={{ boxShadow: 'var(--shadow-raised)' }}
       >
-        {sent ? (
+        {stage === 'code' ? (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={QUICK_FADE}
-            className="py-4 text-center"
           >
-            <EnvelopeSimple size={26} className="mx-auto mb-3 text-olive-300" aria-hidden />
-            <p className="text-sm text-text-hi">Check your email</p>
-            <p className="mx-auto mt-1.5 max-w-[30ch] text-xs text-text-lo">
-              The link signs you in and comes straight back here. It expires in an hour.
-            </p>
-            <button
-              type="button"
-              onClick={() => setSent(false)}
-              className="label mt-4 !text-[0.5625rem] hover:text-text-mid"
-            >
-              Use a different address
-            </button>
+            <div className="pb-1 text-center">
+              <EnvelopeSimple size={26} className="mx-auto mb-3 text-olive-300" aria-hidden />
+              <p className="text-sm text-text-hi">Enter the code we sent</p>
+              <p className="mx-auto mt-1.5 max-w-[32ch] text-xs text-text-lo">
+                Six digits, sent to {email.trim()}. It expires in an hour.
+              </p>
+            </div>
+
+            <form onSubmit={verify} className="mt-4 space-y-2.5">
+              <label htmlFor="code" className="sr-only">
+                Sign-in code
+              </label>
+              <input
+                id="code"
+                name="code"
+                value={code}
+                onChange={(e) => setCode(normalizeCode(e.target.value))}
+                placeholder="000000"
+                inputMode="numeric"
+                // iOS reads the code out of Mail and offers it above the
+                // keyboard, which turns six digits into one tap. It only does
+                // that for this autocomplete token.
+                autoComplete="one-time-code"
+                enterKeyHint="go"
+                autoFocus
+                required
+                className={cn(CONTROL, 'tnum text-center text-lg tracking-[0.35em]')}
+                style={{ boxShadow: 'var(--shadow-sunken)' }}
+              />
+              <motion.button
+                type="submit"
+                disabled={busy || code.length < CODE_LENGTH}
+                whileTap={{ y: 1 }}
+                transition={PRESS_DEPTH}
+                className={PRIMARY}
+                style={{ boxShadow: 'var(--shadow-flush)' }}
+              >
+                {busy ? 'Signing in' : 'Sign in'}
+                {!busy && <ArrowRight size={15} weight="bold" aria-hidden />}
+              </motion.button>
+            </form>
+
+            <div className="mt-4 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => void sendCode()}
+                disabled={busy}
+                className="label !text-[0.5625rem] hover:text-text-mid disabled:opacity-60"
+              >
+                Send another
+              </button>
+              <span className="h-3 w-px bg-line" />
+              <button
+                type="button"
+                onClick={() => {
+                  setStage('email');
+                  clearError();
+                }}
+                className="label !text-[0.5625rem] hover:text-text-mid"
+              >
+                Change email
+              </button>
+            </div>
           </motion.div>
         ) : (
           <>
-            <form onSubmit={sendLink} className="space-y-2.5">
+            <form onSubmit={sendCode} className="space-y-2.5">
               <label htmlFor="email" className="label !text-[0.5625rem]">
                 Email
               </label>
@@ -136,14 +222,10 @@ function SignInForm() {
                 disabled={busy}
                 whileTap={{ y: 1 }}
                 transition={PRESS_DEPTH}
-                className={cn(
-                  'flex w-full items-center justify-center gap-2 rounded-md border border-clay-400',
-                  'bg-clay-600 px-3 py-2.5 text-sm text-on-accent hover:bg-clay-500',
-                  'disabled:opacity-60',
-                )}
+                className={PRIMARY}
                 style={{ boxShadow: 'var(--shadow-flush)' }}
               >
-                {busy ? 'Sending' : 'Send a sign-in link'}
+                {busy ? 'Sending' : 'Email me a code'}
                 {!busy && <ArrowRight size={15} weight="bold" aria-hidden />}
               </motion.button>
             </form>
@@ -156,7 +238,7 @@ function SignInForm() {
 
             <motion.button
               type="button"
-              onClick={() => void withGoogle()}
+              onClick={() => void withGoogle(fail, clearError)}
               whileTap={{ y: 1 }}
               transition={PRESS_DEPTH}
               className={cn(
@@ -173,9 +255,9 @@ function SignInForm() {
         {error && (
           <div role="alert" className="mt-3 space-y-1">
             <p className="text-xs text-clay-200">{error}</p>
-            {/* Two failures have causes worth naming, because Supabase's own
-                wording for both describes the mechanism rather than the thing
-                the person actually did. */}
+            {/* Three failures have causes worth naming, because Supabase's own
+                wording for all of them describes the mechanism rather than the
+                thing the person actually did. */}
             {errorCode === 'otp_expired' && (
               <p className="text-xs text-text-lo">
                 Sign-in links are single use, and some mail providers open them
@@ -184,9 +266,9 @@ function SignInForm() {
             )}
             {errorCode === 'pkce_code_verifier_not_found' && (
               <p className="text-xs text-text-lo">
-                The link has to open in the same browser you asked for it from.
-                A private window counts as a different browser, and so does
-                opening it on your phone. Request one here and click it here.
+                That link opened somewhere other than where it was asked for, and
+                an installed app counts as somewhere else. Use the six digit code
+                in the same email instead.
               </p>
             )}
             {errorCode && <p className="tnum text-[0.625rem] text-text-faint">{errorCode}</p>}
@@ -199,6 +281,23 @@ function SignInForm() {
       </p>
     </motion.div>
   );
+}
+
+/** Google is a redirect rather than a code, and a redirect out of an installed
+ *  app comes back to it, because the browser is only ever a passenger here. */
+async function withGoogle(fail: (message: string) => void, clearError: () => void) {
+  clearError();
+  const { error: failure } = await getSupabase().auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: `${window.location.origin}/auth/callback?next=/today` },
+  });
+  if (failure) {
+    fail(
+      failure.message.includes('not enabled')
+        ? 'Google is not enabled on this Supabase project yet. The email code works now.'
+        : failure.message,
+    );
+  }
 }
 
 export default function SignInPage() {

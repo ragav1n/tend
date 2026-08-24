@@ -87,6 +87,30 @@ Focus sessions sync like everything else, so the weekly total counts the laptop 
 phone. That needs `0016_focus_sessions.sql` applied: without it the server rejects the table
 by name and every session lands in the deadletter.
 
+## Signing in
+
+**Sign-in is a six digit code, and the Supabase email templates have to carry one.**
+Add `{{ .Token }}` to **Magic Link** and to **Confirm signup** under Authentication >
+Emails. A returning user gets the first template and a first ever sign-in gets the
+second, so a token in only one of them leaves half the cases with an email that has
+no code in it.
+
+The link can stay in the template. It works in a browser reading its own email, and
+the callback still accepts both shapes. It cannot work in the installed app, and the
+reason is not a bug to be fixed:
+
+* iOS gives a home screen web app its own storage container. A link tapped in Mail
+  opens the browser, which is a different container, so the PKCE verifier the app
+  wrote a minute ago is not there to exchange. That is `pkce_code_verifier_not_found`.
+* Even when the exchange works, the session lands in the browser. The app on the home
+  screen never saw the cookie and is still signed out.
+* There is no manifest escape hatch. `handle_links` is a Chromium feature, and iOS has
+  no equivalent and no API to ask for one.
+
+A code goes through the person instead of through storage, so the session is written by
+the client that asked for it. `autoComplete="one-time-code"` puts it in the iOS
+QuickType bar, which makes it one tap rather than six digits.
+
 ## Turning notifications on
 
 Two variables and one migration. The scheduling is the same pipeline the emails

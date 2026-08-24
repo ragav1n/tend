@@ -36,6 +36,11 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: '#111316',
     orientation: 'portrait',
     categories: ['productivity'],
+    // Send a tapped in-scope link to the installed app instead of a browser tab.
+    // Chromium honours this; iOS has nothing equivalent and no API to ask for
+    // one, which is why sign-in is a code rather than a link. Not in Next's
+    // Manifest type yet, hence the widening.
+    handle_links: 'preferred',
     icons: [
       { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
@@ -58,5 +63,5 @@ export default function manifest(): MetadataRoute.Manifest {
       { name: 'Today', short_name: 'Today', url: '/today' },
       { name: 'Inbox', short_name: 'Inbox', url: '/inbox' },
     ],
-  };
+  } as MetadataRoute.Manifest;
 }
