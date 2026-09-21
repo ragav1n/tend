@@ -159,6 +159,42 @@ subscription row is the state, so switching it off on a laptop leaves a phone
 alone. Once any device is subscribed, turning email off keeps the reminders
 coming, and a hard bounce stops the mail without stopping the notification.
 
+## Turning mail to task on
+
+Forward anything to a capture address and it lands in your Inbox. The subject is
+read the way the quick-add field reads it, so `Read chapter 4 tomorrow !p2
++cs6035` arrives dated, prioritised and filed under the course.
+
+1. In Resend, open **Receiving** and create a managed address. It looks like
+   `<alias>@<id>.resend.app` and needs **no DNS record**, which is the reason
+   this is the integration rather than a domain of its own.
+2. Add a webhook for the `email.received` event pointing at
+   `/api/webhooks/resend-inbound`, and put its signing secret in
+   `RESEND_INBOUND_SECRET`.
+3. Put the address itself in `NEXT_PUBLIC_CAPTURE_ADDRESS` so Settings can show
+   it to you. It is public because it is printed on screen, and safe to be,
+   because it only accepts mail from you.
+
+Without the secret the route refuses every request, which fails safe: no
+signature, no capture.
+
+**What guards it.** An inbound address is guessable and unauthenticated by
+construction, so two things stand in front of it. The Svix signature proves the
+request came from Resend, and the `From` address has to match the one on your
+account. A `From` header is forgeable, so the second check stops casual noise
+and somebody who knows your address, not a determined forger. The blast radius
+is a task in your own Inbox, and `capture_email` caps it at 50 a day.
+
+**Checking it.** A captured task carries `feed_uid` beginning `mail:`, so:
+
+```sql
+select title, created_at from public.tasks
+ where feed_uid like 'mail:%' order by created_at desc limit 10;
+```
+
+The message id is the identity, so a webhook Resend retries leaves one row
+rather than two, and a capture you delete stays deleted.
+
 ## Turning reminders on
 
 The scheduling lives in Postgres and the sending lives in Vercel, so both sides need

@@ -19,6 +19,7 @@ import { Segmented } from '@/components/ui/Segmented';
 import { Toggle } from '@/components/ui/Toggle';
 import { controlClass } from '@/components/ui/Field';
 import { ViewHeader } from '@/components/views/ViewHeader';
+import { CaptureAddress } from '@/components/courses/CaptureAddress';
 import { FeedSettings } from '@/components/courses/FeedSettings';
 import { ModelSettings } from '@/components/courses/ModelSettings';
 import { CapacityRow } from '@/components/views/CapacityRow';
@@ -251,6 +252,7 @@ export default function SettingsPage() {
 
       <Group title="Coursework" icon={GraduationCap}>
         <FeedSettings />
+        <CaptureAddress />
       </Group>
 
       <Group title="Local model" icon={Sparkle}>
