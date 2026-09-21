@@ -9,6 +9,9 @@ import { TaskList } from '@/components/views/TaskList';
 import { useDueBetween } from '@/hooks/use-tasks';
 import { useCourseEvents } from '@/hooks/use-courses';
 import { DayEvents } from '@/components/courses/DayEvents';
+import { useWorkload } from '@/hooks/use-workload';
+import { UnplannedTray } from '@/components/views/UnplannedTray';
+import { useSomedayList } from '@/hooks/use-tasks';
 import { usePrefs } from '@/hooks/use-prefs';
 import { useUiStore } from '@/hooks/use-ui';
 import { gridRange, groupByDate, monthLabel, monthOf, shiftMonth } from '@/lib/calendar/grid';
@@ -56,6 +59,16 @@ export default function CalendarPage() {
   // `byDay` or the task list: they mark the day and sit above it.
   const events = useCourseEvents(from, to);
   const eventsByDay = useMemo(() => groupByDate(events, (event) => event.startsOn), [events]);
+
+  // A month of bars would be a smear, so the grid gets a pip per cell instead:
+  // the state, not the number. Thirty-five days so the whole grid is covered.
+  const workload = useWorkload(35);
+  // Dateless open work, which is exactly what Someday holds.
+  const unplanned = useSomedayList();
+  const loadByDay = useMemo(
+    () => new Map(workload.days.map((day) => [day.date, day.state])),
+    [workload.days],
+  );
 
   function select(day: PlainDate) {
     setSelected(day);
@@ -114,6 +127,8 @@ export default function CalendarPage() {
         </div>
       </header>
 
+      <UnplannedTray tasks={unplanned} onSchedule={reschedule} onOpen={openTask} />
+
       <CalendarMonth
         month={month}
         weekStart={prefs.weekStart}
@@ -124,6 +139,7 @@ export default function CalendarPage() {
         onMove={reschedule}
         onOpen={openTask}
         eventsByDay={eventsByDay}
+        loadByDay={loadByDay}
       />
 
       <section className="mt-7">
@@ -139,6 +155,7 @@ export default function CalendarPage() {
 
         <TaskList
           tasks={dayTasks}
+          slack={workload.byDay}
           empty={<EmptyState icon={CalendarBlank} title="Nothing due on this day" />}
         />
       </section>

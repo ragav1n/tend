@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NO_DUE_DAY, NO_PROJECT, type Task } from '@/lib/db/types';
-import {
-  applyView,
-  describeFilter,
-  matchesFilter,
-  sortTasks,
-  type ViewFilter,
-} from './filter';
+import { applyView, describeFilter, matchesFilter, sortByPressure, sortTasks, type ViewFilter } from './filter';
 
 const TODAY = '2026-08-20';
 
@@ -232,5 +226,54 @@ describe('describeFilter', () => {
 
   it('names Inbox rather than an empty string', () => {
     expect(describeFilter({ projectId: NO_PROJECT }, names)).toBe('Inbox');
+  });
+});
+
+describe('sorting by pressure', () => {
+  const dated = (id: string, day: string) =>
+    ({ ...task({ id }), _dueDay: day }) as ReturnType<typeof task>;
+
+  it('puts the tightest deadline first, not the soonest', () => {
+    // The whole reason this mode exists. Friday is under more pressure than
+    // Wednesday when four days of committed work sit in front of it.
+    const wednesday = dated('wed', '2026-09-23');
+    const friday = dated('fri', '2026-09-25');
+    const slack = new Map([
+      ['2026-09-23', { slack: 300 }],
+      ['2026-09-25', { slack: -120 }],
+    ]);
+
+    expect(sortByPressure([wednesday, friday], slack).map((t) => t.id)).toEqual(['fri', 'wed']);
+  });
+
+  it('sorts undated work last rather than first', () => {
+    // A missing value read as a number would put it at the front, which is the
+    // opposite of true: nothing undated is under deadline pressure.
+    const soon = dated('soon', '2026-09-23');
+    const parked = task({ id: 'parked' });
+    const slack = new Map([['2026-09-23', { slack: -60 }]]);
+
+    expect(sortByPressure([parked, soon], slack).map((t) => t.id)).toEqual(['soon', 'parked']);
+  });
+
+  it('falls back to due order for days it knows nothing about', () => {
+    const a = dated('a', '2026-09-25');
+    const b = dated('b', '2026-09-22');
+    expect(sortByPressure([a, b], new Map()).map((t) => t.id)).toEqual(['b', 'a']);
+  });
+
+  it('breaks a tie the same way every other sort does', () => {
+    const a = dated('a', '2026-09-23');
+    const b = dated('b', '2026-09-23');
+    const slack = new Map([['2026-09-23', { slack: -60 }]]);
+    const once = sortByPressure([a, b], slack).map((t) => t.id);
+    const again = sortByPressure([b, a], slack).map((t) => t.id);
+    expect(once).toEqual(again);
+  });
+
+  it('leaves the input alone', () => {
+    const rows = [dated('a', '2026-09-25'), dated('b', '2026-09-22')];
+    sortByPressure(rows, new Map());
+    expect(rows.map((t) => t.id)).toEqual(['a', 'b']);
   });
 });

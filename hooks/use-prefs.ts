@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { getDb } from '@/lib/db/client';
 import { updatePrefs } from '@/lib/db/mutations';
-import { DEFAULT_PREFS, deviceTimezone, PREFS_ID } from '@/lib/db/prefs';
+import { deviceTimezone, PREFS_ID, withPrefDefaults } from '@/lib/db/prefs';
 import type { Prefs } from '@/lib/db/types';
 
 /**
@@ -15,7 +15,7 @@ import type { Prefs } from '@/lib/db/types';
  * fill in a frame later.
  */
 export function usePrefs(): Prefs {
-  return useLiveQuery(() => getDb().prefs.get(PREFS_ID), [], undefined) ?? DEFAULT_PREFS;
+  return withPrefDefaults(useLiveQuery(() => getDb().prefs.get(PREFS_ID), [], undefined));
 }
 
 /**

@@ -25,7 +25,7 @@ export type StatusScope = 'open' | 'done' | 'any';
  */
 export type DueWindow = 'any' | 'overdue' | 'today' | 'week' | 'month' | 'none' | 'dated';
 
-export type ViewSort = 'manual' | 'due' | 'priority' | 'created' | 'title';
+export type ViewSort = 'manual' | 'due' | 'priority' | 'created' | 'title' | 'pressure';
 
 export interface ViewFilter {
   status?: StatusScope;
@@ -137,7 +137,36 @@ export function sortTasks(tasks: readonly Task[], sort: ViewSort): Task[] {
       return rows.sort(
         (a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }) || compareRank(a, b),
       );
+    case 'pressure':
+      // Tightest first, which is not the same as soonest. A task due Friday
+      // behind four days of committed work is under more pressure than one due
+      // Wednesday with nothing before it, and sorting by date hides that.
+      //
+      // Slack needs capacity and every other deadline, so it is not derivable
+      // from one row here. Without it this falls back to due order, which is
+      // the honest degradation: `sortTasks` is pure and stays that way.
+      return rows.sort((a, b) => a._dueDay.localeCompare(b._dueDay) || compareRank(a, b));
   }
+}
+
+/**
+ * Tightest deadline first, given the slack the page worked out.
+ *
+ * Separate from `sortTasks` because it needs an argument that function does not
+ * take, and threading capacity through every sort to serve one mode would make
+ * the pure comparator impure for all of them.
+ */
+export function sortByPressure(
+  tasks: readonly Task[],
+  slack: ReadonlyMap<string, { slack: number }>,
+): Task[] {
+  return [...tasks].sort((a, b) => {
+    // Undated work is under no deadline pressure, so it sorts last rather than
+    // first, which a plain numeric compare on a missing value would do.
+    const left = slack.get(a._dueDay)?.slack ?? Number.POSITIVE_INFINITY;
+    const right = slack.get(b._dueDay)?.slack ?? Number.POSITIVE_INFINITY;
+    return left - right || a._dueDay.localeCompare(b._dueDay) || compareRank(a, b);
+  });
 }
 
 export function applyView(

@@ -20,7 +20,14 @@ import type { ViewSort } from './filter';
 
 const PREFIX = 'tend.sort.';
 
-const SORTS: readonly ViewSort[] = ['manual', 'due', 'priority', 'created', 'title'];
+const SORTS: readonly ViewSort[] = [
+  'manual',
+  'due',
+  'priority',
+  'created',
+  'title',
+  'pressure',
+];
 
 /** The list's own order, which is the one the reorder carets write. */
 export const DEFAULT_SORT: ViewSort = 'manual';
@@ -32,6 +39,7 @@ export const SORT_LABEL: Record<ViewSort, string> = {
   priority: 'Priority',
   created: 'Newest first',
   title: 'Name',
+  pressure: 'Tightest first',
 };
 
 export function sortStorageKey(route: string): string {

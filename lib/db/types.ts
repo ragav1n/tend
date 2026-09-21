@@ -451,6 +451,13 @@ export interface Prefs {
   weeklyReviewDay: number;
   weeklyReviewTime: PlainTime;
   maxReminderEmailsPerDay: number;
+
+  /** Minutes of real work in a work day. Hours of work, not hours awake: a
+   *  capacity set to eight tells you everything is fine right up to the week it
+   *  is not, which is the opposite of the point. */
+  dailyCapacityMinutes: number;
+  /** ISO weekdays that carry capacity, 1 Monday through 7 Sunday. */
+  workDays: number[];
   /** Server-owned in practice: bumping it revokes every unsubscribe link. */
   emailTokenVersion: number;
 

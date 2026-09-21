@@ -10,6 +10,7 @@ import {
   Globe,
   GraduationCap,
   HardDrives,
+  Hourglass,
   MoonStars,
   SignOut,
 } from '@phosphor-icons/react/dist/ssr';
@@ -18,6 +19,7 @@ import { Toggle } from '@/components/ui/Toggle';
 import { controlClass } from '@/components/ui/Field';
 import { ViewHeader } from '@/components/views/ViewHeader';
 import { FeedSettings } from '@/components/courses/FeedSettings';
+import { CapacityRow } from '@/components/views/CapacityRow';
 import { signOut, useAccountEmail } from '@/hooks/use-account';
 import { useAppUpdate } from '@/hooks/use-app-update';
 import { usePrefs } from '@/hooks/use-prefs';
@@ -247,6 +249,10 @@ export default function SettingsPage() {
 
       <Group title="Coursework" icon={GraduationCap}>
         <FeedSettings />
+      </Group>
+
+      <Group title="Your week" icon={Hourglass}>
+        <CapacityRow />
       </Group>
 
       <Group title="Time" icon={Globe}>

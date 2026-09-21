@@ -10,6 +10,7 @@ import { CALENDAR_ACTIONS, chordIndex, inScope, typingSafe } from '@/lib/keys/ma
 import { useHotkeys } from '@/hooks/use-hotkeys';
 import { MD_QUERY, useMediaQuery } from '@/hooks/use-media-query';
 import type { CourseEvent, PlainDate, Task } from '@/lib/db/types';
+import type { LoadState } from '@/lib/workload/forecast';
 import { cn } from '@/lib/utils';
 
 /**
@@ -60,6 +61,9 @@ interface CalendarMonthProps {
   /** Lectures, exams and office hours, by day. Read-only, so they render behind
    *  the day rather than as anything you can pick up or tick off. */
   eventsByDay?: Map<PlainDate, CourseEvent[]>;
+  /** How loaded each day is. A pip rather than a bar: a month of bars is a
+   *  smear, and the state is the part that changes a decision. */
+  loadByDay?: Map<PlainDate, LoadState>;
 }
 
 /** Chips beyond this become a "+N" line. Three fits a 104px cell. */
@@ -88,6 +92,7 @@ export function CalendarMonth({
   onMove,
   onOpen,
   eventsByDay,
+  loadByDay,
 }: CalendarMonthProps) {
   const wide = useMediaQuery(MD_QUERY);
   const reduced = useReducedMotion();
@@ -207,6 +212,23 @@ export function CalendarMonth({
                       className="absolute inset-0 rounded-md"
                       aria-label={`${cell.date}, ${open} open ${open === 1 ? 'task' : 'tasks'}`}
                     />
+
+                    {/* Bottom right, away from the day number and the chips.
+                        Only a day that is full or over says anything: a pip on
+                        every cell is a pattern rather than a signal. */}
+                    {(() => {
+                      const state = loadByDay?.get(cell.date);
+                      if (state !== 'full' && state !== 'over') return null;
+                      return (
+                        <span
+                          aria-hidden
+                          className={cn(
+                            'pointer-events-none absolute bottom-1 right-1 size-1.5 rounded-full',
+                            state === 'over' ? 'bg-clay-400' : 'bg-sand-400',
+                          )}
+                        />
+                      );
+                    })()}
 
                     {/* Behind the number and under the chips. A class is not
                         work: there is nothing to tick off and nothing to drag,

@@ -1,8 +1,9 @@
+import type { Prefs } from './types';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import Dexie from 'dexie';
 import { setDb, TendDb } from './client';
 import { updatePrefs } from './mutations';
-import { DEFAULT_PREFS, fromTimeInput, PREFS_ID, readPrefs, toTimeInput } from './prefs';
+import { DEFAULT_PREFS, PREFS_ID, fromTimeInput, readPrefs, toTimeInput, withPrefDefaults } from './prefs';
 
 /**
  * Settings, which are the one synced row with no id and no tombstone.
@@ -86,5 +87,31 @@ describe('times across the wire', () => {
     expect(toTimeInput('06:30')).toBe('06:30');
     expect(fromTimeInput('06:30')).toBe('06:30:00');
     expect(fromTimeInput('06:30:00')).toBe('06:30:00');
+  });
+});
+
+describe('a settings row written before a setting existed', () => {
+  it('gets the missing field filled in', () => {
+    // The bug: `?? DEFAULT_PREFS` only applies when there is no row at all, so
+    // a device syncing since phase 2 holds a row with no `workDays` and every
+    // new setting arrives undefined on exactly the oldest installs.
+    // `prefs.workDays.includes(...)` threw and took the settings screen down.
+    const legacy = { id: PREFS_ID, timezone: 'America/New_York' } as unknown as Prefs;
+    const merged = withPrefDefaults(legacy);
+
+    expect(merged.workDays).toEqual([1, 2, 3, 4, 5]);
+    expect(merged.dailyCapacityMinutes).toBe(240);
+    // And the stored value still wins over the default.
+    expect(merged.timezone).toBe('America/New_York');
+  });
+
+  it('keeps a stored value even when it is falsy', () => {
+    // A capacity of zero is a real answer, not a missing one.
+    const zeroed = { id: PREFS_ID, dailyCapacityMinutes: 0 } as unknown as Prefs;
+    expect(withPrefDefaults(zeroed).dailyCapacityMinutes).toBe(0);
+  });
+
+  it('answers the defaults for a device with no row', () => {
+    expect(withPrefDefaults(undefined)).toEqual(DEFAULT_PREFS);
   });
 });

@@ -5,6 +5,7 @@ import {
   Check,
   CalendarBlank,
   Flag,
+  Hourglass,
   ListChecks,
   Prohibit,
   WarningCircle,
@@ -17,6 +18,8 @@ import { CANCEL_REASON_LABEL } from './TaskDetail';
 import { cn } from '@/lib/utils';
 import { ReorderStack } from '@/components/ui/ReorderStack';
 import { useLongPressDrag } from '@/hooks/use-long-press-drag';
+import type { DaySlack } from '@/lib/workload/slack';
+import { formatWorkMinutes } from '@/lib/workload/capacity';
 import type { Move, RowMove } from '@/lib/views/reorder';
 import { StruckTitle } from './StruckTitle';
 import { TaskCheck } from './TaskCheck';
@@ -54,6 +57,9 @@ interface TaskRowProps {
   /** Where this row can go, when the list it is in is hand-arranged. Absent on
    *  a list whose order is the query's rather than the user's, which is most of
    *  them: the logbook is completion order and Upcoming is date order. */
+  /** Whether this deadline is still reachable. Null when the page has not
+   *  worked it out, which is most of them. */
+  slack?: DaySlack | null;
   move?: RowMove | null;
   onMove?: (move: Move) => void;
   /** Where a drag that ended over another row should put this one. The list
@@ -84,6 +90,7 @@ export function TaskRow({
   onPick,
   subtaskCount = null,
   tagNames = [],
+  slack = null,
   move = null,
   onMove,
   onDrop,
@@ -220,7 +227,12 @@ export function TaskRow({
             />
           </span>
 
-          {(hasDue || cancelled || task.priority > 0 || tagNames.length > 0 || subtaskCount) && (
+          {(hasDue ||
+            cancelled ||
+            (slack !== null && slack.slack < 0 && !done) ||
+            task.priority > 0 ||
+            tagNames.length > 0 ||
+            subtaskCount) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
               {hasDue && (
                 <span
@@ -247,6 +259,19 @@ export function TaskRow({
                 <span className="inline-flex items-center gap-1 text-xs text-text-lo">
                   <Prohibit size={13} aria-hidden />
                   {CANCEL_REASON_LABEL[task.cancelReason ?? 'other']}
+                </span>
+              )}
+
+              {/* The one thing a due date cannot say. Only shown when it has
+                  actually gone negative: a badge on everything is furniture,
+                  and "3h short" is a number you can act on. */}
+              {slack !== null && slack.slack < 0 && !done && (
+                <span
+                  className="inline-flex items-center gap-1 text-xs text-clay-200"
+                  title="Even at full capacity, the work due by this date does not fit"
+                >
+                  <Hourglass size={13} weight="bold" aria-hidden />
+                  <span className="tnum">{formatWorkMinutes(-slack.slack)} short</span>
                 </span>
               )}
 

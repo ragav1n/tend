@@ -41,6 +41,7 @@ export const MIGRATIONS = [
   '0022_task_cancelled_at',
   '0023_courses',
   '0024_course_feed',
+  '0025_capacity',
 ];
 
 export function migrationSql(name: string): string {

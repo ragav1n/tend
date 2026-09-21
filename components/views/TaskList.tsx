@@ -7,8 +7,10 @@ import { COMPLETED_ROW_LINGER_MS, listVariants, QUICK_FADE } from '@/lib/motion'
 import { withHeld, type Held } from '@/lib/views/held';
 import { completeTask, reorderTask } from '@/lib/db/mutations';
 import { movesFor, moveToIndex, type Move, type RankField } from '@/lib/views/reorder';
+import { slackFor } from '@/lib/workload/slack';
+import type { DaySlack } from '@/lib/workload/slack';
 import { clientPoint, targetFromStack } from '@/lib/dnd/drop';
-import { sortTasks, type ViewSort } from '@/lib/views/filter';
+import { sortByPressure, sortTasks, type ViewSort } from '@/lib/views/filter';
 import { SORT_LABEL } from '@/lib/views/list-sort';
 import { useListSort } from '@/hooks/use-list-sort';
 import { today } from '@/lib/db/queries';
@@ -82,9 +84,12 @@ interface TaskListProps {
   loading?: boolean;
   empty?: React.ReactNode;
   reorder?: ReorderMode;
+  /** Slack per due day, when the page has worked it out. A row uses it to say
+   *  its deadline has already gone, which a due date alone cannot. */
+  slack?: Map<string, DaySlack>;
 }
 
-export function TaskList({ tasks, loading = false, empty, reorder }: TaskListProps) {
+export function TaskList({ tasks, loading = false, empty, reorder, slack }: TaskListProps) {
   const todayDate = today();
   // Keyed by route rather than by list, so the two lists on the projects page do
   // not need names. Only the reorderable one shows the picker.
@@ -162,7 +167,15 @@ export function TaskList({ tasks, loading = false, empty, reorder }: TaskListPro
   // Held rows go back where they were, so the list does not reflow under a
   // finger mid-animation. The placement rule lives in `withHeld`, where a test
   // can hold it.
-  const ordered = reorder && sort !== 'manual' ? sortTasks(tasks, sort) : tasks;
+  // Pressure needs the slack map, so it falls back to the page's own order when
+  // the page did not work one out. Better an unchanged list than a sort that
+  // silently means something else.
+  const ordered =
+    reorder && sort === 'pressure' && slack
+      ? sortByPressure(tasks, slack)
+      : reorder && sort !== 'manual'
+        ? sortTasks(tasks, sort)
+        : tasks;
   const shown = withHeld(ordered, lingering);
 
   // Read off the rendered list rather than the query result, so a row lingering
@@ -292,6 +305,7 @@ export function TaskList({ tasks, loading = false, empty, reorder }: TaskListPro
                 selected={selectedIds.has(task.id)}
                 onPick={(id, extend) => pickRow(id, order, extend)}
                 subtaskCount={subtaskProgress(children)}
+                slack={slack ? slackFor(task, slack) : null}
                 move={moves?.[index] ?? null}
                 onMove={arranged ? handleMove : undefined}
                 onDrop={

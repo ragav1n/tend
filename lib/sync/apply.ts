@@ -14,7 +14,7 @@ import {
   deriveTask,
   deriveTerm,
 } from '@/lib/db/derive';
-import { DEFAULT_PREFS, PREFS_ID } from '@/lib/db/prefs';
+import { PREFS_ID, withPrefDefaults } from '@/lib/db/prefs';
 import type {
   ActivityEntry,
   Area,
@@ -275,7 +275,7 @@ async function applyPrefs(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
       continue;
     }
     const merged = {
-      ...(current ?? DEFAULT_PREFS),
+      ...withPrefDefaults(current),
       ...wireToLocal('user_settings', row),
       id: PREFS_ID,
     } as Prefs;

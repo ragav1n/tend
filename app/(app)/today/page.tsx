@@ -9,6 +9,8 @@ import { TaskList } from '@/components/views/TaskList';
 import { ViewHeader } from '@/components/views/ViewHeader';
 import { useFirstLoadComplete, useTodayDeferred, useTodayList, useTodayProgress } from '@/hooks/use-tasks';
 import { useCourseEvents } from '@/hooks/use-courses';
+import { useWorkload } from '@/hooks/use-workload';
+import { formatWorkMinutes } from '@/lib/workload/capacity';
 import { today, todayGroup } from '@/lib/db/queries';
 
 export default function TodayPage() {
@@ -18,6 +20,8 @@ export default function TodayPage() {
   const deferred = useTodayDeferred();
   // One day's worth, so the query is the same shape the calendar's is.
   const events = useCourseEvents(day, day);
+  const workload = useWorkload(14);
+  const load = workload.days[0];
   const progress = useTodayProgress();
   const loaded = useFirstLoadComplete();
 
@@ -28,7 +32,20 @@ export default function TodayPage() {
 
   return (
     <>
-      <ViewHeader title="Today" eyebrow={eyebrow} progress={progress} />
+      <ViewHeader
+        title="Today"
+        eyebrow={eyebrow}
+        progress={progress}
+        // Only once there is something to say. "0m of 4h" on a clear morning is
+        // a number that means nothing.
+        subtitle={
+          load && load.minutes > 0
+            ? `${formatWorkMinutes(load.minutes)} planned of ${formatWorkMinutes(load.capacity)}${
+                load.state === 'over' ? ', which is more than the day holds' : ''
+              }`
+            : undefined
+        }
+      />
 
       <div className="mb-5">
         {/* A task typed here with no date is planned for today rather than left
@@ -46,6 +63,7 @@ export default function TodayPage() {
         // cannot cross from the overdue run into today's, because the sort would
         // put it straight back.
         reorder={{ field: 'plannedSortKey', group: (task) => todayGroup(task, day) }}
+        slack={workload.byDay}
         empty={
           <EmptyState
             icon={Sun}

@@ -22,7 +22,7 @@ import {
   isClosed,
 } from './derive';
 import { newBatchId, newId, newMutationId } from './ids';
-import { DEFAULT_PREFS, PREFS_ID } from './prefs';
+import { PREFS_ID, withPrefDefaults } from './prefs';
 import { today } from './queries';
 import { rankAfter, rankBefore, rankBetween } from './rank';
 import { fromRule, toRule } from './series';
@@ -1997,7 +1997,7 @@ export type PrefsPatch = Partial<
  */
 export async function updatePrefs(patch: PrefsPatch, db: TendDb = getDb()): Promise<void> {
   await db.transaction('rw', [db.prefs, db.outbox], async () => {
-    const current = (await db.prefs.get(PREFS_ID)) ?? DEFAULT_PREFS;
+    const current = withPrefDefaults(await db.prefs.get(PREFS_ID));
     await db.prefs.put({ ...current, ...patch, updatedAt: nowIso() });
     await db.outbox.add(
       outboxRecord('prefs', PREFS_ID, 'update', { ...patch }, current.rowVersion),
