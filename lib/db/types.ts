@@ -29,6 +29,10 @@ export const NO_DUE_DAY = '9999-12-31';
 export const NO_PROJECT = '';
 /** Top level, meaning "not a subtask". */
 export const NO_PARENT = '';
+/** Not coursework. `''` for the same reason `projectId` uses it. */
+export const NO_COURSE = '';
+/** Coursework that is not weighted, or not weighted yet. */
+export const NO_COMPONENT = '';
 
 export type TaskStatus = 'inbox' | 'active' | 'waiting' | 'done' | 'cancelled';
 export type CancelReason = 'skipped' | 'obsolete' | 'duplicate' | 'other';
@@ -116,6 +120,89 @@ export interface Task extends SyncedRow, DerivedTaskFields {
 
   occurrenceDate: PlainDate | null;
   occurrenceSeq: number | null;
+
+  /** NO_COURSE unless the task is coursework. Independent of `projectId`: a
+   *  task can belong to CS 6035 and to a project called Term paper, and being
+   *  made to choose is not a choice anybody wants. A subtask leaves this empty
+   *  and takes its parent's, the way `projectId` does. */
+  courseId: string;
+  /** Which weighted bucket of the course this counts toward. NO_COMPONENT until
+   *  it is filed under one. */
+  componentId: string;
+  pointsPossible: number | null;
+  /** Null until it is graded, which is what tells an ungraded final apart from
+   *  one that scored zero. The projection turns on that difference. */
+  pointsEarned: number | null;
+  gradedAt: PlainDate | null;
+}
+
+/**
+ * A semester.
+ *
+ * Thin like an area: a name and the two dates that bound it. Everything else
+ * about a term is a property of the courses inside it, and the moment this
+ * carries more it starts competing with the course for which one holds the
+ * plan.
+ */
+export interface Term extends SyncedRow {
+  name: string;
+  startDate: PlainDate;
+  endDate: PlainDate;
+  sortKey: string;
+  _del: 0 | 1;
+}
+
+/** One meeting of a course, in wall clock like every other time on a row. */
+export interface CourseMeeting {
+  /** ISO day of week, 1 Monday through 7 Sunday. */
+  byday: number;
+  start: PlainTime;
+  end: PlainTime;
+  location: string;
+}
+
+/** One band of a grading scale. `min` is the lowest percent that earns it. */
+export interface GradeBand {
+  letter: string;
+  min: number;
+  points: number;
+}
+
+export interface Course extends SyncedRow {
+  termId: string;
+  /** "CS 6035". What you call it out loud, so it leads every list. */
+  code: string;
+  name: string;
+  /** Hex. Survives export and needs no lookup table, same as a project's. */
+  color: string;
+  creditHours: number;
+  instructor: string;
+  meetings: CourseMeeting[];
+  /** Empty means the default scale. Per course, because a seminar graded A/B/C
+   *  and a lab graded on 93 are both normal. */
+  gradeScale: GradeBand[];
+  status: 'active' | 'done' | 'dropped';
+  notes: string;
+  sortKey: string;
+  _del: 0 | 1;
+}
+
+/**
+ * "Homework is 30% of the grade."
+ *
+ * `weight` is a percentage because that is how a syllabus writes it. The weights
+ * across a course are not forced to sum to 100: extra credit sums past it, a
+ * syllabus half entered sums under it, and refusing the row would mean you
+ * cannot record a course until you have all of it.
+ */
+export interface CourseComponent extends SyncedRow {
+  courseId: string;
+  name: string;
+  weight: number;
+  /** How many of the worst scores this bucket throws away. */
+  dropLowest: number;
+  sortKey: string;
+  _del: 0 | 1;
 }
 
 /**
@@ -323,6 +410,9 @@ export type EntityTable =
   | 'tasks'
   | 'areas'
   | 'projects'
+  | 'terms'
+  | 'courses'
+  | 'courseComponents'
   | 'tags'
   | 'taskTags'
   | 'taskSeries'

@@ -5,6 +5,8 @@ import { defineSchema } from './schema';
 import type {
   ActivityEntry,
   Area,
+  Course,
+  CourseComponent,
   FocusSession,
   OutboxRecord,
   Prefs,
@@ -15,6 +17,7 @@ import type {
   Task,
   TaskSeries,
   TaskTag,
+  Term,
 } from './types';
 
 /**
@@ -56,6 +59,9 @@ export class TendDb extends Dexie {
   focusSessions!: EntityTable<FocusSession, 'id'>;
   activityLog!: EntityTable<ActivityEntry, 'id'>;
   savedViews!: EntityTable<SavedView, 'id'>;
+  terms!: EntityTable<Term, 'id'>;
+  courses!: EntityTable<Course, 'id'>;
+  courseComponents!: EntityTable<CourseComponent, 'id'>;
   prefs!: EntityTable<Prefs, 'id'>;
   /** Auto-incrementing seq, so the key type is a number. */
   outbox!: Table<OutboxRecord, number>;

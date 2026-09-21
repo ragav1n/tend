@@ -20,7 +20,10 @@ export type WireTable =
   | 'focus_sessions'
   | 'activity_log'
   | 'saved_views'
-  | 'user_settings';
+  | 'user_settings'
+  | 'terms'
+  | 'courses'
+  | 'course_components';
 
 export const WIRE_TABLE: Record<EntityTable, WireTable> = {
   tasks: 'tasks',
@@ -33,6 +36,9 @@ export const WIRE_TABLE: Record<EntityTable, WireTable> = {
   activityLog: 'activity_log',
   savedViews: 'saved_views',
   prefs: 'user_settings',
+  terms: 'terms',
+  courses: 'courses',
+  courseComponents: 'course_components',
 };
 
 export const LOCAL_TABLE: Record<WireTable, EntityTable | null> = {
@@ -46,6 +52,9 @@ export const LOCAL_TABLE: Record<WireTable, EntityTable | null> = {
   saved_views: 'savedViews',
   user_settings: 'prefs',
   areas: 'areas',
+  terms: 'terms',
+  courses: 'courses',
+  course_components: 'courseComponents',
 };
 
 // ─── Pull ─────────────────────────────────────────────────────────────────────

@@ -2,17 +2,22 @@ import type { TendDb } from '@/lib/db/client';
 import {
   deriveActivity,
   deriveArea,
+  deriveCourse,
+  deriveCourseComponent,
   deriveFocusSession,
   deriveProject,
   deriveSavedView,
   deriveSeries,
   deriveTag,
   deriveTask,
+  deriveTerm,
 } from '@/lib/db/derive';
 import { DEFAULT_PREFS, PREFS_ID } from '@/lib/db/prefs';
 import type {
   ActivityEntry,
   Area,
+  Course,
+  CourseComponent,
   EntityTable,
   FocusSession,
   Prefs,
@@ -21,6 +26,7 @@ import type {
   Tag,
   Task,
   TaskSeries,
+  Term,
 } from '@/lib/db/types';
 import { LOCAL_TABLE, type PullRow, type WireTable } from './protocol';
 import { tagIdsOf, wireToLocal } from './mapping';
@@ -329,7 +335,83 @@ async function applySavedViews(db: TendDb, rows: PullRow[]): Promise<ApplyResult
   return result;
 }
 
-const APPLIERS: Partial<
+async function applyTerms(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
+  const result: ApplyResult = { applied: 0, skipped: 0 };
+  const ids = rows.map((r) => String(r.row.id));
+  const current = new Map(
+    (await db.terms.bulkGet(ids)).filter((t): t is Term => t !== undefined).map((t) => [t.id, t]),
+  );
+
+  const puts: Term[] = [];
+  for (const { row } of rows) {
+    const id = String(row.id);
+    if (isStale(Number(row.row_version ?? 0), current.get(id)?.rowVersion)) {
+      result.skipped += 1;
+      continue;
+    }
+    const base = { ...(current.get(id) ?? {}), ...wireToLocal('terms', row) } as Term;
+    puts.push({ ...base, ...deriveTerm(base) });
+    result.applied += 1;
+  }
+
+  if (puts.length > 0) await db.terms.bulkPut(puts);
+  return result;
+}
+
+async function applyCourses(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
+  const result: ApplyResult = { applied: 0, skipped: 0 };
+  const ids = rows.map((r) => String(r.row.id));
+  const current = new Map(
+    (await db.courses.bulkGet(ids))
+      .filter((c): c is Course => c !== undefined)
+      .map((c) => [c.id, c]),
+  );
+
+  const puts: Course[] = [];
+  for (const { row } of rows) {
+    const id = String(row.id);
+    if (isStale(Number(row.row_version ?? 0), current.get(id)?.rowVersion)) {
+      result.skipped += 1;
+      continue;
+    }
+    const base = { ...(current.get(id) ?? {}), ...wireToLocal('courses', row) } as Course;
+    puts.push({ ...base, ...deriveCourse(base) });
+    result.applied += 1;
+  }
+
+  if (puts.length > 0) await db.courses.bulkPut(puts);
+  return result;
+}
+
+async function applyCourseComponents(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
+  const result: ApplyResult = { applied: 0, skipped: 0 };
+  const ids = rows.map((r) => String(r.row.id));
+  const current = new Map(
+    (await db.courseComponents.bulkGet(ids))
+      .filter((c): c is CourseComponent => c !== undefined)
+      .map((c) => [c.id, c]),
+  );
+
+  const puts: CourseComponent[] = [];
+  for (const { row } of rows) {
+    const id = String(row.id);
+    if (isStale(Number(row.row_version ?? 0), current.get(id)?.rowVersion)) {
+      result.skipped += 1;
+      continue;
+    }
+    const base = {
+      ...(current.get(id) ?? {}),
+      ...wireToLocal('course_components', row),
+    } as CourseComponent;
+    puts.push({ ...base, ...deriveCourseComponent(base) });
+    result.applied += 1;
+  }
+
+  if (puts.length > 0) await db.courseComponents.bulkPut(puts);
+  return result;
+}
+
+export const APPLIERS: Partial<
   Record<WireTable, (db: TendDb, rows: PullRow[]) => Promise<ApplyResult>>
 > = {
   tasks: applyTasks,
@@ -341,6 +423,9 @@ const APPLIERS: Partial<
   activity_log: applyActivity,
   saved_views: applySavedViews,
   user_settings: applyPrefs,
+  terms: applyTerms,
+  courses: applyCourses,
+  course_components: applyCourseComponents,
 };
 
 /**
@@ -351,13 +436,39 @@ const APPLIERS: Partial<
  * than enforced, since IndexedDB has no foreign keys, but a UI that renders a
  * task with a dangling project id for one frame is a flicker worth avoiding.
  */
-const TABLE_ORDER: WireTable[] = [
+/**
+ * Every table, parents first.
+ *
+ * This list is what `applyPage` walks, so a table missing from it is a table
+ * that never applies. It does not error and it does not count as skipped: the
+ * rows are dropped and the cursor advances past them, which means they are never
+ * offered again. That is the exact failure the v6 areas upgrade in `schema.ts`
+ * was written to repair, and it had quietly happened three more times:
+ * `focus_sessions`, `activity_log` and `saved_views` all had appliers, were all
+ * in `APPLIERS`, and were in none of this. They pushed up and never came back,
+ * so a saved view never reached a second device and the review on one device
+ * could not see focus time from the other.
+ *
+ * `applyPage` is checked against `APPLIERS` by a test now, because the next
+ * table added must not be able to slip through the way four already have.
+ *
+ * The order is a foreign-key order rather than an alphabet. Locally it is
+ * advisory, since IndexedDB enforces no keys, but a task rendered for one frame
+ * pointing at a course that has not landed is a flicker worth not having.
+ */
+export const TABLE_ORDER: WireTable[] = [
   'user_settings',
   'areas',
   'projects',
   'tags',
+  'terms',
+  'courses',
+  'course_components',
   'task_series',
   'tasks',
+  'focus_sessions',
+  'activity_log',
+  'saved_views',
 ];
 
 export async function applyPage(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
@@ -440,6 +551,15 @@ export async function discardLocal(
       return;
     case 'savedViews':
       await db.savedViews.delete(entityId);
+      return;
+    case 'terms':
+      await db.terms.delete(entityId);
+      return;
+    case 'courses':
+      await db.courses.delete(entityId);
+      return;
+    case 'courseComponents':
+      await db.courseComponents.delete(entityId);
       return;
     case 'prefs':
       // One row per user, created by the signup trigger. Nothing can race it.

@@ -151,4 +151,76 @@ export function defineSchema(db: Dexie): void {
       '*_words',
     ].join(', '),
   });
+
+  // v8 adds terms, courses and their weighted components, and gives `tasks` an
+  // index for "the open work in this course".
+  //
+  // The upgrade backfills `courseId` and `componentId` to `''` on every task,
+  // and it is not optional. IndexedDB leaves a record out of a compound index
+  // when any component is absent, so without it every task written before this
+  // version would be invisible to the course index. `''` is the same sentinel
+  // `projectId` uses for the Inbox, chosen for the same reason: it is a real
+  // value that sorts before every uuid.
+  //
+  // It also clears the sync cursor, and that is the more urgent half.
+  // `applyPage` walks `TABLE_ORDER`, and `focus_sessions`, `activity_log` and
+  // `saved_views` were in `APPLIERS` and in none of it, so every row of those
+  // three was dropped on arrival while the cursor advanced past it. Nothing
+  // would offer them again. This is the same repair v6 made for areas, for the
+  // same reason, and it is safe rather than destructive: `applyPage` is
+  // idempotent and `isStale` skips a row already held at that version, so a
+  // re-pull cannot clobber a pending local edit.
+  //
+  // Chunked with a yield between, because this rewrites every task row and the
+  // upgrade runs on the thread that is trying to paint the first list.
+  db.version(8)
+    .stores({
+      terms: ['id', '_del', 'rowVersion', '[_del+sortKey]'].join(', '),
+      courses: ['id', '_del', 'rowVersion', '[_del+termId+sortKey]'].join(', '),
+      courseComponents: ['id', '_del', 'rowVersion', '[_del+courseId+sortKey]'].join(', '),
+      tasks: [
+        'id',
+        '_del',
+        'projectId',
+        'parentTaskId',
+        'seriesId',
+        'rowVersion',
+        '[_del+_done+_dueDay+sortKey]',
+        '[_del+_done+_plannedDay+plannedSortKey]',
+        '[_del+projectId+_done+sortKey]',
+        '[_del+parentTaskId+sortKey]',
+        '[_del+_done+completedAt]',
+        '[_del+cancelledAt]',
+        '[_del+courseId+_done+sortKey]',
+        '*_tagIds',
+        '*_words',
+      ].join(', '),
+    })
+    .upgrade(async (tx) => {
+      const tasks = tx.table('tasks');
+      const CHUNK = 500;
+      let offset = 0;
+
+      for (;;) {
+        const rows = await tasks.offset(offset).limit(CHUNK).toArray();
+        if (rows.length === 0) break;
+
+        await tasks.bulkPut(
+          rows.map((row: Record<string, unknown>) => ({
+            ...row,
+            courseId: typeof row.courseId === 'string' ? row.courseId : '',
+            componentId: typeof row.componentId === 'string' ? row.componentId : '',
+            pointsPossible: row.pointsPossible ?? null,
+            pointsEarned: row.pointsEarned ?? null,
+            gradedAt: row.gradedAt ?? null,
+          })),
+        );
+
+        offset += rows.length;
+        if (rows.length < CHUNK) break;
+      }
+
+      // Not through `writeCursor`, which refuses to move the cursor backwards.
+      await tx.table('syncMeta').delete('sync.cursor');
+    });
 }

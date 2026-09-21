@@ -23,6 +23,8 @@ import { today } from './queries';
 import { rankAfter, rankBefore, rankBetween } from './rank';
 import { fromRule, toRule } from './series';
 import {
+  NO_COMPONENT,
+  NO_COURSE,
   NO_DUE_DAY,
   NO_PARENT,
   NO_PROJECT,
@@ -358,6 +360,11 @@ export async function createTask(input: NewTaskInput, db: TendDb = getDb()): Pro
       completedAt: null,
       cancelledAt: null,
       cancelReason: null,
+      courseId: NO_COURSE,
+      componentId: NO_COMPONENT,
+      pointsPossible: null,
+      pointsEarned: null,
+      gradedAt: null,
       archivedAt: null,
       sortKey,
       plannedSortKey: sortKey,
@@ -663,6 +670,14 @@ async function materializeNext(completed: Task, db: TendDb): Promise<Materialize
     completedAt: null,
     cancelledAt: null,
     cancelReason: null,
+    // The next occurrence is the same coursework, so it keeps the course and the
+    // bucket it counts toward. It does not keep the marks: a grade belongs to
+    // the occurrence that earned it.
+    courseId: completed.courseId,
+    componentId: completed.componentId,
+    pointsPossible: completed.pointsPossible,
+    pointsEarned: null,
+    gradedAt: null,
     archivedAt: null,
     // The new occurrence takes the old one's place in the list. Reusing the key
     // costs no query, and the completed row has already left the open lists.

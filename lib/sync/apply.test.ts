@@ -3,7 +3,7 @@ import Dexie from 'dexie';
 import { setDb, TendDb } from '@/lib/db/client';
 import { createSavedView, createTask, ensureTag, setTaskTags } from '@/lib/db/mutations';
 import { todayList, today } from '@/lib/db/queries';
-import { applyPage, discardLocal, readCursor, writeCursor } from './apply';
+import { APPLIERS, applyPage, discardLocal, readCursor, TABLE_ORDER, writeCursor } from './apply';
 import type { PullRow, WireTable } from './protocol';
 
 let db: TendDb;
@@ -370,6 +370,178 @@ describe('the v6 upgrade', () => {
       expect(await readCursor(second)).toBe(99);
     } finally {
       second.close();
+      await Dexie.delete(name);
+    }
+  });
+});
+
+describe('every table with an applier is actually applied', () => {
+  /**
+   * `applyPage` walks `TABLE_ORDER`, not `APPLIERS`. A table in the second and
+   * missing from the first is dropped in silence: not applied, not counted as
+   * skipped, and the cursor advances past it, so nothing ever offers those rows
+   * again. It is the same failure the v6 upgrade below repairs for areas.
+   *
+   * It had happened three more times before this test existed. `focus_sessions`,
+   * `activity_log` and `saved_views` each had a working applier and an entry in
+   * `APPLIERS`, and none of them was in `TABLE_ORDER`, so they pushed up and
+   * never came back down: a saved view never reached a second device, and the
+   * weekly review on a laptop could not see focus time from a phone.
+   */
+  it('lists every applier in TABLE_ORDER', () => {
+    const missing = Object.keys(APPLIERS).filter(
+      (table) => !TABLE_ORDER.includes(table as WireTable),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  it('names no table in TABLE_ORDER that cannot be applied', () => {
+    // The other direction. An entry with no applier is dead weight that reads
+    // as coverage.
+    const orphans = TABLE_ORDER.filter((table) => APPLIERS[table] === undefined);
+    expect(orphans).toEqual([]);
+  });
+
+  it('applies a saved view arriving from another device', async () => {
+    const result = await applyPage(db, [
+      {
+        table: 'saved_views',
+        row: {
+          id: 'view-1',
+          name: 'Due this week',
+          icon: 'Funnel',
+          filter: {},
+          sort: 'due',
+          pinned: true,
+          sort_key: 'a0',
+          created_at: '2026-09-01T00:00:00.000Z',
+          updated_at: '2026-09-01T00:00:00.000Z',
+          deleted_at: null,
+          row_version: 7,
+        },
+      },
+    ]);
+
+    expect(result.applied).toBe(1);
+    expect((await db.savedViews.toArray()).map((v) => v.name)).toEqual(['Due this week']);
+  });
+
+  it('applies a focus session arriving from another device', async () => {
+    const result = await applyPage(db, [
+      {
+        table: 'focus_sessions',
+        row: {
+          id: 'session-1',
+          task_id: null,
+          started_at: '2026-09-01T09:00:00.000Z',
+          ended_at: '2026-09-01T09:25:00.000Z',
+          planned_minutes: 25,
+          focused_seconds: 1500,
+          created_at: '2026-09-01T09:00:00.000Z',
+          updated_at: '2026-09-01T09:25:00.000Z',
+          deleted_at: null,
+          row_version: 8,
+        },
+      },
+    ]);
+
+    expect(result.applied).toBe(1);
+    expect(await db.focusSessions.count()).toBe(1);
+  });
+
+  it('applies a course and the task that points at it, parents first', async () => {
+    const result = await applyPage(db, [
+      taskRow({ id: 'task-9', course_id: 'course-1', row_version: 11 }),
+      {
+        table: 'courses',
+        row: {
+          id: 'course-1',
+          term_id: null,
+          code: 'CS 6035',
+          name: 'Intro to Information Security',
+          color: '#8D321F',
+          credit_hours: 3,
+          instructor: '',
+          meetings: [],
+          grade_scale: [],
+          status: 'active',
+          notes: '',
+          sort_key: 'a0',
+          created_at: '2026-09-01T00:00:00.000Z',
+          updated_at: '2026-09-01T00:00:00.000Z',
+          deleted_at: null,
+          row_version: 10,
+        },
+      },
+    ]);
+
+    expect(result.applied).toBe(2);
+    expect((await db.courses.toArray()).map((c) => c.code)).toEqual(['CS 6035']);
+    expect((await db.tasks.get('task-9'))!.courseId).toBe('course-1');
+  });
+});
+
+describe('the v8 upgrade', () => {
+  /**
+   * The same repair v6 made for areas, for the three tables that were dropped
+   * the same way. A device that has been syncing since phase 4 holds a cursor
+   * well past every focus session, activity entry and saved view the server ever
+   * offered it, and nothing would offer them again.
+   *
+   * It also backfills the two course sentinels onto every existing task, without
+   * which those rows are absent from `[_del+courseId+_done+sortKey]`: IndexedDB
+   * leaves a record out of a compound index when any component is missing.
+   */
+  const legacyName = () => `tend_v7_${Date.now()}_${counter++}`;
+
+  it('clears the cursor so the rows it dropped are offered again', async () => {
+    const name = legacyName();
+
+    const legacy = new Dexie(name);
+    legacy.version(7).stores({ syncMeta: 'key', tasks: 'id' });
+    await legacy.open();
+    await legacy.table('syncMeta').put({ key: 'sync.cursor', value: 91_204 });
+    legacy.close();
+
+    const upgraded = new TendDb(name);
+    await upgraded.open();
+    try {
+      expect(await readCursor(upgraded)).toBe(0);
+    } finally {
+      upgraded.close();
+      await Dexie.delete(name);
+    }
+  });
+
+  it('backfills the course sentinels onto a task written before v8', async () => {
+    const name = legacyName();
+
+    const legacy = new Dexie(name);
+    legacy.version(7).stores({ syncMeta: 'key', tasks: 'id' });
+    await legacy.open();
+    await legacy.table('tasks').put({
+      id: 'old-task',
+      title: 'Written before courses existed',
+      _del: 0,
+      _done: 0,
+      sortKey: 'a0',
+    });
+    legacy.close();
+
+    const upgraded = new TendDb(name);
+    await upgraded.open();
+    try {
+      const row = await upgraded.tasks.get('old-task');
+      expect(row!.courseId).toBe('');
+      expect(row!.componentId).toBe('');
+      // And it is reachable through the new index, which is the point.
+      const byCourse = await upgraded.tasks
+        .where('[_del+courseId+_done+sortKey]')
+        .between([0, '', 0, ''], [0, '', 0, '￿'], true, true)
+        .toArray();
+      expect(byCourse.map((t) => t.id)).toEqual(['old-task']);
+    } finally {
+      upgraded.close();
       await Dexie.delete(name);
     }
   });

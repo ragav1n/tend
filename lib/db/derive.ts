@@ -2,6 +2,8 @@ import {
   NO_DUE_DAY,
   type ActivityEntry,
   type Area,
+  type Course,
+  type CourseComponent,
   type DerivedTaskFields,
   type FocusSession,
   type Project,
@@ -9,6 +11,7 @@ import {
   type Tag,
   type Task,
   type TaskSeries,
+  type Term,
 } from './types';
 
 /**
@@ -98,6 +101,20 @@ export function deriveProject(
 
 export function deriveArea(area: Omit<Area, '_del'>): Pick<Area, '_del'> {
   return { _del: area.deletedAt ? 1 : 0 };
+}
+
+export function deriveTerm(term: Omit<Term, '_del'>): Pick<Term, '_del'> {
+  return { _del: term.deletedAt ? 1 : 0 };
+}
+
+export function deriveCourse(course: Omit<Course, '_del'>): Pick<Course, '_del'> {
+  return { _del: course.deletedAt ? 1 : 0 };
+}
+
+export function deriveCourseComponent(
+  component: Omit<CourseComponent, '_del'>,
+): Pick<CourseComponent, '_del'> {
+  return { _del: component.deletedAt ? 1 : 0 };
 }
 
 export function deriveTag(tag: Omit<Tag, '_del'>): Pick<Tag, '_del'> {

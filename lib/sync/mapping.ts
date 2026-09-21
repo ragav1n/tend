@@ -40,9 +40,10 @@ import type { WireTable } from './protocol';
  * convergence test created a project on one device.
  */
 const SENTINEL_COLUMNS: Partial<Record<WireTable, string[]>> = {
-  tasks: ['project_id', 'parent_task_id', 'series_id'],
+  tasks: ['project_id', 'parent_task_id', 'series_id', 'course_id', 'component_id'],
   projects: ['area_id'],
   focus_sessions: ['task_id'],
+  courses: ['term_id'],
 };
 
 export function toSnakeCase(key: string): string {
