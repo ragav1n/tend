@@ -10,6 +10,8 @@ import {
   type Area,
   type Course,
   type CourseComponent,
+  type CourseEvent,
+  type Feed,
   type FocusSession,
   type Instant,
   type PlainDate,
@@ -536,6 +538,35 @@ export async function courseCounts(
 
   for (const { id, ...rest } of counts) out.set(id, rest);
   return out;
+}
+
+/** Every subscribed feed, oldest first. Short and always read whole. */
+export async function feedList(db: TendDb = getDb()): Promise<Feed[]> {
+  return db.feeds
+    .where('[_del+createdAt]')
+    .between([0, ''], [0, MAX_STR], true, true)
+    .toArray();
+}
+
+/**
+ * Course events inside a window, for the layer behind the calendar.
+ *
+ * One range scan over `[_del+startsOn]`. Read-only rows, so there is no open or
+ * closed half to merge the way a task list has.
+ */
+export async function eventsBetween(
+  from: PlainDate,
+  to: PlainDate,
+  db: TendDb = getDb(),
+): Promise<CourseEvent[]> {
+  const rows = await db.courseEvents
+    .where('[_del+startsOn]')
+    .between([0, from], [0, to], true, true)
+    .toArray();
+  return rows.sort(
+    (a, b) =>
+      a.startsOn.localeCompare(b.startsOn) || (a.startsAt ?? '').localeCompare(b.startsAt ?? ''),
+  );
 }
 
 /** The weighted buckets of a course, in the order you arranged them. */

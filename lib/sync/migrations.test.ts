@@ -55,6 +55,7 @@ describe('the migration directory', () => {
       '0021_push_unique_violation.sql',
       '0022_task_cancelled_at.sql',
       '0023_courses.sql',
+      '0024_course_feed.sql',
     ]);
   });
 

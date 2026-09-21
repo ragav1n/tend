@@ -4,7 +4,9 @@ import {
   type Area,
   type Course,
   type CourseComponent,
+  type CourseEvent,
   type DerivedTaskFields,
+  type Feed,
   type FocusSession,
   type Project,
   type SavedView,
@@ -115,6 +117,16 @@ export function deriveCourseComponent(
   component: Omit<CourseComponent, '_del'>,
 ): Pick<CourseComponent, '_del'> {
   return { _del: component.deletedAt ? 1 : 0 };
+}
+
+export function deriveFeed(feed: Omit<Feed, '_del'>): Pick<Feed, '_del'> {
+  return { _del: feed.deletedAt ? 1 : 0 };
+}
+
+export function deriveCourseEvent(
+  event: Omit<CourseEvent, '_del'>,
+): Pick<CourseEvent, '_del'> {
+  return { _del: event.deletedAt ? 1 : 0 };
 }
 
 export function deriveTag(tag: Omit<Tag, '_del'>): Pick<Tag, '_del'> {

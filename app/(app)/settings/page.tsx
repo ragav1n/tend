@@ -8,6 +8,7 @@ import {
   DownloadSimple,
   EnvelopeSimple,
   Globe,
+  GraduationCap,
   HardDrives,
   MoonStars,
   SignOut,
@@ -16,6 +17,7 @@ import { Segmented } from '@/components/ui/Segmented';
 import { Toggle } from '@/components/ui/Toggle';
 import { controlClass } from '@/components/ui/Field';
 import { ViewHeader } from '@/components/views/ViewHeader';
+import { FeedSettings } from '@/components/courses/FeedSettings';
 import { signOut, useAccountEmail } from '@/hooks/use-account';
 import { useAppUpdate } from '@/hooks/use-app-update';
 import { usePrefs } from '@/hooks/use-prefs';
@@ -241,6 +243,10 @@ export default function SettingsPage() {
             />
           )}
         </Row>
+      </Group>
+
+      <Group title="Coursework" icon={GraduationCap}>
+        <FeedSettings />
       </Group>
 
       <Group title="Time" icon={Globe}>

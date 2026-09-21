@@ -11,6 +11,7 @@ import {
   deriveArea,
   deriveCourse,
   deriveCourseComponent,
+  deriveFeed,
   deriveFocusSession,
   deriveProject,
   deriveSavedView,
@@ -46,6 +47,7 @@ import {
   type Course,
   type CourseComponent,
   type CourseMeeting,
+  type Feed,
   type Tag,
   type Task,
   type TaskSeries,
@@ -138,6 +140,8 @@ const NOT_CLIENT_WRITABLE = new Set([
   'rowVersion',
   'completedAt',
   'cancelledAt',
+  'feedUid',
+  'feedSnapshot',
   'depth',
 ]);
 
@@ -378,6 +382,8 @@ export async function createTask(input: NewTaskInput, db: TendDb = getDb()): Pro
       pointsPossible: null,
       pointsEarned: null,
       gradedAt: null,
+      feedUid: null,
+      feedSnapshot: {},
       archivedAt: null,
       sortKey,
       plannedSortKey: sortKey,
@@ -691,6 +697,8 @@ async function materializeNext(completed: Task, db: TendDb): Promise<Materialize
     pointsPossible: completed.pointsPossible,
     pointsEarned: null,
     gradedAt: null,
+    feedUid: null,
+    feedSnapshot: {},
     archivedAt: null,
     // The new occurrence takes the old one's place in the list. Reusing the key
     // costs no query, and the completed row has already left the open lists.
@@ -1654,6 +1662,7 @@ export async function createCourse(
       creditHours: input.creditHours ?? 3,
       instructor: input.instructor ?? '',
       meetings: input.meetings ?? [],
+      feedLabel: '',
       gradeScale: [],
       status: 'active' as const,
       notes: '',
@@ -1680,6 +1689,7 @@ export type CoursePatch = Partial<
     | 'creditHours'
     | 'instructor'
     | 'meetings'
+    | 'feedLabel'
     | 'gradeScale'
     | 'status'
     | 'notes'
@@ -1772,6 +1782,87 @@ export async function reorderCourse(
   const sortKey = rankAmong(prevSortKey, nextSortKey);
   await db.transaction('rw', [db.courses, db.outbox], async () => {
     await writeCoursePatch(id, { sortKey }, db);
+  });
+}
+
+// ─── Subscribed feeds ─────────────────────────────────────────────────────────
+
+/**
+ * A calendar to read deadlines from.
+ *
+ * The URL is credential-shaped: anybody holding it can read the whole Canvas
+ * calendar. It is stored because the import has to run server-side, it is never
+ * logged, and the import route never returns it.
+ *
+ * `lastFetchedAt`, `lastError`, `lastCount` and `lastUnmatched` are written by
+ * the import route rather than here, so they are absent from `FeedPatch`: a
+ * client that could set them could claim an import succeeded.
+ */
+export async function createFeed(
+  input: { url: string; label?: string },
+  db: TendDb = getDb(),
+): Promise<string> {
+  const id = newId();
+  await db.transaction('rw', [db.feeds, db.outbox], async () => {
+    const base = {
+      id,
+      userId: LOCAL_USER_ID,
+      url: input.url.trim(),
+      label: input.label?.trim() ?? 'Canvas',
+      enabled: true,
+      lastFetchedAt: null,
+      lastError: null,
+      lastCount: 0,
+      lastUnmatched: 0,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      deletedAt: null,
+      rowVersion: 0,
+    };
+    const row: Feed = { ...base, ...deriveFeed(base) };
+    await db.feeds.add(row);
+    await db.outbox.add(outboxRecord('feeds', id, 'insert', toInsertPatch(row), 0));
+  });
+  return id;
+}
+
+export type FeedPatch = Partial<Pick<Feed, 'url' | 'label' | 'enabled'>>;
+
+export async function updateFeed(
+  id: string,
+  patch: FeedPatch,
+  db: TendDb = getDb(),
+): Promise<void> {
+  await db.transaction('rw', [db.feeds, db.outbox], async () => {
+    const current = await db.feeds.get(id);
+    if (!current) return;
+    const next = {
+      ...current,
+      ...patch,
+      ...(patch.url === undefined ? {} : { url: patch.url.trim() }),
+      updatedAt: nowIso(),
+    };
+    await db.feeds.put({ ...next, ...deriveFeed(next) });
+    await db.outbox.add(outboxRecord('feeds', id, 'update', { ...patch }, current.rowVersion));
+  });
+}
+
+/**
+ * Forgets a feed and leaves everything it imported alone.
+ *
+ * Unlike a course or a project, nothing is unfiled. The tasks are real work with
+ * real deadlines and the fact they arrived by feed is not a reason to disturb
+ * them. They keep their `feedUid`, so re-adding the same URL later reconciles
+ * onto the same rows rather than duplicating them.
+ */
+export async function deleteFeed(id: string, db: TendDb = getDb()): Promise<void> {
+  await db.transaction('rw', [db.feeds, db.outbox], async () => {
+    const current = await db.feeds.get(id);
+    if (!current) return;
+    const deletedAt = nowIso();
+    const next = { ...current, deletedAt, updatedAt: deletedAt };
+    await db.feeds.put({ ...next, ...deriveFeed(next) });
+    await db.outbox.add(outboxRecord('feeds', id, 'delete', { deletedAt }, current.rowVersion));
   });
 }
 

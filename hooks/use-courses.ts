@@ -9,13 +9,15 @@ import {
   courseList,
   courseOptions,
   coursesInTerm,
+  eventsBetween,
+  feedList,
   scoredTasks,
   currentTerm,
   termOptions,
   today,
   type CourseCount,
 } from '@/lib/db/queries';
-import type { Course, CourseComponent, Task, Term } from '@/lib/db/types';
+import type { Course, CourseComponent, CourseEvent, Feed, Task, Term } from '@/lib/db/types';
 
 /**
  * Terms and courses, read the same way every other list is.
@@ -29,6 +31,8 @@ const NO_COURSES: Course[] = [];
 const NO_TASKS: Task[] = [];
 const NO_COUNTS = new Map<string, CourseCount>();
 const NO_COMPONENTS: CourseComponent[] = [];
+const NO_FEEDS: Feed[] = [];
+const NO_EVENTS: CourseEvent[] = [];
 
 export function useTerms(): Term[] {
   return useStableLiveQuery(() => termOptions(), [], NO_TERMS);
@@ -111,4 +115,13 @@ export function useScoredTasks(courseId: string | null): Task[] {
     [courseId],
     NO_TASKS,
   );
+}
+
+export function useFeeds(): Feed[] {
+  return useStableLiveQuery(() => feedList(), [], NO_FEEDS);
+}
+
+/** Lectures, exams and office hours inside a window, for the calendar layer. */
+export function useCourseEvents(from: string, to: string): CourseEvent[] {
+  return useStableLiveQuery(() => eventsBetween(from, to), [from, to], NO_EVENTS);
 }

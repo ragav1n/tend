@@ -23,7 +23,9 @@ export type WireTable =
   | 'user_settings'
   | 'terms'
   | 'courses'
-  | 'course_components';
+  | 'course_components'
+  | 'feeds'
+  | 'course_events';
 
 export const WIRE_TABLE: Record<EntityTable, WireTable> = {
   tasks: 'tasks',
@@ -39,6 +41,8 @@ export const WIRE_TABLE: Record<EntityTable, WireTable> = {
   terms: 'terms',
   courses: 'courses',
   courseComponents: 'course_components',
+  feeds: 'feeds',
+  courseEvents: 'course_events',
 };
 
 export const LOCAL_TABLE: Record<WireTable, EntityTable | null> = {
@@ -55,6 +59,8 @@ export const LOCAL_TABLE: Record<WireTable, EntityTable | null> = {
   terms: 'terms',
   courses: 'courses',
   course_components: 'courseComponents',
+  feeds: 'feeds',
+  course_events: 'courseEvents',
 };
 
 // ─── Pull ─────────────────────────────────────────────────────────────────────

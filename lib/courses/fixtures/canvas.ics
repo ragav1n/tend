@@ -1,0 +1,42 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Instructure//Canvas//EN
+BEGIN:VTIMEZONE
+TZID:America/New_York
+BEGIN:DAYLIGHT
+DTSTART:20260308T020000
+TZOFFSETFROM:-0500
+TZOFFSETTO:-0400
+END:DAYLIGHT
+END:VTIMEZONE
+BEGIN:VEVENT
+DTSTART;TZID=America/New_York:20261002T235900
+UID:event-assignment-77001@canvas.instructure.com
+SUMMARY:Project 2: Web Security [CS-6035-O01]
+DESCRIPTION:Cross-site scripting and SQL injection. See the rubric in Canva
+ s for the breakdown\, and note the late policy.
+URL:https://gatech.instructure.com/courses/1/assignments/77001
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;TZID=America/New_York:20261015T235900
+UID:event-assignment-77002@canvas.instructure.com
+SUMMARY:Project 3: Malware Analysis [CS-6035-O01]
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20261020
+DTEND;VALUE=DATE:20261021
+UID:event-calendar-event-55001@canvas.instructure.com
+SUMMARY:Midterm Exam [CS-6035-O01]
+LOCATION:Klaus 1116
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;TZID=America/New_York:20261005T093000
+UID:event-calendar-event-55002@canvas.instructure.com
+SUMMARY:Lecture 6: Access Control [CS-6035-O01]
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20261009
+UID:event-assignment-77003@canvas.instructure.com
+SUMMARY:Reading response [HIST-2100-B]
+END:VEVENT
+END:VCALENDAR

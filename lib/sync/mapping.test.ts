@@ -143,6 +143,16 @@ function newestDefinition(name: string): string {
   return source.slice(start, source.indexOf('$$;', start));
 }
 
+/**
+ * Tables the client reads and never writes.
+ *
+ * They ride the pull like anything else and are absent from
+ * `sync_writable_tables()`, which is the whole of what "server-owned" means in
+ * this protocol. `course_events` come from a Canvas feed: a lecture is not work,
+ * so there is nothing for a client to say about one.
+ */
+const READ_ONLY = new Set<string>(['course_events']);
+
 describe('the table name map', () => {
   it('names only tables the migrations actually create', () => {
     for (const wire of Object.values(WIRE_TABLE)) {
@@ -162,7 +172,26 @@ describe('the table name map', () => {
     // for that table dies in the deadletter rather than retrying.
     const writable = newestDefinition('sync_writable_tables');
     for (const wire of Object.values(WIRE_TABLE)) {
+      if (READ_ONLY.has(wire)) continue;
       expect(writable, wire).toContain(`'${wire}'`);
+    }
+  });
+
+  it('keeps the server-owned tables out of the writable list', () => {
+    // "Server-owned" is not a comment, it is this: in the pull union and out of
+    // `sync_writable_tables()`, with a SELECT policy and nothing else. Listing
+    // one here by accident would let a client invent its own course events.
+    const writable = newestDefinition('sync_writable_tables');
+    for (const wire of READ_ONLY) {
+      expect(writable, wire).not.toContain(`'${wire}'`);
+    }
+  });
+
+  it('gives every read-only table a select policy and no other', () => {
+    for (const wire of READ_ONLY) {
+      expect(ALL).toContain(`create policy ${wire}_select on public.${wire}`);
+      expect(ALL).not.toContain(`create policy ${wire}_insert`);
+      expect(ALL).not.toContain(`create policy ${wire}_update`);
     }
   });
 

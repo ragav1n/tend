@@ -9,7 +9,7 @@ import { targetUnderPointer } from '@/lib/dnd/drop';
 import { CALENDAR_ACTIONS, chordIndex, inScope, typingSafe } from '@/lib/keys/map';
 import { useHotkeys } from '@/hooks/use-hotkeys';
 import { MD_QUERY, useMediaQuery } from '@/hooks/use-media-query';
-import type { PlainDate, Task } from '@/lib/db/types';
+import type { CourseEvent, PlainDate, Task } from '@/lib/db/types';
 import { cn } from '@/lib/utils';
 
 /**
@@ -57,6 +57,9 @@ interface CalendarMonthProps {
   onSelect: (day: PlainDate) => void;
   onMove: (taskId: string, day: PlainDate) => void;
   onOpen: (taskId: string) => void;
+  /** Lectures, exams and office hours, by day. Read-only, so they render behind
+   *  the day rather than as anything you can pick up or tick off. */
+  eventsByDay?: Map<PlainDate, CourseEvent[]>;
 }
 
 /** Chips beyond this become a "+N" line. Three fits a 104px cell. */
@@ -84,6 +87,7 @@ export function CalendarMonth({
   onSelect,
   onMove,
   onOpen,
+  eventsByDay,
 }: CalendarMonthProps) {
   const wide = useMediaQuery(MD_QUERY);
   const reduced = useReducedMotion();
@@ -203,6 +207,16 @@ export function CalendarMonth({
                       className="absolute inset-0 rounded-md"
                       aria-label={`${cell.date}, ${open} open ${open === 1 ? 'task' : 'tasks'}`}
                     />
+
+                    {/* Behind the number and under the chips. A class is not
+                        work: there is nothing to tick off and nothing to drag,
+                        so it reads as a property of the day. */}
+                    {(eventsByDay?.get(cell.date)?.length ?? 0) > 0 && (
+                      <span
+                        aria-hidden
+                        className="pointer-events-none absolute inset-x-1 top-0 h-0.5 rounded-full bg-olive-400/40"
+                      />
+                    )}
 
                     <span
                       className={cn(

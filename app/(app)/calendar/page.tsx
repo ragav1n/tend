@@ -7,6 +7,8 @@ import { EmptyState } from '@/components/views/EmptyState';
 import { QuickAdd } from '@/components/task/QuickAdd';
 import { TaskList } from '@/components/views/TaskList';
 import { useDueBetween } from '@/hooks/use-tasks';
+import { useCourseEvents } from '@/hooks/use-courses';
+import { DayEvents } from '@/components/courses/DayEvents';
 import { usePrefs } from '@/hooks/use-prefs';
 import { useUiStore } from '@/hooks/use-ui';
 import { gridRange, groupByDate, monthLabel, monthOf, shiftMonth } from '@/lib/calendar/grid';
@@ -49,6 +51,11 @@ export default function CalendarPage() {
   const tasks = useDueBetween(from, to);
   const byDay = useMemo(() => groupByDate(tasks, (task) => task._dueDay), [tasks]);
   const dayTasks = byDay.get(selected) ?? NO_TASKS;
+
+  // Classes and exams from a subscribed feed. Not work, so they never enter
+  // `byDay` or the task list: they mark the day and sit above it.
+  const events = useCourseEvents(from, to);
+  const eventsByDay = useMemo(() => groupByDate(events, (event) => event.startsOn), [events]);
 
   function select(day: PlainDate) {
     setSelected(day);
@@ -116,12 +123,15 @@ export default function CalendarPage() {
         onSelect={select}
         onMove={reschedule}
         onOpen={openTask}
+        eventsByDay={eventsByDay}
       />
 
       <section className="mt-7">
         <h2 className="mb-3 text-sm text-text-mid" suppressHydrationWarning>
           {dayLabel(selected, todayDate)}
         </h2>
+
+        <DayEvents events={eventsByDay.get(selected)} />
 
         <div className="mb-4">
           <QuickAdd defaults={{ dueDate: selected }} placeholder="Add for this day" />

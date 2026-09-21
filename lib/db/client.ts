@@ -7,6 +7,8 @@ import type {
   Area,
   Course,
   CourseComponent,
+  CourseEvent,
+  Feed,
   FocusSession,
   OutboxRecord,
   Prefs,
@@ -62,6 +64,8 @@ export class TendDb extends Dexie {
   terms!: EntityTable<Term, 'id'>;
   courses!: EntityTable<Course, 'id'>;
   courseComponents!: EntityTable<CourseComponent, 'id'>;
+  feeds!: EntityTable<Feed, 'id'>;
+  courseEvents!: EntityTable<CourseEvent, 'id'>;
   prefs!: EntityTable<Prefs, 'id'>;
   /** Auto-incrementing seq, so the key type is a number. */
   outbox!: Table<OutboxRecord, number>;

@@ -4,6 +4,8 @@ import {
   deriveArea,
   deriveCourse,
   deriveCourseComponent,
+  deriveCourseEvent,
+  deriveFeed,
   deriveFocusSession,
   deriveProject,
   deriveSavedView,
@@ -18,7 +20,9 @@ import type {
   Area,
   Course,
   CourseComponent,
+  CourseEvent,
   EntityTable,
+  Feed,
   FocusSession,
   Prefs,
   Project,
@@ -411,6 +415,57 @@ async function applyCourseComponents(db: TendDb, rows: PullRow[]): Promise<Apply
   return result;
 }
 
+async function applyFeeds(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
+  const result: ApplyResult = { applied: 0, skipped: 0 };
+  const ids = rows.map((r) => String(r.row.id));
+  const current = new Map(
+    (await db.feeds.bulkGet(ids)).filter((f): f is Feed => f !== undefined).map((f) => [f.id, f]),
+  );
+
+  const puts: Feed[] = [];
+  for (const { row } of rows) {
+    const id = String(row.id);
+    if (isStale(Number(row.row_version ?? 0), current.get(id)?.rowVersion)) {
+      result.skipped += 1;
+      continue;
+    }
+    const base = { ...(current.get(id) ?? {}), ...wireToLocal('feeds', row) } as Feed;
+    puts.push({ ...base, ...deriveFeed(base) });
+    result.applied += 1;
+  }
+
+  if (puts.length > 0) await db.feeds.bulkPut(puts);
+  return result;
+}
+
+async function applyCourseEvents(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
+  const result: ApplyResult = { applied: 0, skipped: 0 };
+  const ids = rows.map((r) => String(r.row.id));
+  const current = new Map(
+    (await db.courseEvents.bulkGet(ids))
+      .filter((e): e is CourseEvent => e !== undefined)
+      .map((e) => [e.id, e]),
+  );
+
+  const puts: CourseEvent[] = [];
+  for (const { row } of rows) {
+    const id = String(row.id);
+    if (isStale(Number(row.row_version ?? 0), current.get(id)?.rowVersion)) {
+      result.skipped += 1;
+      continue;
+    }
+    const base = {
+      ...(current.get(id) ?? {}),
+      ...wireToLocal('course_events', row),
+    } as CourseEvent;
+    puts.push({ ...base, ...deriveCourseEvent(base) });
+    result.applied += 1;
+  }
+
+  if (puts.length > 0) await db.courseEvents.bulkPut(puts);
+  return result;
+}
+
 export const APPLIERS: Partial<
   Record<WireTable, (db: TendDb, rows: PullRow[]) => Promise<ApplyResult>>
 > = {
@@ -426,6 +481,8 @@ export const APPLIERS: Partial<
   terms: applyTerms,
   courses: applyCourses,
   course_components: applyCourseComponents,
+  feeds: applyFeeds,
+  course_events: applyCourseEvents,
 };
 
 /**
@@ -464,6 +521,8 @@ export const TABLE_ORDER: WireTable[] = [
   'terms',
   'courses',
   'course_components',
+  'course_events',
+  'feeds',
   'task_series',
   'tasks',
   'focus_sessions',
@@ -560,6 +619,12 @@ export async function discardLocal(
       return;
     case 'courseComponents':
       await db.courseComponents.delete(entityId);
+      return;
+    case 'feeds':
+      await db.feeds.delete(entityId);
+      return;
+    case 'courseEvents':
+      await db.courseEvents.delete(entityId);
       return;
     case 'prefs':
       // One row per user, created by the signup trigger. Nothing can race it.

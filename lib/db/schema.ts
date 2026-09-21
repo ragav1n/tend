@@ -223,4 +223,50 @@ export function defineSchema(db: Dexie): void {
       // Not through `writeCursor`, which refuses to move the cursor backwards.
       await tx.table('syncMeta').delete('sync.cursor');
     });
+
+  // v9 adds the subscribed feeds and the course events they carry, and gives
+  // `tasks` an index on the feed's own identifier.
+  //
+  // `[_del+feedUid]` holds only imported rows, the same way `[_del+cancelledAt]`
+  // holds only cancelled ones: a typed task has no `feedUid`, and IndexedDB
+  // leaves a record out of a compound index when a component is null. So the
+  // index is "everything that came from a feed" rather than a filter over every
+  // task, and no backfill is needed because nothing imported exists yet.
+  //
+  // The cursor is cleared again. `course_events` is server-owned and arrives
+  // only on a pull, so a device whose cursor already sits past the first import
+  // would never be offered those rows.
+  db.version(9)
+    .stores({
+      feeds: ['id', '_del', 'rowVersion', '[_del+createdAt]'].join(', '),
+      courseEvents: [
+        'id',
+        '_del',
+        'rowVersion',
+        'feedUid',
+        '[_del+startsOn]',
+        '[_del+courseId+startsOn]',
+      ].join(', '),
+      tasks: [
+        'id',
+        '_del',
+        'projectId',
+        'parentTaskId',
+        'seriesId',
+        'rowVersion',
+        '[_del+_done+_dueDay+sortKey]',
+        '[_del+_done+_plannedDay+plannedSortKey]',
+        '[_del+projectId+_done+sortKey]',
+        '[_del+parentTaskId+sortKey]',
+        '[_del+_done+completedAt]',
+        '[_del+cancelledAt]',
+        '[_del+courseId+_done+sortKey]',
+        '[_del+feedUid]',
+        '*_tagIds',
+        '*_words',
+      ].join(', '),
+    })
+    .upgrade(async (tx) => {
+      await tx.table('syncMeta').delete('sync.cursor');
+    });
 }

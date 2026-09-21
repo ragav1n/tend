@@ -134,6 +134,57 @@ export interface Task extends SyncedRow, DerivedTaskFields {
    *  one that scored zero. The projection turns on that difference. */
   pointsEarned: number | null;
   gradedAt: PlainDate | null;
+
+  /** The feed item this task came from. Null for anything typed by hand.
+   *  Server-owned: a client that could set it could claim a row was imported. */
+  feedUid: string | null;
+  /**
+   * What the feed last wrote into `title`, `dueDate` and `dueTime`.
+   *
+   * The feed owns a field only while the field still holds this. Edit a due date
+   * yourself and the next import leaves it alone, because it can see its own
+   * writing is gone. A per-field version would say that something changed
+   * without saying who changed it.
+   */
+  feedSnapshot: Record<string, unknown>;
+}
+
+/**
+ * One subscribed calendar.
+ *
+ * The URL is credential-shaped: anybody holding it can read the whole Canvas
+ * calendar it points at. It is never logged and never put in an error message.
+ */
+export interface Feed extends SyncedRow {
+  url: string;
+  label: string;
+  enabled: boolean;
+  lastFetchedAt: Instant | null;
+  lastError: string | null;
+  lastCount: number;
+  /** Items the feed carried that matched no course. Said out loud rather than
+   *  swallowed, since they land in the Inbox. */
+  lastUnmatched: number;
+  _del: 0 | 1;
+}
+
+/**
+ * A lecture, an exam slot, an office hour.
+ *
+ * Not a task. Ticking one off means nothing, so it renders behind the day rather
+ * than in a list. Server-owned: the client has a SELECT policy and nothing else,
+ * and `sync_push` refuses the table by not listing it as writable.
+ */
+export interface CourseEvent extends SyncedRow {
+  courseId: string;
+  feedUid: string;
+  title: string;
+  startsOn: PlainDate;
+  startsAt: PlainTime | null;
+  endsAt: PlainTime | null;
+  location: string;
+  kind: 'event' | 'exam' | 'class';
+  _del: 0 | 1;
 }
 
 /**
@@ -183,6 +234,9 @@ export interface Course extends SyncedRow {
   gradeScale: GradeBand[];
   status: 'active' | 'done' | 'dropped';
   notes: string;
+  /** What Canvas calls this course, when its own code is not close enough to
+   *  match on. `CS-6035-O01` for a course you call CS 6035. */
+  feedLabel: string;
   sortKey: string;
   _del: 0 | 1;
 }
@@ -413,6 +467,8 @@ export type EntityTable =
   | 'terms'
   | 'courses'
   | 'courseComponents'
+  | 'feeds'
+  | 'courseEvents'
   | 'tags'
   | 'taskTags'
   | 'taskSeries'

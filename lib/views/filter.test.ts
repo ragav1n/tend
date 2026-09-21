@@ -40,6 +40,8 @@ function task(over: Partial<Task> = {}): Task {
     pointsPossible: null,
     pointsEarned: null,
     gradedAt: null,
+    feedUid: null,
+    feedSnapshot: {},
     cancelReason: null,
     archivedAt: null,
     sortKey: 'a0',
