@@ -2,6 +2,9 @@
 
 An offline-first daily task PWA. Tend to what needs doing.
 
+**Using it:** [docs/using-tend.md](docs/using-tend.md) covers every feature, the
+quick-add syntax, setting up a semester, Canvas import and the local model assist.
+
 ## What this is
 
 One app for daily task management that works with no network, installs on a phone, laptop
