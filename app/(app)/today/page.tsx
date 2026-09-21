@@ -3,12 +3,14 @@
 import { Sun } from '@phosphor-icons/react/dist/ssr';
 import { QuickAdd } from '@/components/task/QuickAdd';
 import { DayEvents } from '@/components/courses/DayEvents';
+import { NextUpStrip } from '@/components/courses/NextUpStrip';
 import { DeferredSection } from '@/components/views/FoldedTasks';
 import { EmptyState } from '@/components/views/EmptyState';
 import { TaskList } from '@/components/views/TaskList';
 import { ViewHeader } from '@/components/views/ViewHeader';
 import { useFirstLoadComplete, useTodayDeferred, useTodayList, useTodayProgress } from '@/hooks/use-tasks';
-import { useCourseEvents } from '@/hooks/use-courses';
+import { useCourseEvents, useCourses } from '@/hooks/use-courses';
+import { useOpenTasks } from '@/hooks/use-tasks';
 import { useWorkload } from '@/hooks/use-workload';
 import { formatWorkMinutes } from '@/lib/workload/capacity';
 import { today, todayGroup } from '@/lib/db/queries';
@@ -21,6 +23,10 @@ export default function TodayPage() {
   // One day's worth, so the query is the same shape the calendar's is.
   const events = useCourseEvents(day, day);
   const workload = useWorkload(14);
+  const courses = useCourses();
+  // Every open task, not just today's: the next deadline in a course is
+  // usually not today, which is the whole point of saying it.
+  const allOpen = useOpenTasks();
   const load = workload.days[0];
   const progress = useTodayProgress();
   const loaded = useFirstLoadComplete();
@@ -52,6 +58,8 @@ export default function TodayPage() {
             dateless, which is what someone means by adding it to Today. */}
         <QuickAdd defaults={{ plannedFor: day }} placeholder="What needs doing today" />
       </div>
+
+      <NextUpStrip courses={courses} tasks={allOpen} today={day} />
 
       <DayEvents events={events} />
 

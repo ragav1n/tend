@@ -27,6 +27,7 @@ import {
   taskHistory,
   tasksByIds,
   today,
+  remindersFor,
   todayDeferred,
   todayList,
   todayProgress,
@@ -38,6 +39,7 @@ import type {
   Project,
   Tag,
   Task,
+  TaskReminder,
   TaskSeries,
 } from '@/lib/db/types';
 
@@ -236,3 +238,10 @@ export function useFocusBetween(from: string, to: string): FocusSession[] {
 export function useTaskHistory(taskId: string): ActivityEntry[] | undefined {
   return useLiveQuery(() => taskHistory(taskId), [taskId]);
 }
+
+/** The explicit reminders on one task. Empty means the global lead applies. */
+export function useTaskReminders(taskId: string): TaskReminder[] {
+  return useStableLiveQuery(() => remindersFor(taskId), [taskId], NO_REMINDERS);
+}
+
+const NO_REMINDERS: TaskReminder[] = [];

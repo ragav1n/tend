@@ -17,6 +17,7 @@ import type {
   SyncMetaRow,
   Tag,
   Task,
+  TaskReminder,
   TaskSeries,
   TaskTag,
   Term,
@@ -66,6 +67,7 @@ export class TendDb extends Dexie {
   courseComponents!: EntityTable<CourseComponent, 'id'>;
   feeds!: EntityTable<Feed, 'id'>;
   courseEvents!: EntityTable<CourseEvent, 'id'>;
+  taskReminders!: EntityTable<TaskReminder, 'id'>;
   prefs!: EntityTable<Prefs, 'id'>;
   /** Auto-incrementing seq, so the key type is a number. */
   outbox!: Table<OutboxRecord, number>;

@@ -58,6 +58,7 @@ describe('the migration directory', () => {
       '0024_course_feed.sql',
       '0025_capacity.sql',
       '0026_mail_capture.sql',
+      '0027_task_reminders_sync.sql',
     ]);
   });
 

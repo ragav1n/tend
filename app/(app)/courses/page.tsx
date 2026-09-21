@@ -19,6 +19,7 @@ import { CourseCard } from '@/components/courses/CourseCard';
 import { GradesTab } from '@/components/courses/GradesTab';
 import { TermGpa } from '@/components/courses/TermGpa';
 import { SyllabusImport } from '@/components/courses/SyllabusImport';
+import { ExamRadar } from '@/components/courses/ExamRadar';
 import { MEETING_DAYS } from '@/components/courses/MeetingRows';
 import { TermEditor } from '@/components/courses/TermEditor';
 import {
@@ -28,6 +29,7 @@ import {
   useCourseDone,
   useCourseList,
   useCoursesInTerm,
+  useCourseEvents,
   useCurrentTerm,
   useScoredTasks,
   useTerms,
@@ -35,6 +37,7 @@ import {
 import type { Course, Term } from '@/lib/db/types';
 import { reorderCourse } from '@/lib/db/mutations';
 import { slotFor } from '@/lib/db/rank';
+import { addDays, today } from '@/lib/db/queries';
 import { cn } from '@/lib/utils';
 
 /**
@@ -149,6 +152,11 @@ function CourseIndex({
   const courses = useCoursesInTerm(termId === '' ? undefined : termId);
   const counts = useCourseCounts(courses);
 
+  // Three weeks, which is the window the radar itself uses. Querying wider and
+  // filtering after would read a term of lectures to show two exams.
+  const day = today();
+  const events = useCourseEvents(day, addDays(day, 21));
+
   return (
     <>
       <ViewHeader
@@ -202,6 +210,8 @@ function CourseIndex({
       </div>
 
       {courses.length > 0 && <TermGpa courses={courses} />}
+
+      <ExamRadar events={events} today={day} />
 
       {courses.length === 0 ? (
         <EmptyState

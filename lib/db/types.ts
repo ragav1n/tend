@@ -296,6 +296,24 @@ export interface Tag extends SyncedRow {
 }
 
 /**
+ * "Remind me two days before this one."
+ *
+ * The global `reminderLeadMinutes` is one number for every task, which cannot
+ * say that a thesis deadline wants two days and a standup wants five minutes.
+ * A row here overrides it for one task, and the pipeline in 0008 has always
+ * preferred an explicit reminder over the derived one.
+ *
+ * `offsetMinutes` is signed against the due instant: negative is before, which
+ * is the direction people mean. Positive is legal and means after, which is
+ * occasionally what somebody wants for a follow-up.
+ */
+export interface TaskReminder extends SyncedRow {
+  taskId: string;
+  offsetMinutes: number;
+  _del: 0 | 1;
+}
+
+/**
  * A recurring series.
  *
  * Holds the rule and the counters, nothing else. The next occurrence is cloned
@@ -476,6 +494,7 @@ export type EntityTable =
   | 'courseComponents'
   | 'feeds'
   | 'courseEvents'
+  | 'taskReminders'
   | 'tags'
   | 'taskTags'
   | 'taskSeries'

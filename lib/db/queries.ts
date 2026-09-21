@@ -19,6 +19,7 @@ import {
   type SavedView,
   type Tag,
   type Task,
+  type TaskReminder,
   type TaskSeries,
   type Term,
 } from './types';
@@ -569,6 +570,15 @@ export async function eventsBetween(
   );
 }
 
+/** The explicit reminders on one task, soonest-before first. */
+export async function remindersFor(
+  taskId: string,
+  db: TendDb = getDb(),
+): Promise<TaskReminder[]> {
+  const rows = await db.taskReminders.where('[_del+taskId]').equals([0, taskId]).toArray();
+  return rows.sort((a, b) => a.offsetMinutes - b.offsetMinutes);
+}
+
 /** The weighted buckets of a course, in the order you arranged them. */
 export async function componentsOf(
   courseId: string,
@@ -768,6 +778,33 @@ export async function completedBetween(
     .where('[_del+_done+completedAt]')
     .between([0, 1, from], [0, 1, to], true, true)
     .toArray();
+}
+
+/**
+ * Coursework whose grade landed inside a window.
+ *
+ * `gradedAt` is a wall-clock day rather than an instant, so the bounds are days
+ * and not timestamps. No index for it: the set is coursework carrying points,
+ * which is a semester's worth rather than a store's, and it is read once a week
+ * on the review screen.
+ */
+export async function gradedBetween(
+  from: PlainDate,
+  to: PlainDate,
+  db: TendDb = getDb(),
+): Promise<Task[]> {
+  const rows = await db.tasks
+    .where('[_del+courseId+_done+sortKey]')
+    .between([0, '', 0, ''], [0, MAX_STR, 1, MAX_STR], true, true)
+    .toArray();
+
+  return rows.filter(
+    (task) =>
+      task.courseId !== '' &&
+      task.gradedAt !== null &&
+      task.gradedAt >= from &&
+      task.gradedAt <= to,
+  );
 }
 
 /** Open work whose due date has already passed. */

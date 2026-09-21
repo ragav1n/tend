@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import {
+  BellSimple,
   CalendarBlank,
   Clock,
   Flag,
@@ -15,8 +16,10 @@ import {
   TrashSimple,
 } from '@phosphor-icons/react/dist/ssr';
 import {
+  addTaskReminder,
   cancelTasks,
   createProject,
+  removeTaskReminder,
   deleteTask,
   ensureTag,
   restoreTask,
@@ -36,6 +39,7 @@ import {
 } from '@/lib/db/types';
 import { useProjects, useSeries, useTags } from '@/hooks/use-tasks';
 import { useComponents, useCourses } from '@/hooks/use-courses';
+import { useTaskReminders } from '@/hooks/use-tasks';
 import { Field, FieldGroup, controlClass } from '@/components/ui/Field';
 import { Markdown } from '@/components/ui/Markdown';
 import { Segmented } from '@/components/ui/Segmented';
@@ -82,6 +86,7 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
   // Only for the course this task is in, so a panel on an ordinary task runs
   // no query at all.
   const components = useComponents(task.courseId === NO_COURSE ? null : task.courseId);
+  const reminders = useTaskReminders(task.id);
   const tags = useTags();
 
   const [title, setTitle] = useState(task.title);
@@ -475,6 +480,19 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
           </>
         )}
 
+        {/* Only on a task with a due instant to count back from. A reminder on
+            something undated has nothing to be relative to, and offering it
+            there would be a control that silently does nothing. */}
+        {task.dueDate !== null && (
+          <Field label="Remind me" icon={BellSimple} htmlFor="reminder-add">
+            <ReminderRow
+              taskId={task.id}
+              reminders={reminders}
+              hasTime={task.dueTime !== null}
+            />
+          </Field>
+        )}
+
         <Field label="Estimate" icon={Hourglass} htmlFor="estimate">
           <div className="flex items-center gap-2">
             <input
@@ -632,5 +650,95 @@ function CancelMenu({ onPick }: { onPick: (reason: CancelReason) => void }) {
         ))}
       </select>
     </label>
+  );
+}
+
+/** The offsets worth one tap. Signed minutes, negative for before. */
+const REMINDER_OFFSETS: { minutes: number; label: string }[] = [
+  { minutes: -10, label: '10m before' },
+  { minutes: -60, label: '1h before' },
+  { minutes: -1440, label: '1 day before' },
+  { minutes: -2880, label: '2 days before' },
+  { minutes: -10080, label: '1 week before' },
+];
+
+export function offsetLabel(minutes: number): string {
+  const known = REMINDER_OFFSETS.find((each) => each.minutes === minutes);
+  if (known) return known.label;
+
+  const before = minutes <= 0;
+  const size = Math.abs(minutes);
+  const said =
+    size >= 1440
+      ? `${Math.round(size / 1440)}d`
+      : size >= 60
+        ? `${Math.round(size / 60)}h`
+        : `${size}m`;
+  return `${said} ${before ? 'before' : 'after'}`;
+}
+
+/**
+ * Reminders on one task.
+ *
+ * The chips are the whole control. A picker with a number field and a unit
+ * dropdown is three decisions to say "the day before", which is the only thing
+ * most people ever want.
+ *
+ * With none set, the account's own lead time applies, and the row says so
+ * rather than looking empty: "no reminder" and "the usual reminder" are
+ * different states and the difference is the point of the feature.
+ */
+function ReminderRow({
+  taskId,
+  reminders,
+  hasTime,
+}: {
+  taskId: string;
+  reminders: readonly { id: string; offsetMinutes: number }[];
+  /** An all-day task is reminded at the account's all-day hour, so the offsets
+   *  count back from that rather than from midnight. Worth saying once. */
+  hasTime: boolean;
+}) {
+  const set = new Set(reminders.map((each) => each.offsetMinutes));
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap gap-1">
+        {REMINDER_OFFSETS.map((offset) => {
+          const on = set.has(offset.minutes);
+          return (
+            <button
+              key={offset.minutes}
+              type="button"
+              onClick={() => {
+                if (on) {
+                  const row = reminders.find((each) => each.offsetMinutes === offset.minutes);
+                  if (row) void removeTaskReminder(row.id);
+                } else {
+                  void addTaskReminder(taskId, offset.minutes);
+                }
+              }}
+              aria-pressed={on}
+              className={cn(
+                'rounded-md border px-2 py-1 text-xs',
+                on
+                  ? 'border-clay-400 bg-clay-600 text-on-accent'
+                  : 'border-line text-text-lo hover:border-line-bright hover:text-text-mid',
+              )}
+            >
+              {offset.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <p className="text-xs text-text-faint">
+        {reminders.length === 0
+          ? 'Using your usual lead time from Settings.'
+          : hasTime
+            ? 'Counted back from the due time.'
+            : 'Counted back from your all-day reminder hour.'}
+      </p>
+    </div>
   );
 }

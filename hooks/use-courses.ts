@@ -11,6 +11,7 @@ import {
   coursesInTerm,
   eventsBetween,
   feedList,
+  gradedBetween,
   scoredTasks,
   currentTerm,
   termOptions,
@@ -124,4 +125,9 @@ export function useFeeds(): Feed[] {
 /** Lectures, exams and office hours inside a window, for the calendar layer. */
 export function useCourseEvents(from: string, to: string): CourseEvent[] {
   return useStableLiveQuery(() => eventsBetween(from, to), [from, to], NO_EVENTS);
+}
+
+/** Coursework whose grade landed inside a window. */
+export function useGradedBetween(from: string, to: string): Task[] {
+  return useStableLiveQuery(() => gradedBetween(from, to), [from, to], NO_TASKS);
 }

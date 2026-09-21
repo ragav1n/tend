@@ -5,8 +5,11 @@ import { CaretLeft, CaretRight, Confetti } from '@phosphor-icons/react/dist/ssr'
 import { EmptyState } from '@/components/views/EmptyState';
 import { TaskList } from '@/components/views/TaskList';
 import { WeekChart } from '@/components/views/WeekChart';
-import { useCompletedBetween, useFocusBetween, useOverdue } from '@/hooks/use-tasks';
+import { CourseWeek } from '@/components/courses/CourseWeek';
+import { useCompletedBetween, useFocusBetween, useOpenTasks, useOverdue } from '@/hooks/use-tasks';
 import { usePrefs } from '@/hooks/use-prefs';
+import { useCourses, useGradedBetween } from '@/hooks/use-courses';
+import { academicWeek } from '@/lib/stats/academic';
 import { shiftDays } from '@/lib/calendar/grid';
 import { today } from '@/lib/db/queries';
 import { formatMinutes } from '@/lib/focus/timer';
@@ -81,7 +84,18 @@ export default function ReviewPage() {
   const sessions = useFocusBetween(bounds.from, bounds.to);
   const overdue = useOverdue();
 
+  // The week read through the courses. `allOpen` is here so a session can find
+  // its course through a task finished in an earlier week, which is the common
+  // case for anything long-running.
+  const courses = useCourses();
+  const allOpen = useOpenTasks();
+  const graded = useGradedBetween(start, shiftDays(start, 6));
+
   const summary = useMemo(() => summarize(days, completed, sessions), [days, completed, sessions]);
+  const academic = useMemo(
+    () => academicWeek(courses, completed, sessions, [...allOpen, ...completed], graded),
+    [courses, completed, sessions, allOpen, graded],
+  );
   const thisWeek = offset === 0;
   // A past week gets the streak as it stood at the end of it. Showing today's
   // number beside March's totals reports something that is true and answers a
@@ -150,7 +164,9 @@ export default function ReviewPage() {
         )}
       </section>
 
-      <section>
+      <CourseWeek rows={academic.courses} unattributedSeconds={academic.unattributedSeconds} />
+
+      <section className="mt-7">
         <h2 className="label mb-3">Still owed</h2>
         <TaskList
           tasks={overdue}

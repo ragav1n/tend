@@ -12,6 +12,7 @@ import {
   deriveCourse,
   deriveCourseComponent,
   deriveFeed,
+  deriveTaskReminder,
   deriveFocusSession,
   deriveProject,
   deriveSavedView,
@@ -51,6 +52,7 @@ import {
   type Tag,
   type Task,
   type TaskSeries,
+  type TaskReminder,
   type TaskStatus,
   type Term,
 } from './types';
@@ -1786,6 +1788,69 @@ export async function reorderCourse(
   const sortKey = rankAmong(prevSortKey, nextSortKey);
   await db.transaction('rw', [db.courses, db.outbox], async () => {
     await writeCoursePatch(id, { sortKey }, db);
+  });
+}
+
+// ─── Per-task reminders ───────────────────────────────────────────────────────
+
+/**
+ * "Remind me two days before this one."
+ *
+ * The global `reminderLeadMinutes` is one number for every task and cannot say
+ * that a thesis deadline wants two days while a standup wants five minutes.
+ * A row here overrides it for one task, and the SQL pipeline in 0008 has always
+ * preferred an explicit reminder over the derived one.
+ *
+ * Unlogged, so it never enters the undo stack. A reminder offset is a setting
+ * on a task rather than a change to it, and ⌘Z after adding one should take
+ * back whatever edit came before, not quietly remove the reminder.
+ */
+export async function addTaskReminder(
+  taskId: string,
+  offsetMinutes: number,
+  db: TendDb = getDb(),
+): Promise<string | null> {
+  const id = newId();
+
+  return db.transaction('rw', [db.taskReminders, db.outbox], async () => {
+    const existing = await db.taskReminders
+      .where('[_del+taskId]')
+      .equals([0, taskId])
+      .toArray();
+
+    // The server has a unique index on (task_id, offset_minutes), so a
+    // duplicate would come back as a rejected push rather than as nothing.
+    if (existing.some((row) => row.offsetMinutes === offsetMinutes)) return null;
+
+    const base = {
+      id,
+      userId: LOCAL_USER_ID,
+      taskId,
+      offsetMinutes,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      deletedAt: null,
+      rowVersion: 0,
+    };
+    const row: TaskReminder = { ...base, ...deriveTaskReminder(base) };
+    await db.taskReminders.add(row);
+    await db.outbox.add(
+      outboxRecord('taskReminders', id, 'insert', toInsertPatch(row), 0, { deps: [taskId] }),
+    );
+    return id;
+  });
+}
+
+export async function removeTaskReminder(id: string, db: TendDb = getDb()): Promise<void> {
+  await db.transaction('rw', [db.taskReminders, db.outbox], async () => {
+    const current = await db.taskReminders.get(id);
+    if (!current) return;
+    const deletedAt = nowIso();
+    const next = { ...current, deletedAt, updatedAt: deletedAt };
+    await db.taskReminders.put({ ...next, ...deriveTaskReminder(next) });
+    await db.outbox.add(
+      outboxRecord('taskReminders', id, 'delete', { deletedAt }, current.rowVersion),
+    );
   });
 }
 

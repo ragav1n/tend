@@ -156,7 +156,10 @@ const READ_ONLY = new Set<string>(['course_events']);
 describe('the table name map', () => {
   it('names only tables the migrations actually create', () => {
     for (const wire of Object.values(WIRE_TABLE)) {
-      expect(ALL, wire).toContain(`create table public.${wire}`);
+      // `if not exists` is a form the migrations use, so the match allows it
+      // rather than reporting a table that plainly exists as missing.
+      const created = new RegExp(`create table (if not exists )?public\\.${wire}\\b`);
+      expect(created.test(ALL), wire).toBe(true);
     }
   });
 

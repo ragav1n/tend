@@ -43,6 +43,7 @@ export const MIGRATIONS = [
   '0024_course_feed',
   '0025_capacity',
   '0026_mail_capture',
+  '0027_task_reminders_sync',
 ];
 
 export function migrationSql(name: string): string {

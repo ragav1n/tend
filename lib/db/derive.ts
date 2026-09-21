@@ -12,6 +12,7 @@ import {
   type SavedView,
   type Tag,
   type Task,
+  type TaskReminder,
   type TaskSeries,
   type Term,
 } from './types';
@@ -127,6 +128,12 @@ export function deriveCourseEvent(
   event: Omit<CourseEvent, '_del'>,
 ): Pick<CourseEvent, '_del'> {
   return { _del: event.deletedAt ? 1 : 0 };
+}
+
+export function deriveTaskReminder(
+  reminder: Omit<TaskReminder, '_del'>,
+): Pick<TaskReminder, '_del'> {
+  return { _del: reminder.deletedAt ? 1 : 0 };
 }
 
 export function deriveTag(tag: Omit<Tag, '_del'>): Pick<Tag, '_del'> {

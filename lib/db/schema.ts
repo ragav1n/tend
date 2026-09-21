@@ -269,4 +269,21 @@ export function defineSchema(db: Dexie): void {
     .upgrade(async (tx) => {
       await tx.table('syncMeta').delete('sync.cursor');
     });
+
+  // v10 adds the per-task reminders that have existed server-side since 0008.
+  //
+  // `[_del+taskId]` is the only index it needs: the one question anybody asks
+  // is "what reminders does this task have", and the detail panel asks it for
+  // one task at a time.
+  //
+  // The cursor is cleared again, for the reason v8 and v9 cleared it. The rows
+  // were never pullable before now, so a device that has been syncing since
+  // phase 2 has a cursor well past any that exist.
+  db.version(10)
+    .stores({
+      taskReminders: ['id', '_del', 'rowVersion', '[_del+taskId]'].join(', '),
+    })
+    .upgrade(async (tx) => {
+      await tx.table('syncMeta').delete('sync.cursor');
+    });
 }

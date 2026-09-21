@@ -12,6 +12,7 @@ import {
   deriveSeries,
   deriveTag,
   deriveTask,
+  deriveTaskReminder,
   deriveTerm,
 } from '@/lib/db/derive';
 import { PREFS_ID, withPrefDefaults } from '@/lib/db/prefs';
@@ -29,6 +30,7 @@ import type {
   SavedView,
   Tag,
   Task,
+  TaskReminder,
   TaskSeries,
   Term,
 } from '@/lib/db/types';
@@ -466,6 +468,34 @@ async function applyCourseEvents(db: TendDb, rows: PullRow[]): Promise<ApplyResu
   return result;
 }
 
+async function applyTaskReminders(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
+  const result: ApplyResult = { applied: 0, skipped: 0 };
+  const ids = rows.map((r) => String(r.row.id));
+  const current = new Map(
+    (await db.taskReminders.bulkGet(ids))
+      .filter((r): r is TaskReminder => r !== undefined)
+      .map((r) => [r.id, r]),
+  );
+
+  const puts: TaskReminder[] = [];
+  for (const { row } of rows) {
+    const id = String(row.id);
+    if (isStale(Number(row.row_version ?? 0), current.get(id)?.rowVersion)) {
+      result.skipped += 1;
+      continue;
+    }
+    const base = {
+      ...(current.get(id) ?? {}),
+      ...wireToLocal('task_reminders', row),
+    } as TaskReminder;
+    puts.push({ ...base, ...deriveTaskReminder(base) });
+    result.applied += 1;
+  }
+
+  if (puts.length > 0) await db.taskReminders.bulkPut(puts);
+  return result;
+}
+
 export const APPLIERS: Partial<
   Record<WireTable, (db: TendDb, rows: PullRow[]) => Promise<ApplyResult>>
 > = {
@@ -483,6 +513,7 @@ export const APPLIERS: Partial<
   course_components: applyCourseComponents,
   feeds: applyFeeds,
   course_events: applyCourseEvents,
+  task_reminders: applyTaskReminders,
 };
 
 /**
@@ -525,6 +556,7 @@ export const TABLE_ORDER: WireTable[] = [
   'feeds',
   'task_series',
   'tasks',
+  'task_reminders',
   'focus_sessions',
   'activity_log',
   'saved_views',
@@ -625,6 +657,9 @@ export async function discardLocal(
       return;
     case 'courseEvents':
       await db.courseEvents.delete(entityId);
+      return;
+    case 'taskReminders':
+      await db.taskReminders.delete(entityId);
       return;
     case 'prefs':
       // One row per user, created by the signup trigger. Nothing can race it.
