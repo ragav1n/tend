@@ -25,7 +25,7 @@ import { ModelSettings } from '@/components/courses/ModelSettings';
 import { CapacityRow } from '@/components/views/CapacityRow';
 import { signOut, useAccountEmail } from '@/hooks/use-account';
 import { useAppUpdate } from '@/hooks/use-app-update';
-import { usePrefs } from '@/hooks/use-prefs';
+import { useDeviceTimezone, usePrefs } from '@/hooks/use-prefs';
 import { toast } from 'sonner';
 import { useInstall } from '@/hooks/use-install';
 import { usePush } from '@/hooks/use-push';
@@ -33,7 +33,7 @@ import { formatBytes, useStorageState } from '@/hooks/use-storage';
 import { useSyncState } from '@/hooks/use-sync';
 import { useTheme } from '@/hooks/use-theme';
 import { updatePrefs } from '@/lib/db/mutations';
-import { deviceTimezone, fromTimeInput, toTimeInput } from '@/lib/db/prefs';
+import { fromTimeInput, toTimeInput } from '@/lib/db/prefs';
 import { formatSince } from '@/lib/format/date';
 import { buildIcs, saveFile } from '@/lib/ics/download';
 import type { PrefsPatch } from '@/lib/db/mutations';
@@ -52,6 +52,7 @@ import { cn } from '@/lib/utils';
  */
 export default function SettingsPage() {
   const prefs = usePrefs();
+  const deviceZone = useDeviceTimezone();
   const email = prefs.emailEnabled;
 
   const set = (patch: PrefsPatch) => {
@@ -266,7 +267,9 @@ export default function SettingsPage() {
       <Group title="Time" icon={Globe}>
         <Row
           label="Timezone"
-          hint={`Every reminder is scheduled against this. This device says ${deviceTimezone()}.`}
+          hint={`Every reminder is scheduled against this.${
+            deviceZone ? ` This device says ${deviceZone}.` : ''
+          }`}
         >
           {(id) => (
             <select

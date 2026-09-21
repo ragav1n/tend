@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { getDb } from '@/lib/db/client';
 import { updatePrefs } from '@/lib/db/mutations';
@@ -16,6 +16,28 @@ import type { Prefs } from '@/lib/db/types';
  */
 export function usePrefs(): Prefs {
   return withPrefDefaults(useLiveQuery(() => getDb().prefs.get(PREFS_ID), [], undefined));
+}
+
+/** The zone is read once and never changes under us, so there is nothing to
+ *  subscribe to. The store is here for its server snapshot, not its updates. */
+const NO_UPDATES = () => () => {};
+
+/**
+ * The device's zone, or null until the browser has it.
+ *
+ * `Intl` resolves to UTC on the server and to the real zone in the browser, so
+ * rendering it directly is a hydration mismatch. Suppressing that mismatch is
+ * the wrong trade and it was measured: React keeps the server's text, so the
+ * hint reads "UTC" on a machine in New York and never corrects itself. React
+ * recovers correctly when the warning is left alone, which is to say the noisy
+ * version was the honest one.
+ *
+ * So the value is withheld until hydration is over, the same split
+ * `useMediaQuery` makes for a query the server cannot answer either. The caller
+ * renders without it for one paint.
+ */
+export function useDeviceTimezone(): string | null {
+  return useSyncExternalStore(NO_UPDATES, deviceTimezone, () => null);
 }
 
 /**
