@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ALL_ITEMS } from './nav';
+import type { BindingScope } from '@/lib/keys/map';
 import { BINDINGS, CHORD_INDEX, routeFor } from './keymap';
 
 /**
@@ -9,20 +10,66 @@ import { BINDINGS, CHORD_INDEX, routeFor } from './keymap';
  * which is the failure that ships silently: two bindings on one chord means the
  * second is unreachable and nothing errors.
  *
- * A collision is inside a scope, not across the map. The calendar and the board
- * both answer the arrow keys and neither is ever on screen with the other, so
- * the same chord standing for two things is the point rather than a mistake.
- * What cannot happen is two bindings the dispatcher can match in one scope, or a
- * scope reusing a global chord: the global set is bound whatever else is
- * mounted, so that press would have two answers.
+ * A collision is inside a scope, or across two scopes that can be bound at the
+ * same time. The calendar and the board both answer the arrow keys and neither
+ * is ever on screen with the other, so the same chord standing for two things
+ * there is the point rather than a mistake.
+ *
+ * Checking per scope alone was not enough. Every scope answered for itself and
+ * for the global set, and a chord shared by two scopes that are mounted together
+ * passed: the list and the selection bar are both live on every task page, and
+ * `/calendar` binds `calendar`, `list` and `selection` at once, because the grid
+ * has a `TaskList` under it. Nothing clashes today, which is exactly when to put
+ * the check in.
  */
 const scopeOf = (binding: (typeof BINDINGS)[number]) => binding.scope ?? 'global';
+
+/**
+ * Scope pairs that are never bound together, so one chord meaning two things is
+ * deliberate.
+ *
+ * Written as the exception rather than the rule. Listing which pairs *can*
+ * coexist would mean a scope added later is checked against nothing until
+ * somebody remembers to add its row.
+ */
+const EXCLUSIVE: ReadonlyArray<readonly [BindingScope, BindingScope]> = [['calendar', 'board']];
+
+/** Dispatchable chords in a scope. `native` ones are taught, never matched. */
+const chordsIn = (scope: BindingScope) =>
+  BINDINGS.filter((b) => scopeOf(b) === scope && !b.native).map((b) => b.chord);
 
 describe('the app keymap', () => {
   it('gives every chord one meaning inside a scope', () => {
     for (const scope of new Set(BINDINGS.map(scopeOf))) {
-      const chords = BINDINGS.filter((b) => scopeOf(b) === scope && !b.native).map((b) => b.chord);
+      const chords = chordsIn(scope);
       expect(new Set(chords).size, scope).toBe(chords.length);
+    }
+  });
+
+  it('gives every chord one meaning across two scopes that can both be live', () => {
+    const scopes = [...new Set(BINDINGS.map(scopeOf))];
+    const exclusive = new Set(EXCLUSIVE.flatMap(([a, b]) => [`${a}|${b}`, `${b}|${a}`]));
+    const clashes: string[] = [];
+
+    for (const [index, a] of scopes.entries()) {
+      for (const b of scopes.slice(index + 1)) {
+        if (exclusive.has(`${a}|${b}`)) continue;
+        const held = new Set(chordsIn(a));
+        for (const chord of chordsIn(b)) {
+          if (held.has(chord)) clashes.push(`${chord} answers in both ${a} and ${b}`);
+        }
+      }
+    }
+
+    expect(clashes).toEqual([]);
+  });
+
+  it('names a pair as exclusive only while both scopes exist', () => {
+    // A carve-out for a scope nobody binds any more is a carve-out that hides
+    // the next real clash.
+    const scopes = new Set(BINDINGS.map(scopeOf));
+    for (const pair of EXCLUSIVE) {
+      for (const scope of pair) expect(scopes.has(scope), scope).toBe(true);
     }
   });
 
