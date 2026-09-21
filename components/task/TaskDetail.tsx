@@ -8,6 +8,7 @@ import {
   Flag,
   FolderSimple,
   Hourglass,
+  GraduationCap,
   Prohibit,
   Sun,
   TrashSimple,
@@ -24,8 +25,16 @@ import {
   type TaskPatch,
 } from '@/lib/db/mutations';
 import { today } from '@/lib/db/queries';
-import { NO_PROJECT, type CancelReason, type Priority, type Task } from '@/lib/db/types';
+import {
+  NO_COMPONENT,
+  NO_COURSE,
+  NO_PROJECT,
+  type CancelReason,
+  type Priority,
+  type Task,
+} from '@/lib/db/types';
 import { useProjects, useSeries, useTags } from '@/hooks/use-tasks';
+import { useCourses } from '@/hooks/use-courses';
 import { Field, FieldGroup, controlClass } from '@/components/ui/Field';
 import { Markdown } from '@/components/ui/Markdown';
 import { Segmented } from '@/components/ui/Segmented';
@@ -68,6 +77,7 @@ function autoGrow(el: HTMLTextAreaElement | null) {
 export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void }) {
   const series = useSeries(task.seriesId);
   const projects = useProjects();
+  const courses = useCourses();
   const tags = useTags();
 
   const [title, setTitle] = useState(task.title);
@@ -339,6 +349,36 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
                 <option value={NEW_PROJECT}>New project…</option>
               </select>
             )}
+          </Field>
+        )}
+
+        {/* Beside Project rather than instead of it. A task can be CS 6035 work
+            and part of a project called Term paper, and being made to choose is
+            not a choice anybody wants. A subtask takes both from its parent. */}
+        {task.depth === 0 && courses.length > 0 && (
+          <Field label="Course" icon={GraduationCap} htmlFor="course">
+            <select
+              id="course"
+              value={task.courseId}
+              onChange={(e) =>
+                // Clearing the course clears the weighting with it: a component
+                // is defined by the course, so it cannot outlive the link.
+                patch(
+                  e.target.value === NO_COURSE
+                    ? { courseId: NO_COURSE, componentId: NO_COMPONENT }
+                    : { courseId: e.target.value },
+                )
+              }
+              className={controlClass}
+            >
+              <option value={NO_COURSE}>No course</option>
+              {courses.map((course) => (
+                <option key={course.id} value={course.id}>
+                  {course.code}
+                  {course.name ? ` · ${course.name}` : ''}
+                </option>
+              ))}
+            </select>
           </Field>
         )}
 

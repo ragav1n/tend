@@ -12,6 +12,7 @@ import {
   ArrowRight,
   DownloadSimple,
   FolderSimple,
+  GraduationCap,
   Hash,
   Keyboard,
   MagnifyingGlass,
@@ -27,6 +28,7 @@ import { MODAL, QUICK_FADE, modalVariants } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 import { useScrollLock } from '@/hooks/use-scroll-lock';
 import { useProjects, useSearch, useTags } from '@/hooks/use-tasks';
+import { useCourses } from '@/hooks/use-courses';
 import { useSavedViews } from '@/hooks/use-views';
 import { useUiStore, type PaletteMode } from '@/hooks/use-ui';
 import { Chord } from '@/components/ui/Kbd';
@@ -96,6 +98,7 @@ function Palette({ mode, onClose }: { mode: PaletteMode; onClose: () => void }) 
   // it as a jump target is how work gets filed back into one.
   const projects = useProjects();
   const tags = useTags();
+  const courses = useCourses();
   const todayDate = today();
 
   useScrollLock();
@@ -182,7 +185,22 @@ function Palette({ mode, onClose }: { mode: PaletteMode; onClose: () => void }) 
     run: () => router.push(`/projects?p=${project.id}`),
   }));
 
-  const jumpTargets = [...commands, ...viewRows, ...projectRows, ...tagRows];
+  /**
+   * A course by its code, which is what you would type.
+   *
+   * The title is in the label too so "information security" finds CS 6035, but
+   * the code leads, because that is the name it has in your head and in the
+   * rail. This is also what lets the rail keep four destinations folded away:
+   * the long tail is reachable in two keystrokes from here.
+   */
+  const courseRows: Row[] = courses.map((course) => ({
+    id: `course:${course.id}`,
+    label: course.name ? `${course.code} ${course.name}` : course.code,
+    icon: GraduationCap,
+    run: () => router.push(`/courses?c=${course.id}`),
+  }));
+
+  const jumpTargets = [...commands, ...viewRows, ...courseRows, ...projectRows, ...tagRows];
   const shownCommands =
     trimmed === '' ? jumpTargets : jumpTargets.filter((c) => matches(c.label, trimmed));
 

@@ -1,5 +1,6 @@
 import { parseQuickAdd } from '@/lib/parse';
 import { createTask, ensureProject, ensureTag } from './mutations';
+import { courseOptions } from './queries';
 
 /**
  * One line of text to one task.
@@ -15,6 +16,8 @@ export interface QuickDefaults {
   plannedFor?: string | null;
   dueDate?: string | null;
   projectId?: string;
+  /** The course page's own course, so anything typed there is coursework. */
+  courseId?: string;
 }
 
 export async function quickCreate(text: string, defaults: QuickDefaults = {}): Promise<string | null> {
@@ -28,16 +31,50 @@ export async function quickCreate(text: string, defaults: QuickDefaults = {}): P
   // instruction, and the chip already promised it would be applied.
   const projectId = parsed.projectName ? await ensureProject(parsed.projectName) : defaults.projectId;
 
+  // A typed +course resolves against the courses that exist rather than creating
+  // one. A course is a thing with credit hours, a term and a grading scheme, and
+  // conjuring an empty one from a typo is not a favour: "+cs6035" on a fresh
+  // install should file nowhere rather than invent CS6035.
+  const courseId = parsed.courseCode
+    ? ((await matchCourse(parsed.courseCode)) ?? defaults.courseId)
+    : defaults.courseId;
+
   // A typed date wins over the view's, for the same reason a typed project does.
   const dueDate = parsed.dueDate ?? defaults.dueDate ?? null;
 
   return createTask({
     title: parsed.title,
+    ...(defaults.courseId ? { courseId: defaults.courseId } : {}),
     dueDate,
     dueTime: parsed.dueTime,
     priority: parsed.priority,
     plannedFor: dueDate === null ? (defaults.plannedFor ?? null) : null,
     ...(projectId ? { projectId } : {}),
+    ...(courseId ? { courseId } : {}),
     tagIds,
   });
+}
+
+/**
+ * The course a typed code means, or nothing.
+ *
+ * Folded, so "+cs6035", "+CS 6035" and "+cs-6035" all reach CS 6035. Nobody
+ * types a course code the same way twice, and the alternative is a sigil that
+ * works only when you spell it exactly as you filed it.
+ */
+async function matchCourse(code: string): Promise<string | undefined> {
+  const wanted = fold(code);
+  if (wanted === '') return undefined;
+
+  const courses = await courseOptions();
+  const exact = courses.find((course) => fold(course.code) === wanted);
+  if (exact) return exact.id;
+
+  // A prefix, so "+cs6" reaches CS 6035 when it is the only thing it could be.
+  const starts = courses.filter((course) => fold(course.code).startsWith(wanted));
+  return starts.length === 1 ? starts[0]!.id : undefined;
+}
+
+function fold(code: string): string {
+  return code.toLowerCase().replace(/[^a-z0-9]/g, '');
 }

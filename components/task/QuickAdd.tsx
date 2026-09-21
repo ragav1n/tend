@@ -2,9 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { CalendarBlank, Flag, Hash, Plus, FolderSimple } from '@phosphor-icons/react/dist/ssr';
+import {
+  CalendarBlank,
+  Flag,
+  FolderSimple,
+  GraduationCap,
+  Hash,
+  Plus,
+} from '@phosphor-icons/react/dist/ssr';
 import { parseQuickAdd, type TokenKind } from '@/lib/parse';
-import { quickCreate } from '@/lib/db/quick-create';
+import { quickCreate, type QuickDefaults } from '@/lib/db/quick-create';
 import { PRESS_DEPTH, QUICK_FADE, SNAPPY } from '@/lib/motion';
 import { useUiStore } from '@/hooks/use-ui';
 import { cn } from '@/lib/utils';
@@ -19,9 +26,12 @@ import { cn } from '@/lib/utils';
  */
 
 interface QuickAddProps {
-  /** Pre-set for the view the input sits in, so Today's field files into Today
-   *  and the calendar's files into the day being looked at. */
-  defaults?: { plannedFor?: string | null; dueDate?: string | null; projectId?: string };
+  /**
+   * Pre-set for the view the input sits in, so Today's field files into Today
+   * and a course page's files into that course. Typed from `quick-create`, so
+   * the field and the palette cannot disagree about what a default is.
+   */
+  defaults?: QuickDefaults;
   placeholder?: string;
 }
 
@@ -31,6 +41,7 @@ const CHIP_ICON: Record<TokenKind, React.ComponentType<{ size?: number; weight?:
   priority: Flag,
   tag: Hash,
   project: FolderSimple,
+  course: GraduationCap,
 };
 
 export function QuickAdd({ defaults, placeholder = 'Add a task' }: QuickAddProps) {

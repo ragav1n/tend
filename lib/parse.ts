@@ -17,7 +17,7 @@ import type { PlainDate, PlainTime, Priority } from './db/types';
  * as recurrence.ts.
  */
 
-export type TokenKind = 'date' | 'time' | 'priority' | 'tag' | 'project';
+export type TokenKind = 'date' | 'time' | 'priority' | 'tag' | 'project' | 'course';
 
 export interface ParsedToken {
   kind: TokenKind;
@@ -34,6 +34,9 @@ export interface ParsedTask {
   priority: Priority;
   tagNames: string[];
   projectName: string | null;
+  /** A course code, matched loosely: "+cs6035" and "+CS 6035" are the same
+   *  course, and the resolver is what decides which one. */
+  courseCode: string | null;
   tokens: ParsedToken[];
 }
 
@@ -147,6 +150,19 @@ const RULES: Rule[] = [
     apply: (m, { out }) => {
       // First one wins. A task belongs to one project.
       if (out.projectName === null) out.projectName = m[1]!;
+      return true;
+    },
+  },
+  {
+    // `+` is the one sigil left beside #tag and @project, and a course code is
+    // exactly the kind of thing you would reach for a sigil to say. The space
+    // in "CS 6035" is optional because nobody types it the same way twice, and
+    // resolution folds both forms together.
+    re: /(?:^|\s)\+([\p{L}\p{N}][\p{L}\p{N}_-]*(?:\s?\d[\p{L}\p{N}_-]*)?)/gu,
+    kind: 'course',
+    apply: (m, { out }) => {
+      // First one wins. A task belongs to one course.
+      if (out.courseCode === null) out.courseCode = m[1]!.trim();
       return true;
     },
   },
@@ -298,6 +314,7 @@ export function parseQuickAdd(input: string, now = new Date()): ParsedTask {
     priority: 0,
     tagNames: [],
     projectName: null,
+    courseCode: null,
     tokens: [],
   };
 

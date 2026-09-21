@@ -4,11 +4,19 @@ import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { motion } from 'motion/react';
-import { DotsThree, MagnifyingGlass } from '@phosphor-icons/react/dist/ssr';
+import { CaretRight, DotsThree, MagnifyingGlass } from '@phosphor-icons/react/dist/ssr';
 import { APP_NAME } from '@/lib/config';
 import { MarkTile } from '@/components/brand/Mark';
 import { MoreMenu } from '@/components/shell/MoreMenu';
-import { BAR_ITEMS, LISTS, MORE_ITEMS, SETTINGS, TOOLS, type NavItem } from '@/components/shell/nav';
+import {
+  BAR_ITEMS,
+  itemsIn,
+  MORE_ITEMS,
+  RAIL_SECTIONS,
+  SECTION_LABEL,
+  SETTINGS,
+  type NavItem,
+} from '@/components/shell/nav';
 import { CHORD_FOR } from '@/components/shell/keymap';
 import { Chord } from '@/components/ui/Kbd';
 import { SOFT } from '@/lib/motion';
@@ -90,7 +98,12 @@ function PinnedViews({ pathname }: { pathname: string }) {
       {views.map((view) => (
         <RailLink
           key={view.id}
-          item={{ href: `/views?v=${view.id}`, label: view.name, icon: viewIcon(view.icon) }}
+          item={{
+            href: `/views?v=${view.id}`,
+            label: view.name,
+            icon: viewIcon(view.icon),
+            section: 'plan',
+          }}
           active={`/views?v=${view.id}` === here}
           count={0}
         />
@@ -99,12 +112,63 @@ function PinnedViews({ pathname }: { pathname: string }) {
   );
 }
 
+/**
+ * The four destinations the rail keeps folded away.
+ *
+ * A disclosure rather than a second More sheet: the rail has the room, and a
+ * sheet on a desktop to reach Tags is a click and a dismissal to do what a
+ * click should. It opens itself when one of its pages is showing, so the rail
+ * never claims you are nowhere.
+ */
+function RailMore({
+  open,
+  onToggle,
+  pathname,
+  counts,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  pathname: string;
+  counts: ReturnType<typeof useSidebarCounts>;
+}) {
+  return (
+    <div className="mt-5">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="label flex w-full items-center gap-1 px-3 !text-[0.5625rem] hover:text-text-mid"
+      >
+        <CaretRight
+          size={9}
+          weight="bold"
+          aria-hidden
+          className={cn('transition-transform duration-150', open && 'rotate-90')}
+        />
+        More
+      </button>
+
+      {open &&
+        itemsIn('more').map((item) => (
+          <RailLink
+            key={item.href}
+            item={item}
+            active={pathname === item.href}
+            count={countFor(item, counts)}
+          />
+        ))}
+    </div>
+  );
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const counts = useSidebarCounts();
   const openPalette = useUiStore((state) => state.openPalette);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [railMoreOpen, setRailMoreOpen] = useState(false);
   const moreActive = MORE_ITEMS.some((item) => item.href === pathname);
+  const railMoreActive = itemsIn('more').some((item) => item.href === pathname);
 
   return (
     <>
@@ -145,28 +209,38 @@ export function Sidebar() {
           <Chord chord={CHORD_FOR.get('palette') ?? 'mod+k'} />
         </button>
 
-        {LISTS.map((item) => (
-          <RailLink
-            key={item.href}
-            item={item}
-            active={pathname === item.href}
-            count={countFor(item, counts)}
-          />
+        {RAIL_SECTIONS.map((section, index) => (
+          <div key={section}>
+            <p className={cn('label mb-1 px-3 !text-[0.5625rem]', index > 0 && 'mt-5')}>
+              {SECTION_LABEL[section]}
+            </p>
+            {itemsIn(section).map((item) => (
+              <RailLink
+                key={item.href}
+                item={item}
+                active={pathname === item.href}
+                count={countFor(item, counts)}
+              />
+            ))}
+            {/* Pinned views sit under Plan, which is where a saved filter is
+                used from. */}
+            {section === 'plan' && (
+              <Suspense fallback={null}>
+                <PinnedViews pathname={pathname} />
+              </Suspense>
+            )}
+          </div>
         ))}
 
-        <Suspense fallback={null}>
-          <PinnedViews pathname={pathname} />
-        </Suspense>
-
-        <p className="label mb-1 mt-5 px-3 !text-[0.5625rem]">Tools</p>
-        {TOOLS.map((item) => (
-          <RailLink
-            key={item.href}
-            item={item}
-            active={pathname === item.href}
-            count={countFor(item, counts)}
-          />
-        ))}
+        {/* The long tail, folded. Opened whenever one of its own pages is the
+            page you are on, so arriving by shortcut or palette never leaves the
+            rail disagreeing with the screen. */}
+        <RailMore
+          open={railMoreOpen || railMoreActive}
+          onToggle={() => setRailMoreOpen((shown) => !shown)}
+          pathname={pathname}
+          counts={counts}
+        />
 
         <div className="mt-auto">
           <RailLink item={SETTINGS} active={pathname === SETTINGS.href} count={0} />

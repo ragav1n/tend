@@ -297,3 +297,50 @@ describe('regex state does not leak between calls', () => {
     expect(second).toEqual(first);
   });
 });
+
+describe('a course code', () => {
+  it('reads a bare code', () => {
+    const out = parseQuickAdd('Project 1 +cs6035');
+    expect(out.courseCode).toBe('cs6035');
+    expect(out.title).toBe('Project 1');
+  });
+
+  it('reads a code with a space in it', () => {
+    // Nobody types a course code the same way twice, so the space is optional
+    // rather than required.
+    const out = parseQuickAdd('Read chapter 4 +CS 6035');
+    expect(out.courseCode).toBe('CS 6035');
+    expect(out.title).toBe('Read chapter 4');
+  });
+
+  it('takes the first one, since a task belongs to one course', () => {
+    expect(parseQuickAdd('Essay +hist2100 +cs6035').courseCode).toBe('hist2100');
+  });
+
+  it('sits alongside a date, a tag and a priority', () => {
+    const out = parseQuickAdd('Problem set tomorrow 9am !p1 #graded +cs6035');
+    expect(out.courseCode).toBe('cs6035');
+    expect(out.tagNames).toEqual(['graded']);
+    expect(out.priority).toBe(3);
+    expect(out.dueTime).toBe('09:00');
+    expect(out.title).toBe('Problem set');
+  });
+
+  it('answers nothing when no code was typed', () => {
+    expect(parseQuickAdd('Buy oat milk').courseCode).toBeNull();
+  });
+
+  it('leaves a bare plus alone', () => {
+    // "2 + 2" is arithmetic, not a course.
+    const out = parseQuickAdd('Work out 2 + 2');
+    expect(out.courseCode).toBeNull();
+    expect(out.title).toBe('Work out 2 + 2');
+  });
+
+  it('marks the span so the chip can highlight it', () => {
+    const out = parseQuickAdd('Lab +cs6035');
+    const token = out.tokens.find((each) => each.kind === 'course');
+    expect(token).toBeDefined();
+    expect(out.title).toBe('Lab');
+  });
+});

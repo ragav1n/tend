@@ -8,6 +8,7 @@ import {
   NO_PROJECT,
   type ActivityEntry,
   type Area,
+  type Course,
   type FocusSession,
   type Instant,
   type PlainDate,
@@ -16,6 +17,7 @@ import {
   type Tag,
   type Task,
   type TaskSeries,
+  type Term,
 } from './types';
 
 /**
@@ -418,6 +420,123 @@ export async function projectById(
 }
 
 /** Every live tag, alphabetical. Also small enough to read whole. */
+/**
+ * Every term, oldest arrangement first.
+ *
+ * Short and always read whole, so `sortKey` is the only ordering it needs.
+ */
+export async function termOptions(db: TendDb = getDb()): Promise<Term[]> {
+  return db.terms
+    .where('[_del+sortKey]')
+    .between([0, ''], [0, MAX_STR], true, true)
+    .toArray();
+}
+
+/** The term today falls inside, or the most recent one that has started. */
+export async function currentTerm(
+  day = today(),
+  db: TendDb = getDb(),
+): Promise<Term | undefined> {
+  const terms = await termOptions(db);
+  const running = terms.find((term) => term.startDate <= day && day <= term.endDate);
+  if (running) return running;
+
+  // Between semesters. The one that just ended beats the one starting in
+  // March, because the work you are still closing out belongs to it.
+  const started = terms.filter((term) => term.startDate <= day);
+  if (started.length === 0) return terms[0];
+  return started.reduce((latest, term) => (term.startDate > latest.startDate ? term : latest));
+}
+
+export async function courseOptions(db: TendDb = getDb()): Promise<Course[]> {
+  const rows = await db.courses.where('_del').equals(0).toArray();
+  return rows.sort(compareRank);
+}
+
+/** The courses filed under one term, in the order you arranged them. */
+export async function coursesInTerm(termId: string, db: TendDb = getDb()): Promise<Course[]> {
+  const rows = await db.courses
+    .where('[_del+termId+sortKey]')
+    .between([0, termId, ''], [0, termId, MAX_STR], true, true)
+    .toArray();
+  return rows.sort(compareRank);
+}
+
+export async function courseById(
+  id: string,
+  db: TendDb = getDb(),
+): Promise<Course | undefined> {
+  const row = await db.courses.get(id);
+  return row && row._del === 0 ? row : undefined;
+}
+
+/** Open top-level work in a course, in the order you arranged it. */
+export async function courseList(courseId: string, db: TendDb = getDb()): Promise<Task[]> {
+  const rows = await db.tasks
+    .where('[_del+courseId+_done+sortKey]')
+    .between([0, courseId, 0, ''], [0, courseId, 0, MAX_STR], true, true)
+    .toArray();
+  return rows.filter((t) => t.parentTaskId === NO_PARENT).sort(compareRank);
+}
+
+/** Finished work in a course, newest first, for the fold under the open list. */
+export async function courseDone(
+  courseId: string,
+  limit = 25,
+  db: TendDb = getDb(),
+): Promise<Task[]> {
+  const rows = await db.tasks
+    .where('[_del+courseId+_done+sortKey]')
+    .between([0, courseId, 1, ''], [0, courseId, 1, MAX_STR], true, true)
+    .toArray();
+  return rows
+    .filter((t) => t.parentTaskId === NO_PARENT)
+    .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))
+    .slice(0, limit);
+}
+
+export interface CourseCount {
+  open: number;
+  done: number;
+  /** The soonest due date still open, or null. What a course card leads with. */
+  nextDue: PlainDate | null;
+}
+
+/**
+ * Counts and the next deadline, per course.
+ *
+ * Two range scans per course rather than one over every task, matching
+ * `projectCounts`. A course holds a semester of work, not a store's worth.
+ */
+export async function courseCounts(
+  courseIds: readonly string[],
+  db: TendDb = getDb(),
+): Promise<Map<string, CourseCount>> {
+  const out = new Map<string, CourseCount>();
+
+  const counts = await Promise.all(
+    courseIds.map(async (id) => {
+      const range = (closed: 0 | 1) =>
+        db.tasks
+          .where('[_del+courseId+_done+sortKey]')
+          .between([0, id, closed, ''], [0, id, closed, MAX_STR], true, true)
+          .toArray();
+      const [open, closed] = await Promise.all([range(0), range(1)]);
+      const tops = open.filter((t) => t.parentTaskId === NO_PARENT);
+      const dated = tops.filter((t) => t._dueDay !== NO_DUE_DAY).map((t) => t._dueDay);
+      return {
+        id,
+        open: tops.length,
+        done: closed.filter((t) => t.parentTaskId === NO_PARENT && t.status === 'done').length,
+        nextDue: dated.length === 0 ? null : dated.reduce((a, b) => (a < b ? a : b)),
+      };
+    }),
+  );
+
+  for (const { id, ...rest } of counts) out.set(id, rest);
+  return out;
+}
+
 export async function tagOptions(db: TendDb = getDb()): Promise<Tag[]> {
   return db.tags.where('[_del+name]').between([0, ''], [0, MAX_STR], true, true).toArray();
 }

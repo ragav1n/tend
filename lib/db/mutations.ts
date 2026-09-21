@@ -9,12 +9,14 @@ import { getDb, LOCAL_USER_ID, type TendDb } from './client';
 import {
   deriveActivity,
   deriveArea,
+  deriveCourse,
   deriveFocusSession,
   deriveProject,
   deriveSavedView,
   deriveSeries,
   deriveTag,
   deriveTask,
+  deriveTerm,
   isClosed,
 } from './derive';
 import { newBatchId, newId, newMutationId } from './ids';
@@ -40,10 +42,13 @@ import {
   type Priority,
   type Project,
   type SavedView,
+  type Course,
+  type CourseMeeting,
   type Tag,
   type Task,
   type TaskSeries,
   type TaskStatus,
+  type Term,
 } from './types';
 
 /**
@@ -76,6 +81,7 @@ export interface NewTaskInput {
   tagIds?: string[];
   /** Explicit position. Defaults to the end of the list. */
   sortKey?: string;
+  courseId?: string;
 }
 
 /** Fields a caller may change. Server-owned columns are absent by construction. */
@@ -100,6 +106,11 @@ export type TaskPatch = Partial<
     | 'seriesId'
     | 'occurrenceDate'
     | 'occurrenceSeq'
+    | 'courseId'
+    | 'componentId'
+    | 'pointsPossible'
+    | 'pointsEarned'
+    | 'gradedAt'
   >
 >;
 
@@ -345,6 +356,7 @@ export async function createTask(input: NewTaskInput, db: TendDb = getDb()): Pro
       id,
       userId: LOCAL_USER_ID,
       projectId: parentTaskId === NO_PARENT ? (input.projectId ?? NO_PROJECT) : NO_PROJECT,
+      courseId: parentTaskId === NO_PARENT ? (input.courseId ?? NO_COURSE) : NO_COURSE,
       parentTaskId,
       seriesId: '',
       depth: (parentTaskId === NO_PARENT ? 0 : 1) as 0 | 1,
@@ -360,7 +372,6 @@ export async function createTask(input: NewTaskInput, db: TendDb = getDb()): Pro
       completedAt: null,
       cancelledAt: null,
       cancelReason: null,
-      courseId: NO_COURSE,
       componentId: NO_COMPONENT,
       pointsPossible: null,
       pointsEarned: null,
@@ -1522,6 +1533,244 @@ export async function reorderProject(
   db: TendDb = getDb(),
 ): Promise<void> {
   await updateProject(id, { sortKey: rankAmong(prevSortKey, nextSortKey) }, db);
+}
+
+// ─── Terms and courses ────────────────────────────────────────────────────────
+
+export async function createTerm(
+  input: { name: string; startDate: string; endDate: string },
+  db: TendDb = getDb(),
+): Promise<string> {
+  const id = newId();
+  await db.transaction('rw', [db.terms, db.outbox], async () => {
+    const existing = await db.terms.where('_del').equals(0).toArray();
+    const base = {
+      id,
+      userId: LOCAL_USER_ID,
+      name: input.name,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      sortKey: endRank(existing.map((t) => t.sortKey)),
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      deletedAt: null,
+      rowVersion: 0,
+    };
+    const row: Term = { ...base, ...deriveTerm(base) };
+    await db.terms.add(row);
+    await db.outbox.add(outboxRecord('terms', id, 'insert', toInsertPatch(row), 0));
+  });
+  return id;
+}
+
+export type TermPatch = Partial<Pick<Term, 'name' | 'startDate' | 'endDate' | 'sortKey'>>;
+
+export async function updateTerm(
+  id: string,
+  patch: TermPatch,
+  db: TendDb = getDb(),
+): Promise<void> {
+  await db.transaction('rw', [db.terms, db.outbox], async () => {
+    const current = await db.terms.get(id);
+    if (!current) return;
+    const next = { ...current, ...patch, updatedAt: nowIso() };
+    await db.terms.put({ ...next, ...deriveTerm(next) });
+    await db.outbox.add(outboxRecord('terms', id, 'update', { ...patch }, current.rowVersion));
+  });
+}
+
+/**
+ * Tombstones a term and unfiles the courses in it.
+ *
+ * Same rule as a project: a course pointing at a tombstone shows under no term,
+ * which is a course you cannot find. `restoreTerm` takes the ids back so undo
+ * can put them where they were.
+ */
+export async function deleteTerm(
+  id: string,
+  db: TendDb = getDb(),
+): Promise<{ courseIds: string[] }> {
+  return db.transaction('rw', [db.terms, db.courses, db.outbox], async () => {
+    const current = await db.terms.get(id);
+    if (!current) return { courseIds: [] };
+
+    const filed = (await db.courses.where('termId').equals(id).toArray()).filter(
+      (course) => course._del === 0,
+    );
+    for (const course of filed) await writeCoursePatch(course.id, { termId: '' }, db);
+
+    const deletedAt = nowIso();
+    const next = { ...current, deletedAt, updatedAt: deletedAt };
+    await db.terms.put({ ...next, ...deriveTerm(next) });
+    await db.outbox.add(outboxRecord('terms', id, 'delete', { deletedAt }, current.rowVersion));
+
+    return { courseIds: filed.map((course) => course.id) };
+  });
+}
+
+export async function restoreTerm(
+  id: string,
+  courseIds: readonly string[] = [],
+  db: TendDb = getDb(),
+): Promise<void> {
+  await db.transaction('rw', [db.terms, db.courses, db.outbox], async () => {
+    const current = await db.terms.get(id);
+    if (!current) return;
+    const next = { ...current, deletedAt: null, updatedAt: nowIso() };
+    await db.terms.put({ ...next, ...deriveTerm(next) });
+    await db.outbox.add(
+      outboxRecord('terms', id, 'undelete', { deletedAt: null }, current.rowVersion),
+    );
+    for (const courseId of courseIds) await writeCoursePatch(courseId, { termId: id }, db);
+  });
+}
+
+export async function createCourse(
+  input: {
+    code: string;
+    name?: string;
+    termId?: string;
+    color?: string;
+    creditHours?: number;
+    instructor?: string;
+    meetings?: CourseMeeting[];
+  },
+  db: TendDb = getDb(),
+): Promise<string> {
+  const id = newId();
+  await db.transaction('rw', [db.courses, db.outbox], async () => {
+    const existing = await db.courses.where('_del').equals(0).toArray();
+    const base = {
+      id,
+      userId: LOCAL_USER_ID,
+      termId: input.termId ?? '',
+      code: input.code,
+      name: input.name ?? '',
+      // Rotating on what is already there, so a new course gets a colour that
+      // tells it apart from the last one, the way a project does.
+      color: input.color ?? swatchFor(existing.length),
+      creditHours: input.creditHours ?? 3,
+      instructor: input.instructor ?? '',
+      meetings: input.meetings ?? [],
+      gradeScale: [],
+      status: 'active' as const,
+      notes: '',
+      sortKey: endRank(existing.map((c) => c.sortKey)),
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      deletedAt: null,
+      rowVersion: 0,
+    };
+    const row: Course = { ...base, ...deriveCourse(base) };
+    await db.courses.add(row);
+    await db.outbox.add(outboxRecord('courses', id, 'insert', toInsertPatch(row), 0));
+  });
+  return id;
+}
+
+export type CoursePatch = Partial<
+  Pick<
+    Course,
+    | 'termId'
+    | 'code'
+    | 'name'
+    | 'color'
+    | 'creditHours'
+    | 'instructor'
+    | 'meetings'
+    | 'gradeScale'
+    | 'status'
+    | 'notes'
+    | 'sortKey'
+  >
+>;
+
+/** The write half, with no outbox record of its own suppressed. Used by the term
+ *  delete path, which has to touch several courses inside one transaction. */
+async function writeCoursePatch(
+  id: string,
+  patch: CoursePatch,
+  db: TendDb,
+): Promise<void> {
+  const current = await db.courses.get(id);
+  if (!current) return;
+  const next = { ...current, ...patch, updatedAt: nowIso() };
+  await db.courses.put({ ...next, ...deriveCourse(next) });
+  await db.outbox.add(outboxRecord('courses', id, 'update', { ...patch }, current.rowVersion));
+}
+
+export async function updateCourse(
+  id: string,
+  patch: CoursePatch,
+  db: TendDb = getDb(),
+): Promise<void> {
+  await db.transaction('rw', [db.courses, db.outbox], async () => {
+    await writeCoursePatch(id, patch, db);
+  });
+}
+
+/**
+ * Tombstones a course and files its tasks back out of it.
+ *
+ * The same rule `deleteProject` follows, and for the same reason: a task
+ * pointing at a tombstoned course appears under no course, so the work would be
+ * findable only through a list that no longer mentions it. The component link
+ * goes too, since a weight belongs to the course that defined it.
+ */
+export async function deleteCourse(
+  id: string,
+  db: TendDb = getDb(),
+): Promise<{ taskIds: string[]; open: number }> {
+  return db.transaction('rw', [db.courses, db.tasks, db.taskTags, db.outbox], async () => {
+    const current = await db.courses.get(id);
+    if (!current) return { taskIds: [], open: 0 };
+
+    const filed = (await db.tasks.where('courseId').equals(id).toArray()).filter(
+      (task) => task._del === 0,
+    );
+    for (const task of filed) {
+      await writeTaskPatch(task.id, { courseId: NO_COURSE, componentId: NO_COMPONENT }, db);
+    }
+
+    const deletedAt = nowIso();
+    const next = { ...current, deletedAt, updatedAt: deletedAt };
+    await db.courses.put({ ...next, ...deriveCourse(next) });
+    await db.outbox.add(outboxRecord('courses', id, 'delete', { deletedAt }, current.rowVersion));
+
+    return {
+      taskIds: filed.map((task) => task.id),
+      open: filed.filter((task) => task._done === 0).length,
+    };
+  });
+}
+
+export async function restoreCourse(
+  id: string,
+  filedTaskIds: readonly string[] = [],
+  db: TendDb = getDb(),
+): Promise<void> {
+  await db.transaction('rw', [db.courses, db.tasks, db.taskTags, db.outbox], async () => {
+    const current = await db.courses.get(id);
+    if (!current) return;
+    const next = { ...current, deletedAt: null, updatedAt: nowIso() };
+    await db.courses.put({ ...next, ...deriveCourse(next) });
+    await db.outbox.add(
+      outboxRecord('courses', id, 'undelete', { deletedAt: null }, current.rowVersion),
+    );
+    for (const taskId of filedTaskIds) await writeTaskPatch(taskId, { courseId: id }, db);
+  });
+}
+
+export async function reorderCourse(
+  id: string,
+  prevSortKey: string | null,
+  nextSortKey: string | null,
+  db: TendDb = getDb(),
+): Promise<void> {
+  const sortKey = rankAmong(prevSortKey, nextSortKey);
+  await db.transaction('rw', [db.courses, db.outbox], async () => {
+    await writeCoursePatch(id, { sortKey }, db);
+  });
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
