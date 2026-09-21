@@ -59,6 +59,21 @@ function SheetPanel({ onClose, label, children }: Omit<SheetProps, 'open'>) {
 
   useScrollLock();
 
+  /**
+   * `onClose` read through a ref so the effect below can depend on nothing.
+   *
+   * Every caller passes a fresh arrow, so keying the effect to `onClose` re-ran
+   * the whole focus trap on every render. Typing one character into a field
+   * re-rendered the panel, the teardown handed focus back to the button that
+   * opened it, and the setup then pulled it to the panel: the field emptied of
+   * focus after a single keypress. The trap belongs to the mount, not to the
+   * identity of a callback.
+   */
+  const closeRef = useRef(onClose);
+  useEffect(() => {
+    closeRef.current = onClose;
+  });
+
   // Focus moves in on open and goes back where it came from on close, which is
   // what makes the sheet usable from a keyboard and survivable with a screen
   // reader. Tab cycles inside the panel rather than wandering into the list
@@ -80,7 +95,7 @@ function SheetPanel({ onClose, label, children }: Omit<SheetProps, 'open'>) {
         const target = event.target as HTMLElement | null;
         if (target?.closest?.('[data-escape-owner]')) return;
         event.preventDefault();
-        onClose();
+        closeRef.current();
         return;
       }
       if (event.key !== 'Tab' || !node) return;
@@ -114,7 +129,7 @@ function SheetPanel({ onClose, label, children }: Omit<SheetProps, 'open'>) {
       // out of the list, so focusing it blind would throw focus to the body.
       if (opener?.isConnected) opener.focus();
     };
-  }, [onClose]);
+  }, []);
 
   function handleDragEnd(_: unknown, info: PanInfo) {
     const travelled = wide ? info.offset.x : info.offset.y;

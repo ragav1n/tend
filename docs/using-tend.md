@@ -93,16 +93,21 @@ Anything with no home lands in the Inbox.
 
 ## Setting up a semester
 
-1. `g o` for Courses, then create a **term**: a name like `Fall 2026` and its start and end
-   dates. The dates matter beyond bookkeeping, because syllabus import resolves a bare
-   `Sep 14` against this window.
-2. Create each **course**: code, title, credits, instructor, colour, and when it meets. Set
-   the code to what you would want to type after `+`.
-3. In each course's **Grades** tab, enter the weight components from the syllabus, for example
+1. `g o` for Courses, then **New course**. There is no separate button for a term: the Term
+   dropdown carries "Start a new term...", and picking it creates one guessed from today's
+   date, `Fall 2026` running August to December if you are adding a course in September. You
+   are not asked for exact semester dates on the way to your first course.
+2. Press **Edit term** in the header and correct those dates to your registrar's. Do this
+   before pasting any syllabus, because syllabus import resolves a bare `Sep 14` against this
+   window.
+3. Add the rest of your courses, picking the term you just made. Each one takes a code, title,
+   credits, instructor, colour, and when it meets. Set the code to what you would want to type
+   after `+`.
+4. In each course's **Grades** tab, enter the weight components from the syllabus, for example
    Homework 30, Midterm 25, Final 30, Participation 15. Set "drop lowest" where the syllabus
    allows it.
-4. **Settings, Coursework**: paste your Canvas feed URL and press Add, then Read the feeds.
-5. **Settings, Your week**: set your daily capacity in minutes and which days you work, so
+5. **Settings, Coursework**: paste your Canvas feed URL and press Add, then Read the feeds.
+6. **Settings, Your week**: set your daily capacity in minutes and which days you work, so
    workload numbers mean something.
 
 A course with 0 credits is kept out of GPA while still collecting its deadlines, which is what

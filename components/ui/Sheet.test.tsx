@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { Sheet } from './Sheet';
@@ -65,6 +65,49 @@ describe('Sheet and focus', () => {
     );
 
     expect(document.activeElement).toBe(screen.getByRole('dialog'));
+  });
+});
+
+/**
+ * A sheet opened from a button, whose `onClose` is a fresh arrow every render.
+ * That is how every caller in the app writes it, and it is what made the focus
+ * trap re-run on each keystroke.
+ */
+function Opened() {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState('');
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        New course
+      </button>
+      <Sheet open={open} onClose={() => setOpen(false)} label="New course">
+        <input
+          aria-label="Instructor"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+        />
+      </Sheet>
+    </>
+  );
+}
+
+describe('Sheet and typing', () => {
+  it('keeps focus in a field across a render', () => {
+    render(<Opened />);
+    const opener = screen.getByRole('button', { name: 'New course' });
+    opener.focus();
+    fireEvent.click(opener);
+
+    const field = screen.getByLabelText('Instructor') as HTMLInputElement;
+    field.focus();
+    fireEvent.change(field, { target: { value: 'P' } });
+
+    // The trap used to be keyed to `onClose`, so one character tore it down and
+    // rebuilt it: the teardown handed focus to the opener and the setup pulled
+    // it to the panel. One character was enough to leave the field.
+    expect(field.value).toBe('P');
+    expect(document.activeElement).toBe(field);
   });
 });
 

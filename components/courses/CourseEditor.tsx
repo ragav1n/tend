@@ -184,30 +184,30 @@ export function CourseEditor({
           </select>
         </Field>
 
-        <div className="flex gap-3">
-          <div className="flex-1">
-            <Field label="Credits" htmlFor="course-credits">
-              <input
-                id="course-credits"
-                value={credits}
-                onChange={(event) => setCredits(event.target.value)}
-                inputMode="decimal"
-                className={cn(controlClass, 'tnum')}
-              />
-            </Field>
-          </div>
-          <div className="flex-[2]">
-            <Field label="Instructor" htmlFor="course-instructor">
-              <input
-                id="course-instructor"
-                value={instructor}
-                onChange={(event) => setInstructor(event.target.value)}
-                autoComplete="off"
-                className={controlClass}
-              />
-            </Field>
-          </div>
-        </div>
+        {/* One per row. `Field` is a horizontal row with a fixed 6.5rem label,
+            so two of them side by side spend their width on labels: at a 27rem
+            panel the credits input came out 13px wide, a slot too narrow to
+            show the "3" already in it. Two fields are not worth a second
+            layout. */}
+        <Field label="Credits" htmlFor="course-credits">
+          <input
+            id="course-credits"
+            value={credits}
+            onChange={(event) => setCredits(event.target.value)}
+            inputMode="decimal"
+            className={cn(controlClass, 'tnum')}
+          />
+        </Field>
+
+        <Field label="Instructor" htmlFor="course-instructor">
+          <input
+            id="course-instructor"
+            value={instructor}
+            onChange={(event) => setInstructor(event.target.value)}
+            autoComplete="off"
+            className={controlClass}
+          />
+        </Field>
 
         {course && (
           <Field label="Status" htmlFor="course-status">
