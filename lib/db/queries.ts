@@ -9,6 +9,7 @@ import {
   type ActivityEntry,
   type Area,
   type Course,
+  type CourseComponent,
   type FocusSession,
   type Instant,
   type PlainDate,
@@ -535,6 +536,41 @@ export async function courseCounts(
 
   for (const { id, ...rest } of counts) out.set(id, rest);
   return out;
+}
+
+/** The weighted buckets of a course, in the order you arranged them. */
+export async function componentsOf(
+  courseId: string,
+  db: TendDb = getDb(),
+): Promise<CourseComponent[]> {
+  const rows = await db.courseComponents
+    .where('[_del+courseId+sortKey]')
+    .between([0, courseId, ''], [0, courseId, MAX_STR], true, true)
+    .toArray();
+  return rows.sort(compareRank);
+}
+
+/**
+ * Every task in a course that carries points, open or finished.
+ *
+ * Both halves, unlike `courseList`. A graded assignment is finished and is
+ * exactly the one the arithmetic needs, so filtering by `_done` here would
+ * leave a projection reading off nothing but the work still outstanding.
+ *
+ * Two scans because `_done` sits above `sortKey` in the index, which is the
+ * same reason `dueBetween` runs two.
+ */
+export async function scoredTasks(courseId: string, db: TendDb = getDb()): Promise<Task[]> {
+  const range = (closed: 0 | 1) =>
+    db.tasks
+      .where('[_del+courseId+_done+sortKey]')
+      .between([0, courseId, closed, ''], [0, courseId, closed, MAX_STR], true, true)
+      .toArray();
+
+  const [open, closed] = await Promise.all([range(0), range(1)]);
+  return [...open, ...closed].filter(
+    (task) => task.pointsPossible !== null && task.pointsPossible > 0,
+  );
 }
 
 export async function tagOptions(db: TendDb = getDb()): Promise<Tag[]> {

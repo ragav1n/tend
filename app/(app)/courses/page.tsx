@@ -10,15 +10,19 @@ import { TaskList } from '@/components/views/TaskList';
 import { ViewHeader } from '@/components/views/ViewHeader';
 import { CourseEditor } from '@/components/courses/CourseEditor';
 import { CourseCard } from '@/components/courses/CourseCard';
+import { GradesTab } from '@/components/courses/GradesTab';
+import { TermGpa } from '@/components/courses/TermGpa';
 import { MEETING_DAYS } from '@/components/courses/MeetingRows';
 import { TermEditor } from '@/components/courses/TermEditor';
 import {
+  useComponents,
   useCourse,
   useCourseCounts,
   useCourseDone,
   useCourseList,
   useCoursesInTerm,
   useCurrentTerm,
+  useScoredTasks,
   useTerms,
 } from '@/hooks/use-courses';
 import type { Course, Term } from '@/lib/db/types';
@@ -188,6 +192,8 @@ function CourseIndex({
         </button>
       </div>
 
+      {courses.length > 0 && <TermGpa courses={courses} />}
+
       {courses.length === 0 ? (
         <EmptyState
           icon={GraduationCap}
@@ -214,13 +220,15 @@ function CourseIndex({
   );
 }
 
-type Tab = 'work' | 'schedule';
+type Tab = 'work' | 'grades' | 'schedule';
 
 function OneCourse({ course, onEdit }: { course: Course; onEdit: () => void }) {
   const [tab, setTab] = useState<Tab>('work');
   const [showDone, setShowDone] = useState(false);
   const tasks = useCourseList(course.id);
   const finished = useCourseDone(course.id);
+  const components = useComponents(course.id);
+  const scored = useScoredTasks(course.id);
 
   return (
     <>
@@ -255,7 +263,7 @@ function OneCourse({ course, onEdit }: { course: Course; onEdit: () => void }) {
           reads two of them is a route with two ways to be wrong, and the tab you
           were last on is not worth a URL. */}
       <div className="mb-4 flex gap-1" role="tablist" aria-label="Course">
-        {(['work', 'schedule'] as Tab[]).map((each) => (
+        {(['work', 'grades', 'schedule'] as Tab[]).map((each) => (
           <button
             key={each}
             type="button"
@@ -267,7 +275,7 @@ function OneCourse({ course, onEdit }: { course: Course; onEdit: () => void }) {
               tab === each ? 'bg-raised text-text-hi' : 'hover:text-text-mid',
             )}
           >
-            {each === 'work' ? 'Work' : 'Schedule'}
+            {each === 'work' ? 'Work' : each === 'grades' ? 'Grades' : 'Schedule'}
           </button>
         ))}
       </div>
@@ -313,6 +321,8 @@ function OneCourse({ course, onEdit }: { course: Course; onEdit: () => void }) {
             </section>
           )}
         </>
+      ) : tab === 'grades' ? (
+        <GradesTab course={course} components={components} tasks={scored} />
       ) : (
         <CourseSchedule course={course} />
       )}

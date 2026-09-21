@@ -9,6 +9,7 @@ import {
   FolderSimple,
   Hourglass,
   GraduationCap,
+  Percent,
   Prohibit,
   Sun,
   TrashSimple,
@@ -34,7 +35,7 @@ import {
   type Task,
 } from '@/lib/db/types';
 import { useProjects, useSeries, useTags } from '@/hooks/use-tasks';
-import { useCourses } from '@/hooks/use-courses';
+import { useComponents, useCourses } from '@/hooks/use-courses';
 import { Field, FieldGroup, controlClass } from '@/components/ui/Field';
 import { Markdown } from '@/components/ui/Markdown';
 import { Segmented } from '@/components/ui/Segmented';
@@ -78,6 +79,9 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
   const series = useSeries(task.seriesId);
   const projects = useProjects();
   const courses = useCourses();
+  // Only for the course this task is in, so a panel on an ordinary task runs
+  // no query at all.
+  const components = useComponents(task.courseId === NO_COURSE ? null : task.courseId);
   const tags = useTags();
 
   const [title, setTitle] = useState(task.title);
@@ -86,6 +90,8 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
   const [newProject, setNewProject] = useState(false);
   const [newTag, setNewTag] = useState('');
   const [estimate, setEstimate] = useState(task.estimateMinutes?.toString() ?? '');
+  const [earned, setEarned] = useState(task.pointsEarned?.toString() ?? '');
+  const [possible, setPossible] = useState(task.pointsPossible?.toString() ?? '');
 
   const done = task._done === 1;
 
@@ -114,6 +120,40 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
     const value = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
     setEstimate(value?.toString() ?? '');
     if (value !== task.estimateMinutes) patch({ estimateMinutes: value });
+  }
+
+  /**
+   * The two point fields, committed together.
+   *
+   * Together because they are one fact: a score of 90 means nothing without what
+   * it was out of, and writing them separately would let a blurred field leave
+   * the pair half entered and the projection reading off it.
+   *
+   * A blank score is null rather than zero, which is the distinction the whole
+   * projection turns on: an unmarked final is not a final you failed.
+   */
+  function commitPoints() {
+    const read = (value: string) => {
+      const parsed = Number.parseFloat(value);
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+    };
+
+    const nextEarned = read(earned);
+    const nextPossible = read(possible);
+
+    setEarned(nextEarned?.toString() ?? '');
+    setPossible(nextPossible?.toString() ?? '');
+
+    const change: TaskPatch = {};
+    if (nextEarned !== task.pointsEarned) change.pointsEarned = nextEarned;
+    if (nextPossible !== task.pointsPossible) change.pointsPossible = nextPossible;
+    // Marked today, unless it already carried a date. What the logbook and the
+    // review read to say when a grade landed.
+    if (change.pointsEarned !== undefined) {
+      change.gradedAt = nextEarned === null ? null : (task.gradedAt ?? today());
+    }
+
+    if (Object.keys(change).length > 0) patch(change);
   }
 
   async function toggleTag(tagId: string) {
@@ -380,6 +420,59 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
               ))}
             </select>
           </Field>
+        )}
+
+        {/* The marks, and only for coursework. A grocery task keeps a clean
+            panel, and these three fields are what the grade projection reads.
+            `pointsEarned` stays empty until it is marked, which is what tells an
+            ungraded final apart from one that scored zero. */}
+        {task.courseId !== NO_COURSE && (
+          <>
+            {components.length > 0 && (
+              <Field label="Counts as" icon={Percent} htmlFor="component">
+                <select
+                  id="component"
+                  value={task.componentId}
+                  onChange={(e) => patch({ componentId: e.target.value })}
+                  className={controlClass}
+                >
+                  <option value={NO_COMPONENT}>Not weighted</option>
+                  {components.map((component) => (
+                    <option key={component.id} value={component.id}>
+                      {component.name}
+                      {component.weight > 0 ? ` · ${component.weight}%` : ''}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+
+            <Field label="Score" icon={Percent} htmlFor="points-earned">
+              <span className="flex items-center gap-1.5">
+                <input
+                  id="points-earned"
+                  value={earned}
+                  onChange={(e) => setEarned(e.target.value)}
+                  onBlur={commitPoints}
+                  inputMode="decimal"
+                  placeholder="—"
+                  aria-label="Points earned"
+                  className={cn(controlClass, 'tnum w-16 text-right')}
+                />
+                <span className="text-xs text-text-lo">out of</span>
+                <input
+                  id="points-possible"
+                  value={possible}
+                  onChange={(e) => setPossible(e.target.value)}
+                  onBlur={commitPoints}
+                  inputMode="decimal"
+                  placeholder="—"
+                  aria-label="Points possible"
+                  className={cn(controlClass, 'tnum w-16 text-right')}
+                />
+              </span>
+            </Field>
+          </>
         )}
 
         <Field label="Estimate" icon={Hourglass} htmlFor="estimate">

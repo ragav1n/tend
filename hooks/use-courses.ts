@@ -2,18 +2,20 @@
 
 import { useStableLiveQuery } from './use-live';
 import {
+  componentsOf,
   courseById,
   courseCounts,
   courseDone,
   courseList,
   courseOptions,
   coursesInTerm,
+  scoredTasks,
   currentTerm,
   termOptions,
   today,
   type CourseCount,
 } from '@/lib/db/queries';
-import type { Course, Task, Term } from '@/lib/db/types';
+import type { Course, CourseComponent, Task, Term } from '@/lib/db/types';
 
 /**
  * Terms and courses, read the same way every other list is.
@@ -26,6 +28,7 @@ const NO_TERMS: Term[] = [];
 const NO_COURSES: Course[] = [];
 const NO_TASKS: Task[] = [];
 const NO_COUNTS = new Map<string, CourseCount>();
+const NO_COMPONENTS: CourseComponent[] = [];
 
 export function useTerms(): Term[] {
   return useStableLiveQuery(() => termOptions(), [], NO_TERMS);
@@ -84,5 +87,28 @@ export function useCourseCounts(courses: readonly Course[]): Map<string, CourseC
     () => courseCounts(key === '' ? [] : key.split(',')),
     [key],
     NO_COUNTS,
+  );
+}
+
+/** The weighted buckets of a course. */
+export function useComponents(courseId: string | null): CourseComponent[] {
+  return useStableLiveQuery(
+    () => (courseId === null ? Promise.resolve(NO_COMPONENTS) : componentsOf(courseId)),
+    [courseId],
+    NO_COMPONENTS,
+  );
+}
+
+/**
+ * Every task in a course carrying points, open or finished.
+ *
+ * Both halves on purpose: a graded assignment is finished work, and a projection
+ * that only read the outstanding half would be reading off nothing.
+ */
+export function useScoredTasks(courseId: string | null): Task[] {
+  return useStableLiveQuery(
+    () => (courseId === null ? Promise.resolve(NO_TASKS) : scoredTasks(courseId)),
+    [courseId],
+    NO_TASKS,
   );
 }

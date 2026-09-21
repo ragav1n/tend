@@ -13,16 +13,22 @@ export function EmptyState({
   icon: IconComponent,
   title,
   hint,
+  action,
 }: {
   icon: Icon;
   title: string;
   hint?: string;
+  /** One way out, for an empty state that is a dead end rather than a good
+   *  outcome. An empty Today needs nothing; a course with no weights entered
+   *  cannot tell you anything until you enter some. */
+  action?: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col items-center gap-3 rounded-lg border border-line/60 px-6 py-14 text-center">
       <IconComponent size={26} className="text-text-faint" aria-hidden />
       <p className="text-sm text-text-mid">{title}</p>
       {hint && <p className="max-w-[26ch] text-xs text-text-lo">{hint}</p>}
+      {action}
     </div>
   );
 }

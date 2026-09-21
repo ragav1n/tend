@@ -10,6 +10,7 @@ import {
   deriveActivity,
   deriveArea,
   deriveCourse,
+  deriveCourseComponent,
   deriveFocusSession,
   deriveProject,
   deriveSavedView,
@@ -43,6 +44,7 @@ import {
   type Project,
   type SavedView,
   type Course,
+  type CourseComponent,
   type CourseMeeting,
   type Tag,
   type Task,
@@ -1771,6 +1773,117 @@ export async function reorderCourse(
   await db.transaction('rw', [db.courses, db.outbox], async () => {
     await writeCoursePatch(id, { sortKey }, db);
   });
+}
+
+// ─── Grade components ─────────────────────────────────────────────────────────
+
+export async function createComponent(
+  input: { courseId: string; name: string; weight?: number; dropLowest?: number },
+  db: TendDb = getDb(),
+): Promise<string> {
+  const id = newId();
+  await db.transaction('rw', [db.courseComponents, db.outbox], async () => {
+    const existing = await db.courseComponents
+      .where('[_del+courseId+sortKey]')
+      .between([0, input.courseId, ''], [0, input.courseId, '\uffff'], true, true)
+      .toArray();
+
+    const base = {
+      id,
+      userId: LOCAL_USER_ID,
+      courseId: input.courseId,
+      name: input.name,
+      weight: input.weight ?? 0,
+      dropLowest: input.dropLowest ?? 0,
+      sortKey: endRank(existing.map((c) => c.sortKey)),
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      deletedAt: null,
+      rowVersion: 0,
+    };
+    const row: CourseComponent = { ...base, ...deriveCourseComponent(base) };
+    await db.courseComponents.add(row);
+    await db.outbox.add(outboxRecord('courseComponents', id, 'insert', toInsertPatch(row), 0));
+  });
+  return id;
+}
+
+export type ComponentPatch = Partial<
+  Pick<CourseComponent, 'name' | 'weight' | 'dropLowest' | 'sortKey'>
+>;
+
+export async function updateComponent(
+  id: string,
+  patch: ComponentPatch,
+  db: TendDb = getDb(),
+): Promise<void> {
+  await db.transaction('rw', [db.courseComponents, db.outbox], async () => {
+    const current = await db.courseComponents.get(id);
+    if (!current) return;
+    const next = { ...current, ...patch, updatedAt: nowIso() };
+    await db.courseComponents.put({ ...next, ...deriveCourseComponent(next) });
+    await db.outbox.add(
+      outboxRecord('courseComponents', id, 'update', { ...patch }, current.rowVersion),
+    );
+  });
+}
+
+/**
+ * Tombstones a component and unfiles the work counted under it.
+ *
+ * The same rule a course and a project follow. A task pointing at a tombstoned
+ * component would keep its points and count toward a weight that no longer
+ * exists, which is the one way a grade projection can be quietly wrong.
+ */
+export async function deleteComponent(
+  id: string,
+  db: TendDb = getDb(),
+): Promise<{ taskIds: string[] }> {
+  return db.transaction(
+    'rw',
+    [db.courseComponents, db.tasks, db.taskTags, db.outbox],
+    async () => {
+      const current = await db.courseComponents.get(id);
+      if (!current) return { taskIds: [] };
+
+      const filed = (await db.tasks.where('componentId').equals(id).toArray()).filter(
+        (task) => task._del === 0,
+      );
+      for (const task of filed) {
+        await writeTaskPatch(task.id, { componentId: NO_COMPONENT }, db);
+      }
+
+      const deletedAt = nowIso();
+      const next = { ...current, deletedAt, updatedAt: deletedAt };
+      await db.courseComponents.put({ ...next, ...deriveCourseComponent(next) });
+      await db.outbox.add(
+        outboxRecord('courseComponents', id, 'delete', { deletedAt }, current.rowVersion),
+      );
+
+      return { taskIds: filed.map((task) => task.id) };
+    },
+  );
+}
+
+export async function restoreComponent(
+  id: string,
+  filedTaskIds: readonly string[] = [],
+  db: TendDb = getDb(),
+): Promise<void> {
+  await db.transaction(
+    'rw',
+    [db.courseComponents, db.tasks, db.taskTags, db.outbox],
+    async () => {
+      const current = await db.courseComponents.get(id);
+      if (!current) return;
+      const next = { ...current, deletedAt: null, updatedAt: nowIso() };
+      await db.courseComponents.put({ ...next, ...deriveCourseComponent(next) });
+      await db.outbox.add(
+        outboxRecord('courseComponents', id, 'undelete', { deletedAt: null }, current.rowVersion),
+      );
+      for (const taskId of filedTaskIds) await writeTaskPatch(taskId, { componentId: id }, db);
+    },
+  );
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
