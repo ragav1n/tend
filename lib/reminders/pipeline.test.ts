@@ -20,6 +20,19 @@ import {
  * same expression as the code under test proves only that the expression is
  * itself, so the offsets below are written out: New York is UTC-4 in September
  * and UTC-5 in December, and getting that from tzdata is the point.
+ *
+ * Due dates sit in 2099 rather than near the day the test was written.
+ * `recompute_task_notifications` only writes a delivery whose instant is still
+ * ahead of `now()`, so a fixture dated weeks out stops being ahead of now and
+ * the assertion goes from testing the schedule to testing the calendar. Ten
+ * tests here went red on 2026-09-01 without a line of either the test or the
+ * migration changing. 2099-09-01 is a Tuesday in New York and EDT on Aug 31,
+ * Sep 1 and Sep 2, so it keeps every offset and the weekday the review test
+ * needs. Do not move it back.
+ *
+ * The instants passed *into* a function stay in 2026 on purpose. Those are
+ * arguments rather than a clock: `enqueue_daily_digests('2026-09-01T11:30:00Z')`
+ * is asking what happens at that moment, and the answer does not rot.
  */
 
 let pg: PGlite;
@@ -230,7 +243,7 @@ beforeEach(async () => {
 describe('recomputing one task', () => {
   it("schedules the reminder at the due instant in the user's zone", async () => {
     const user = await newUser();
-    const task = await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
+    const task = await newTask(user, { dueDate: '2099-09-01', dueTime: '09:00' });
 
     const count = await one<{ recompute_task_notifications: number }>(
       'select public.recompute_task_notifications($1) as recompute_task_notifications',
@@ -240,9 +253,9 @@ describe('recomputing one task', () => {
 
     const [row] = await deliveries(user);
     // September in New York is UTC-4.
-    expect(at(row!)).toBe('2026-09-01T13:00:00.000Z');
+    expect(at(row!)).toBe('2099-09-01T13:00:00.000Z');
     expect(row!.status).toBe('pending');
-    expect(row!.dedupe_key).toBe(`ti:${task}:202609011300`);
+    expect(row!.dedupe_key).toBe(`ti:${task}:209909011300`);
   });
 
   it('follows tzdata into winter rather than holding an offset', async () => {
@@ -258,20 +271,20 @@ describe('recomputing one task', () => {
 
   it('uses the all-day time when the task has no due time', async () => {
     const user = await newUser({ all_day_reminder_time: '08:30' });
-    const task = await newTask(user, { dueDate: '2026-09-01' });
+    const task = await newTask(user, { dueDate: '2099-09-01' });
     await pg.query('select public.recompute_task_notifications($1)', [task]);
 
     const [row] = await deliveries(user);
-    expect(at(row!)).toBe('2026-09-01T12:30:00.000Z');
+    expect(at(row!)).toBe('2099-09-01T12:30:00.000Z');
   });
 
   it('takes the lead time off the due instant', async () => {
     const user = await newUser({ reminder_lead_minutes: 30 });
-    const task = await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
+    const task = await newTask(user, { dueDate: '2099-09-01', dueTime: '09:00' });
     await pg.query('select public.recompute_task_notifications($1)', [task]);
 
     const [row] = await deliveries(user);
-    expect(at(row!)).toBe('2026-09-01T12:30:00.000Z');
+    expect(at(row!)).toBe('2099-09-01T12:30:00.000Z');
   });
 
   it('pushes a reminder inside quiet hours to the end of them', async () => {
@@ -280,17 +293,17 @@ describe('recomputing one task', () => {
       quiet_start: '22:00',
       quiet_end: '07:00',
     });
-    const task = await newTask(user, { dueDate: '2026-09-01', dueTime: '23:30' });
+    const task = await newTask(user, { dueDate: '2099-09-01', dueTime: '23:30' });
     await pg.query('select public.recompute_task_notifications($1)', [task]);
 
     const [row] = await deliveries(user);
     // 23:30 local is inside the window, so it waits for 07:00 the next morning.
-    expect(at(row!)).toBe('2026-09-02T11:00:00.000Z');
+    expect(at(row!)).toBe('2099-09-02T11:00:00.000Z');
   });
 
   it('prefers the explicit reminders on a task over the implicit one', async () => {
     const user = await newUser();
-    const task = await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
+    const task = await newTask(user, { dueDate: '2099-09-01', dueTime: '09:00' });
     await pg.query(
       `insert into public.task_reminders (id, user_id, task_id, offset_minutes) values
          ('22222222-0000-4000-8000-000000000001', $1, $2, -60),
@@ -301,7 +314,7 @@ describe('recomputing one task', () => {
     await pg.query('select public.recompute_task_notifications($1)', [task]);
 
     const found = await deliveries(user);
-    expect(found.map(at)).toEqual(['2026-08-31T13:00:00.000Z', '2026-09-01T12:00:00.000Z']);
+    expect(found.map(at)).toEqual(['2099-08-31T13:00:00.000Z', '2099-09-01T12:00:00.000Z']);
     // Named after the reminder rather than the task, so editing one offset
     // cannot collide with another.
     expect(found.every((row) => row.dedupe_key.startsWith('tr:'))).toBe(true);
@@ -317,7 +330,7 @@ describe('recomputing one task', () => {
 
   it('schedules nothing when reminders are turned off', async () => {
     const user = await newUser({ reminders_enabled: false });
-    const task = await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
+    const task = await newTask(user, { dueDate: '2099-09-01', dueTime: '09:00' });
     await pg.query('select public.recompute_task_notifications($1)', [task]);
 
     expect(await deliveries(user)).toHaveLength(0);
@@ -325,7 +338,7 @@ describe('recomputing one task', () => {
 
   it('leaves one row however many times it runs', async () => {
     const user = await newUser();
-    const task = await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
+    const task = await newTask(user, { dueDate: '2099-09-01', dueTime: '09:00' });
     for (let i = 0; i < 5; i += 1) {
       await pg.query('select public.recompute_task_notifications($1)', [task]);
     }
@@ -337,7 +350,7 @@ describe('recomputing one task', () => {
   it('refuses to touch a task belonging to somebody else', async () => {
     const owner = await newUser();
     const other = await newUser();
-    const task = await newTask(owner, { dueDate: '2026-09-01', dueTime: '09:00' });
+    const task = await newTask(owner, { dueDate: '2099-09-01', dueTime: '09:00' });
 
     await asUser(pg, other);
     await expect(
@@ -349,7 +362,7 @@ describe('recomputing one task', () => {
 describe('the recompute queue', () => {
   it('picks up a task the moment it is saved', async () => {
     const user = await newUser();
-    const task = await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
+    const task = await newTask(user, { dueDate: '2099-09-01', dueTime: '09:00' });
 
     // The insert trigger only marks work. Nothing exists until the drain.
     expect(await deliveries(user)).toHaveLength(0);
@@ -365,7 +378,7 @@ describe('the recompute queue', () => {
 
   it('drops the pending reminder when the task is completed', async () => {
     const user = await newUser();
-    const task = await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
+    const task = await newTask(user, { dueDate: '2099-09-01', dueTime: '09:00' });
     await pg.query('select public.drain_notification_recompute(500)');
     expect(await deliveries(user)).toHaveLength(1);
 
@@ -377,9 +390,9 @@ describe('the recompute queue', () => {
 
   it('moves every reminder when the timezone changes', async () => {
     const user = await newUser();
-    const task = await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
+    const task = await newTask(user, { dueDate: '2099-09-01', dueTime: '09:00' });
     await pg.query('select public.drain_notification_recompute(500)');
-    expect(at((await deliveries(user))[0]!)).toBe('2026-09-01T13:00:00.000Z');
+    expect(at((await deliveries(user))[0]!)).toBe('2099-09-01T13:00:00.000Z');
 
     // Zero task rows change, which is the point of storing wall clock.
     await pg.query(`update public.user_settings set timezone = 'Asia/Kolkata' where user_id = $1`, [
@@ -389,7 +402,7 @@ describe('the recompute queue', () => {
 
     await pg.query('select public.drain_notification_recompute(500)');
     const [row] = await deliveries(user);
-    expect(at(row!)).toBe('2026-09-01T03:30:00.000Z');
+    expect(at(row!)).toBe('2099-09-01T03:30:00.000Z');
     void task;
   });
 });
@@ -583,7 +596,7 @@ describe('claiming a batch', () => {
 
   it('cancels a delivery whose task has gone', async () => {
     const user = await newUser();
-    const task = await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
+    const task = await newTask(user, { dueDate: '2099-09-01', dueTime: '09:00' });
     await dueDelivery(user, 'task_reminder', task);
     await pg.query(`update public.tasks set deleted_at = now() where id = $1`, [task]);
 
@@ -596,7 +609,7 @@ describe('claiming a batch', () => {
 
   it('stops at the per-user daily cap and says so', async () => {
     const user = await newUser({ max_reminder_emails_per_day: 0 });
-    const task = await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
+    const task = await newTask(user, { dueDate: '2099-09-01', dueTime: '09:00' });
     await dueDelivery(user, 'task_reminder', task);
 
     const answer = (await claim()).claim_reminder_batch;
@@ -738,7 +751,7 @@ describe('choosing the channels, 0014', () => {
   it('lets a push through over the per-user email cap', async () => {
     const user = await newUser({ max_reminder_emails_per_day: 0 });
     await subscribe(user);
-    const task = await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
+    const task = await newTask(user, { dueDate: '2099-09-01', dueTime: '09:00' });
     await dueDelivery(user, 'task_reminder', task);
 
     const answer = (await claim()).claim_reminder_batch;
@@ -752,8 +765,8 @@ describe('choosing the channels, 0014', () => {
     // have a phone throttling its own notifications.
     const user = await newUser({ max_reminder_emails_per_day: 1, email_enabled: false });
     await subscribe(user);
-    const first = await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
-    const second = await newTask(user, { dueDate: '2026-09-01', dueTime: '10:00' });
+    const first = await newTask(user, { dueDate: '2099-09-01', dueTime: '09:00' });
+    const second = await newTask(user, { dueDate: '2099-09-01', dueTime: '10:00' });
     await dueDelivery(user, 'task_reminder', first);
     await dueDelivery(user, 'task_reminder', second);
 
@@ -1223,7 +1236,7 @@ describe('the nightly repair', () => {
 describe('the tick', () => {
   it('reports what it did and leaves a heartbeat', async () => {
     const user = await newUser({ digest_time: '04:00' });
-    await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
+    await newTask(user, { dueDate: '2099-09-01', dueTime: '09:00' });
 
     const answer = await one<{
       notifications_tick: {
@@ -1340,7 +1353,7 @@ describe('notifications when email is off', () => {
   it('schedules a task reminder for a subscribed device', async () => {
     const user = await newUser({ email_enabled: false });
     await subscribe(user);
-    const task = await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
+    const task = await newTask(user, { dueDate: '2099-09-01', dueTime: '09:00' });
 
     await pg.query('select public.recompute_task_notifications($1)', [task]);
     expect(await deliveries(user, 'task_reminder')).toHaveLength(1);
@@ -1380,7 +1393,7 @@ describe('notifications when email is off', () => {
     // The other half of the rule. No email and no device is not a channel
     // problem, it is somebody asking not to be told.
     const user = await newUser({ email_enabled: false, digest_time: '07:00' });
-    const task = await newTask(user, { dueDate: '2026-09-01', dueTime: '09:00' });
+    const task = await newTask(user, { dueDate: '2099-09-01', dueTime: '09:00' });
 
     await pg.query('select public.recompute_task_notifications($1)', [task]);
     await digest('2026-09-01T11:30:00Z');
