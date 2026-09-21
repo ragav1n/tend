@@ -48,6 +48,7 @@ import { RecurrenceEditor } from './RecurrenceEditor';
 import { SubtaskList } from './SubtaskList';
 import { TaskCheck } from './TaskCheck';
 import { TaskHistory } from './TaskHistory';
+import { useHydrated } from '@/hooks/use-hydrated';
 
 /**
  * Everything about one task, editable.
@@ -80,6 +81,11 @@ function autoGrow(el: HTMLTextAreaElement | null) {
 }
 
 export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void }) {
+  // Remounts the dates below once hydration ends. `suppressHydrationWarning`
+  // leaves the server's text in the DOM and records the client's in the
+  // fiber, so a re-render finds no diff and the wrong date stays. A changed
+  // key is what actually writes it. See the hook.
+  const hydrated = useHydrated();
   const series = useSeries(task.seriesId);
   const projects = useProjects();
   const courses = useCourses();
@@ -570,7 +576,7 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
       <footer className="flex items-center justify-between gap-3 border-t border-line pt-4">
         <p className="text-xs text-text-lo">
           Added{' '}
-          <span className="tnum" suppressHydrationWarning>
+          <span className="tnum" key={hydrated ? 'client' : 'server'} suppressHydrationWarning>
             {new Date(task.createdAt).toLocaleDateString(undefined, {
               month: 'short',
               day: 'numeric',

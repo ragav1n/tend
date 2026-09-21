@@ -1649,6 +1649,7 @@ export async function createCourse(
     color?: string;
     creditHours?: number;
     instructor?: string;
+    feedLabel?: string;
     meetings?: CourseMeeting[];
   },
   db: TendDb = getDb(),
@@ -1668,7 +1669,7 @@ export async function createCourse(
       creditHours: input.creditHours ?? 3,
       instructor: input.instructor ?? '',
       meetings: input.meetings ?? [],
-      feedLabel: '',
+      feedLabel: input.feedLabel ?? '',
       gradeScale: [],
       status: 'active' as const,
       notes: '',

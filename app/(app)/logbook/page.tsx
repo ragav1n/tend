@@ -9,6 +9,7 @@ import { ViewHeader } from '@/components/views/ViewHeader';
 import { useCancelledList, useFirstLoadComplete, useLogbook } from '@/hooks/use-tasks';
 import { addDays, today } from '@/lib/db/queries';
 import type { Task } from '@/lib/db/types';
+import { useHydrated } from '@/hooks/use-hydrated';
 
 /**
  * Finished work, newest first.
@@ -63,6 +64,11 @@ function groupByDay(tasks: Task[], todayDate: string): Day[] {
 }
 
 export default function LogbookPage() {
+  // Remounts the dates below once hydration ends. `suppressHydrationWarning`
+  // leaves the server's text in the DOM and records the client's in the
+  // fiber, so a re-render finds no diff and the wrong date stays. A changed
+  // key is what actually writes it. See the hook.
+  const hydrated = useHydrated();
   const tasks = useLogbook(200);
   const loaded = useFirstLoadComplete();
   const todayDate = today();
@@ -94,7 +100,7 @@ export default function LogbookPage() {
         <div className="space-y-6">
           {days.map((day) => (
             <section key={day.key}>
-              <h2 className="label mb-2" suppressHydrationWarning>
+              <h2 className="label mb-2" key={hydrated ? 'client' : 'server'} suppressHydrationWarning>
                 {day.label}
               </h2>
               {/* Keyed on the day so a row moving between groups remounts

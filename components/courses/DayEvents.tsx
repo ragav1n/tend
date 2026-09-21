@@ -43,8 +43,15 @@ export function DayEvents({ events }: { events?: readonly CourseEvent[] }) {
             <span className={cn('min-w-0 flex-1 truncate', exam ? 'text-text-hi' : 'text-text-mid')}>
               {event.title}
             </span>
+            {/* The end time comes down the feed and was being dropped, so a
+                50 minute lecture and a 3 hour lab read the same. On a screen
+                about where the hours go, the length is the useful half. */}
             {event.startsAt !== null && (
-              <span className="tnum shrink-0 text-text-lo">{formatClock(event.startsAt)}</span>
+              <span className="tnum shrink-0 text-text-lo">
+                {event.endsAt !== null && event.endsAt !== event.startsAt
+                  ? `${formatClock(event.startsAt)} to ${formatClock(event.endsAt)}`
+                  : formatClock(event.startsAt)}
+              </span>
             )}
             {event.location !== '' && (
               <span className="hidden shrink-0 truncate text-text-faint sm:block">

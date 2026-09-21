@@ -20,6 +20,7 @@ import {
   remainingMs,
 } from '@/lib/focus/timer';
 import { cn } from '@/lib/utils';
+import { useHydrated } from '@/hooks/use-hydrated';
 
 /**
  * One session at a time, with what it measured.
@@ -46,6 +47,11 @@ function startOfToday(): string {
 const FAR_FUTURE = '9999-12-31T23:59:59.999Z';
 
 export default function FocusPage() {
+  // Remounts the dates below once hydration ends. `suppressHydrationWarning`
+  // leaves the server's text in the DOM and records the client's in the
+  // fiber, so a re-render finds no diff and the wrong date stays. A changed
+  // key is what actually writes it. See the hook.
+  const hydrated = useHydrated();
   const { clock, now, running, done, start, pause, resume, stop } = useFocusTimer();
   const tasks = useTodayList();
   // Memoized, or the window moves every render and the live query never settles.
@@ -240,7 +246,7 @@ export default function FocusPage() {
                   <span className="min-w-0 flex-1 truncate text-sm text-text-mid">
                     {labelFor(session.taskId)}
                   </span>
-                  <span className="tnum text-xs text-text-lo" suppressHydrationWarning>
+                  <span className="tnum text-xs text-text-lo" key={hydrated ? 'client' : 'server'} suppressHydrationWarning>
                     {new Date(session.startedAt).toLocaleTimeString(undefined, {
                       hour: 'numeric',
                       minute: '2-digit',

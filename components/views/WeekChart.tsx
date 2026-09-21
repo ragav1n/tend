@@ -5,6 +5,7 @@ import { SOFT } from '@/lib/motion';
 import { peak, type DayStat } from '@/lib/stats/review';
 import { formatMinutes } from '@/lib/focus/timer';
 import { cn } from '@/lib/utils';
+import { useHydrated } from '@/hooks/use-hydrated';
 
 /**
  * Completions per day, as bars.
@@ -28,6 +29,11 @@ function weekdayLabel(date: string): string {
 }
 
 export function WeekChart({ days, todayDate }: { days: DayStat[]; todayDate: string }) {
+  // Remounts the dates below once hydration ends. `suppressHydrationWarning`
+  // leaves the server's text in the DOM and records the client's in the
+  // fiber, so a re-render finds no diff and the wrong date stays. A changed
+  // key is what actually writes it. See the hook.
+  const hydrated = useHydrated();
   const max = peak(days);
 
   return (
@@ -59,6 +65,7 @@ export function WeekChart({ days, todayDate }: { days: DayStat[]; todayDate: str
                 'label !text-[0.5625rem] !tracking-[0.1em]',
                 isToday && '!text-clay-300',
               )}
+              key={hydrated ? 'client' : 'server'}
               suppressHydrationWarning
             >
               {weekdayLabel(day.date)}

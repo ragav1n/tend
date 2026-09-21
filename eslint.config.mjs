@@ -19,7 +19,30 @@ const WRITE_METHODS = "put|add|update|delete|bulkPut|bulkAdd|bulkUpdate|bulkDele
 // writes to them would mean adding a file to the ignore list every time the
 // sync engine grows a module, which is how an ignore list stops meaning
 // anything.
-const SYNCED_TABLES = "tasks|projects|tags|taskTags|taskSeries|prefs";
+//
+// This list went stale once and the guard quietly covered six of sixteen
+// tables: every table added after phase 3 could be written directly from a
+// component with no lint error, which is the exact failure the rule exists to
+// make impossible. It must match the synced `EntityTable` fields in
+// `lib/db/client.ts`, and `lib/db/schema.test.ts` now fails when it does not.
+const SYNCED_TABLES = [
+  "tasks",
+  "areas",
+  "projects",
+  "tags",
+  "taskTags",
+  "taskSeries",
+  "focusSessions",
+  "activityLog",
+  "savedViews",
+  "terms",
+  "courses",
+  "courseComponents",
+  "feeds",
+  "courseEvents",
+  "taskReminders",
+  "prefs",
+].join("|");
 
 const bannedDexieWrites = {
   files: ["**/*.ts", "**/*.tsx"],

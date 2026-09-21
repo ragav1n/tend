@@ -1,6 +1,7 @@
 import { parseQuickAdd } from '@/lib/parse';
 import { createTask, ensureProject, ensureTag } from './mutations';
 import { courseOptions } from './queries';
+import { pickCourse } from '@/lib/courses/pick';
 
 /**
  * One line of text to one task.
@@ -63,18 +64,5 @@ export async function quickCreate(text: string, defaults: QuickDefaults = {}): P
  * works only when you spell it exactly as you filed it.
  */
 async function matchCourse(code: string): Promise<string | undefined> {
-  const wanted = fold(code);
-  if (wanted === '') return undefined;
-
-  const courses = await courseOptions();
-  const exact = courses.find((course) => fold(course.code) === wanted);
-  if (exact) return exact.id;
-
-  // A prefix, so "+cs6" reaches CS 6035 when it is the only thing it could be.
-  const starts = courses.filter((course) => fold(course.code).startsWith(wanted));
-  return starts.length === 1 ? starts[0]!.id : undefined;
-}
-
-function fold(code: string): string {
-  return code.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return pickCourse(code, await courseOptions()) ?? undefined;
 }

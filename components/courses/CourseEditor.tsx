@@ -58,6 +58,7 @@ export function CourseEditor({
   const [term, setTerm] = useState(NO_TERM);
   const [credits, setCredits] = useState('3');
   const [instructor, setInstructor] = useState('');
+  const [feedLabel, setFeedLabel] = useState('');
   const [color, setColor] = useState<string>(PROJECT_COLORS[0]!);
   const [status, setStatus] = useState<Course['status']>('active');
   const [meetings, setMeetings] = useState<CourseMeeting[]>([]);
@@ -72,6 +73,7 @@ export function CourseEditor({
     setTerm(course?.termId ?? termId ?? NO_TERM);
     setCredits(String(course?.creditHours ?? 3));
     setInstructor(course?.instructor ?? '');
+    setFeedLabel(course?.feedLabel ?? '');
     setColor(course?.color ?? PROJECT_COLORS[0]!);
     setStatus(course?.status ?? 'active');
     setMeetings(course?.meetings ?? []);
@@ -99,6 +101,7 @@ export function CourseEditor({
         termId: resolvedTerm,
         creditHours,
         instructor: instructor.trim(),
+        feedLabel: feedLabel.trim(),
         color,
         status,
         meetings,
@@ -113,6 +116,7 @@ export function CourseEditor({
       termId: resolvedTerm,
       creditHours,
       instructor: instructor.trim(),
+      feedLabel: feedLabel.trim(),
       color,
       meetings,
     });
@@ -205,6 +209,23 @@ export function CourseEditor({
             value={instructor}
             onChange={(event) => setInstructor(event.target.value)}
             autoComplete="off"
+            className={controlClass}
+          />
+        </Field>
+
+        {/* The override the feed matcher has always read and nothing could
+            write. Matching on the code carries most courses, and when it does
+            not there was no way to say so from inside the app. Empty is the
+            normal state: filling it in is what you do after an import lands
+            something in the Inbox that belonged here. */}
+        <Field label="Canvas name" htmlFor="course-feed-label">
+          <input
+            id="course-feed-label"
+            value={feedLabel}
+            onChange={(event) => setFeedLabel(event.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="Only if the feed does not match"
             className={controlClass}
           />
         </Field>

@@ -10,6 +10,7 @@ import { useAllProjects } from '@/hooks/use-projects';
 import { useTaskHistory } from '@/hooks/use-tasks';
 import { QUICK_FADE } from '@/lib/motion';
 import { cn } from '@/lib/utils';
+import { useHydrated } from '@/hooks/use-hydrated';
 
 /**
  * What has happened to this task.
@@ -38,6 +39,11 @@ import { cn } from '@/lib/utils';
 const COLLAPSE_AFTER = 4;
 
 export function TaskHistory({ taskId }: { taskId: string }) {
+  // Remounts the dates below once hydration ends. `suppressHydrationWarning`
+  // leaves the server's text in the DOM and records the client's in the
+  // fiber, so a re-render finds no diff and the wrong date stays. A changed
+  // key is what actually writes it. See the hook.
+  const hydrated = useHydrated();
   const entries = useTaskHistory(taskId);
   const projects = useAllProjects();
   const reduced = useReducedMotion();
@@ -76,6 +82,7 @@ export function TaskHistory({ taskId }: { taskId: string }) {
               <time
                 dateTime={entry.createdAt}
                 className="tnum w-[4.5rem] shrink-0 pt-px text-text-lo"
+                key={hydrated ? 'client' : 'server'}
                 suppressHydrationWarning
               >
                 {formatSince(entry.createdAt)}

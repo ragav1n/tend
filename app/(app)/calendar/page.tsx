@@ -19,6 +19,7 @@ import { updateTask } from '@/lib/db/mutations';
 import { today } from '@/lib/db/queries';
 import type { PlainDate, Task } from '@/lib/db/types';
 import { cn } from '@/lib/utils';
+import { useHydrated } from '@/hooks/use-hydrated';
 
 /**
  * The month, plus the day you are looking at.
@@ -43,6 +44,11 @@ function dayLabel(day: PlainDate, todayDate: PlainDate): string {
 }
 
 export default function CalendarPage() {
+  // Remounts the dates below once hydration ends. `suppressHydrationWarning`
+  // leaves the server's text in the DOM and records the client's in the
+  // fiber, so a re-render finds no diff and the wrong date stays. A changed
+  // key is what actually writes it. See the hook.
+  const hydrated = useHydrated();
   const prefs = usePrefs();
   const openTask = useUiStore((state) => state.openTask);
   const todayDate = today();
@@ -92,7 +98,7 @@ export default function CalendarPage() {
       <header className="mb-5 flex items-end justify-between gap-4">
         <div>
           <p className="label mb-1.5">Calendar</p>
-          <h1 className="font-display text-[2rem] leading-none" suppressHydrationWarning>
+          <h1 className="font-display text-[2rem] leading-none" key={hydrated ? 'client' : 'server'} suppressHydrationWarning>
             {monthLabel(month)}
           </h1>
         </div>
@@ -143,7 +149,7 @@ export default function CalendarPage() {
       />
 
       <section className="mt-7">
-        <h2 className="mb-3 text-sm text-text-mid" suppressHydrationWarning>
+        <h2 className="mb-3 text-sm text-text-mid" key={hydrated ? 'client' : 'server'} suppressHydrationWarning>
           {dayLabel(selected, todayDate)}
         </h2>
 

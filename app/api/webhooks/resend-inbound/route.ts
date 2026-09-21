@@ -9,6 +9,7 @@ import {
   type InboundEvent,
 } from '@/lib/email/inbound';
 import { getAdminSupabase } from '@/lib/supabase/admin';
+import { pickCourse } from '@/lib/courses/pick';
 
 /**
  * Mail arriving at the capture address.
@@ -141,7 +142,12 @@ async function fetchBody(messageId: string): Promise<string> {
   }
 }
 
-/** The course a `+code` in the subject meant, folded the way quick-add folds. */
+/**
+ * The course a `+code` in the subject meant.
+ *
+ * The ranking is shared with quick-add rather than restated here. Only the
+ * fetch differs, because a route has no Dexie to read.
+ */
 async function matchCourse(
   supabase: ReturnType<typeof getAdminSupabase>,
   userId: string,
@@ -153,13 +159,10 @@ async function matchCourse(
     .eq('user_id', userId)
     .is('deleted_at', null);
 
-  const fold = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const wanted = fold(code);
-  if (wanted === '' || !courses) return null;
+  if (!courses) return null;
 
-  const exact = courses.filter((course) => fold(String(course.code)) === wanted);
-  if (exact.length === 1) return exact[0]!.id as string;
-
-  const prefixed = courses.filter((course) => fold(String(course.code)).startsWith(wanted));
-  return prefixed.length === 1 ? (prefixed[0]!.id as string) : null;
+  return pickCourse(
+    code,
+    courses.map((course) => ({ id: String(course.id), code: String(course.code) })),
+  );
 }

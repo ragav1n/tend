@@ -3,6 +3,7 @@
 import { motion } from 'motion/react';
 import { FADE } from '@/lib/motion';
 import { Ring } from '@/components/ui/Ring';
+import { useHydrated } from '@/hooks/use-hydrated';
 
 /**
  * Page heading.
@@ -21,6 +22,11 @@ interface ViewHeaderProps {
 }
 
 export function ViewHeader({ title, eyebrow, subtitle, progress }: ViewHeaderProps) {
+  // Remounts the dates below once hydration ends. `suppressHydrationWarning`
+  // leaves the server's text in the DOM and records the client's in the
+  // fiber, so a re-render finds no diff and the wrong date stays. A changed
+  // key is what actually writes it. See the hook.
+  const hydrated = useHydrated();
   return (
     <motion.header
       initial={{ opacity: 0, y: 6 }}
@@ -34,7 +40,7 @@ export function ViewHeader({ title, eyebrow, subtitle, progress }: ViewHeaderPro
           // the server's locale and timezone while the browser uses the user's.
           // The client value is the correct one, so the mismatch is suppressed
           // rather than papered over with a mount flag, which would pop in.
-          <p className="label mb-1.5" suppressHydrationWarning>
+          <p className="label mb-1.5" key={hydrated ? 'client' : 'server'} suppressHydrationWarning>
             {eyebrow}
           </p>
         )}
