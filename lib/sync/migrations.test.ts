@@ -53,6 +53,7 @@ describe('the migration directory', () => {
       '0019_saved_views.sql',
       '0020_project_completed_at.sql',
       '0021_push_unique_violation.sql',
+      '0022_task_cancelled_at.sql',
     ]);
   });
 

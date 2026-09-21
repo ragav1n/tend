@@ -49,10 +49,10 @@ function OneView({
   onEdit: () => void;
 }) {
   const names = useFilterNames();
-  const { tasks, truncated } = useViewTasks(
-    view.filter as ViewFilter,
-    (view.sort as ViewSort) ?? 'manual',
-  );
+  // Only a manual view is the user's order. Every other sort is the query's, so
+  // a caret there would write a rank the screen never reads back.
+  const sort = (view.sort as ViewSort) ?? 'manual';
+  const { tasks, truncated } = useViewTasks(view.filter as ViewFilter, sort);
   const Icon = viewIcon(view.icon);
 
   return (
@@ -90,6 +90,7 @@ function OneView({
 
       <TaskList
         tasks={tasks}
+        reorder={sort === 'manual' ? { field: 'sortKey' } : undefined}
         empty={
           <EmptyState
             icon={Icon}

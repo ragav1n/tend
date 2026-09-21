@@ -68,10 +68,27 @@ export function compareRank(
   a: { sortKey: string; id: string },
   b: { sortKey: string; id: string },
 ): number {
-  if (a.sortKey < b.sortKey) return -1;
-  if (a.sortKey > b.sortKey) return 1;
-  if (a.id < b.id) return -1;
-  if (a.id > b.id) return 1;
+  return byRank(a.sortKey, a.id, b.sortKey, b.id);
+}
+
+/**
+ * The same order over `plannedSortKey`, which is the column the Today list
+ * arranges by hand. Separate rather than a field argument, because every caller
+ * hands one of these straight to `Array.sort` and a third parameter there is a
+ * parameter the sort never passes.
+ */
+export function comparePlannedRank(
+  a: { plannedSortKey: string; id: string },
+  b: { plannedSortKey: string; id: string },
+): number {
+  return byRank(a.plannedSortKey, a.id, b.plannedSortKey, b.id);
+}
+
+function byRank(aKey: string, aId: string, bKey: string, bId: string): number {
+  if (aKey < bKey) return -1;
+  if (aKey > bKey) return 1;
+  if (aId < bId) return -1;
+  if (aId > bId) return 1;
   return 0;
 }
 

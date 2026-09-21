@@ -172,6 +172,7 @@ function OneTag({ tag }: { tag: Tag }) {
 
       <TaskList
         tasks={tasks}
+        reorder={{ field: 'sortKey' }}
         empty={
           <EmptyState
             icon={Hash}

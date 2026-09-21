@@ -29,6 +29,7 @@ import {
   type ActivityAction,
   type ActivityEntry,
   type Area,
+  type CancelReason,
   type EntityTable,
   type FocusSession,
   type MutationOp,
@@ -121,6 +122,7 @@ const NOT_CLIENT_WRITABLE = new Set([
   'updatedAt',
   'rowVersion',
   'completedAt',
+  'cancelledAt',
   'depth',
 ]);
 
@@ -243,6 +245,18 @@ function summarize(action: ActivityAction, title: string): string {
   return `${verb[action]} "${title}"`;
 }
 
+/**
+ * The same sentence for a verb the action cannot name.
+ *
+ * Cancelling is logged as an `update`, so the undo path reverses it by restoring
+ * fields rather than needing a case of its own. "Edited" is not what happened
+ * though, and the toast is the only place the person finds out what they just
+ * did.
+ */
+function summarizeAs(verb: string, title: string): string {
+  return `${verb} "${title}"`;
+}
+
 /** The fields a patch is about to overwrite, as they stand. */
 function previousValues(row: Task, patch: TaskPatch): Record<string, unknown> {
   const before: Record<string, unknown> = {};
@@ -273,8 +287,21 @@ async function writeTaskPatch(
 
   // completedAt is server-derived, but the optimistic row still needs a value
   // so the UI can show "done 2 minutes ago" before the next pull lands.
+  //
+  // cancelledAt matters more than that. Only cancelled rows carry one, which is
+  // what makes `[_del+cancelledAt]` the cancelled list, so a row left without it
+  // until the next pull is a row that left the open lists and reached nothing.
+  // Offline, or signed out, there is no next pull and this is the only thing
+  // that ever sets it.
   if (patch.status !== undefined && patch.status !== current.status) {
     next.completedAt = patch.status === 'done' ? nowIso() : null;
+    next.cancelledAt = patch.status === 'cancelled' ? nowIso() : null;
+    // The reason goes with the status it explains. Unchecking a cancelled row
+    // in the pile is a reopen, and leaving "duplicate" on a task that is back on
+    // the list is a field that outlived the thing it was about.
+    if (patch.status !== 'cancelled' && patch.cancelReason === undefined) {
+      next.cancelReason = null;
+    }
   }
   if (patch.parentTaskId !== undefined) {
     next.depth = patch.parentTaskId === NO_PARENT ? 0 : 1;
@@ -329,6 +356,7 @@ export async function createTask(input: NewTaskInput, db: TendDb = getDb()): Pro
       plannedFor: input.plannedFor ?? null,
       estimateMinutes: input.estimateMinutes ?? null,
       completedAt: null,
+      cancelledAt: null,
       cancelReason: null,
       archivedAt: null,
       sortKey,
@@ -486,6 +514,83 @@ export async function completeTasks(
 }
 
 /**
+ * Gives up on a task, with a reason.
+ *
+ * `cancelled` and `cancelReason` have been in the schema, in `derive.ts` and in
+ * `activity/describe.ts` since phase 1, and nothing wrote them. The point of the
+ * status is the thing `done` cannot say: an assignment you dropped, a duplicate,
+ * a piece of work that stopped mattering. Counting those as finished is what
+ * makes a completion count meaningless.
+ *
+ * Logged as an `update` rather than an action of its own, so the undo path
+ * already knows how to reverse it: it restores the fields in `before` through
+ * `writeTaskPatch`, which is exactly what taking a cancellation back is.
+ *
+ * The series is left alone. The next occurrence of a repeat is materialized when
+ * one is completed, so cancelling one ends the repeat there, the same way
+ * deleting it would. That is said out loud in the UI rather than worked around
+ * with a second materialization path, because a cancel that quietly spawned a
+ * successor would leave two open occurrences of a series that promises one.
+ */
+export async function cancelTasks(
+  ids: readonly string[],
+  reason: CancelReason = 'other',
+  db: TendDb = getDb(),
+): Promise<void> {
+  const group = newId();
+
+  await db.transaction('rw', TASK_TABLES(db), async () => {
+    for (const id of ids) {
+      const before = await db.tasks.get(id);
+      if (!before || before.status === 'cancelled') continue;
+
+      if (!(await writeTaskPatch(id, { status: 'cancelled', cancelReason: reason }, db))) continue;
+
+      await logActivity(db, {
+        action: 'update',
+        entityId: id,
+        group,
+        before: { status: before.status, cancelReason: before.cancelReason },
+        after: { status: 'cancelled', cancelReason: reason },
+        summary: summarizeAs('Cancelled', before.title),
+      });
+    }
+  });
+}
+
+/**
+ * Puts a cancelled task back on the list it came from.
+ *
+ * `active` rather than the status it held before, which `inbox` usually was. A
+ * task somebody just decided to keep is a task they mean to do, and the activity
+ * log still holds the original for an undo to restore.
+ */
+export async function uncancelTasks(
+  ids: readonly string[],
+  db: TendDb = getDb(),
+): Promise<void> {
+  const group = newId();
+
+  await db.transaction('rw', TASK_TABLES(db), async () => {
+    for (const id of ids) {
+      const before = await db.tasks.get(id);
+      if (!before || before.status !== 'cancelled') continue;
+
+      if (!(await writeTaskPatch(id, { status: 'active', cancelReason: null }, db))) continue;
+
+      await logActivity(db, {
+        action: 'update',
+        entityId: id,
+        group,
+        before: { status: before.status, cancelReason: before.cancelReason },
+        after: { status: 'active', cancelReason: null },
+        summary: summarizeAs('Kept', before.title),
+      });
+    }
+  });
+}
+
+/**
  * Clones the completed occurrence forward.
  *
  * The clone is what makes the series row hold nothing but the rule: there is no
@@ -556,6 +661,7 @@ async function materializeNext(completed: Task, db: TendDb): Promise<Materialize
     plannedFor: null,
     estimateMinutes: completed.estimateMinutes,
     completedAt: null,
+    cancelledAt: null,
     cancelReason: null,
     archivedAt: null,
     // The new occurrence takes the old one's place in the list. Reusing the key

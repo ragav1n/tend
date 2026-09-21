@@ -1,6 +1,7 @@
 import { getDb, type TendDb } from './client';
 import { foldText } from './derive';
-import { compareRank } from './rank';
+import { comparePlannedRank, compareRank } from './rank';
+import { isDeferred } from '@/lib/views/defer';
 import {
   NO_DUE_DAY,
   NO_PARENT,
@@ -69,14 +70,31 @@ export async function plannedFor(day: PlainDate, db: TendDb = getDb()): Promise<
 }
 
 /**
+ * Which run of the Today list a row sits in.
+ *
+ * Exported because the reorder carets have to group by the same rule this sort
+ * used. Read off a second copy of the predicate, the two would agree until one
+ * of them changed, and a row would move somewhere the sort put straight back.
+ */
+export function todayGroup(task: Task, day: PlainDate): 'overdue' | 'today' {
+  return task._dueDay < day && task._dueDay !== NO_DUE_DAY ? 'overdue' : 'today';
+}
+
+/**
  * The Today list: overdue, due today, and anything explicitly planned for today.
  *
  * Two index scans merged by id rather than one scan with a filter, because a
  * filter would have to walk every open task. Subtasks are excluded: they render
  * underneath their parent, so surfacing them at top level would show the same
  * work twice.
+ *
+ * Inside a run the order is `plannedSortKey`, not `sortKey`. That column and the
+ * index leading with it were built for a Today list arranged by hand, and this
+ * sort threw the arrangement away: every row here also lives in a project list,
+ * so ordering both by the same column means arranging Today rearranges four
+ * other screens.
  */
-export async function todayList(day = today(), db: TendDb = getDb()): Promise<Task[]> {
+async function todayCandidates(day: PlainDate, db: TendDb): Promise<Task[]> {
   const [due, planned] = await Promise.all([dueThrough(day, db), plannedFor(day, db)]);
 
   const byId = new Map<string, Task>();
@@ -88,12 +106,21 @@ export async function todayList(day = today(), db: TendDb = getDb()): Promise<Ta
   // Overdue first, then today's work. Inside each group, the user's order.
   const rows = [...byId.values()];
   rows.sort((a, b) => {
-    const aOver = a._dueDay < day && a._dueDay !== NO_DUE_DAY ? 0 : 1;
-    const bOver = b._dueDay < day && b._dueDay !== NO_DUE_DAY ? 0 : 1;
+    const aOver = todayGroup(a, day) === 'overdue' ? 0 : 1;
+    const bOver = todayGroup(b, day) === 'overdue' ? 0 : 1;
     if (aOver !== bOver) return aOver - bOver;
-    return compareRank(a, b);
+    return comparePlannedRank(a, b);
   });
   return rows;
+}
+
+export async function todayList(day = today(), db: TendDb = getDb()): Promise<Task[]> {
+  return (await todayCandidates(day, db)).filter((t) => !isDeferred(t, day));
+}
+
+/** The other half: what this list is holding back until its start date. */
+export async function todayDeferred(day = today(), db: TendDb = getDb()): Promise<Task[]> {
+  return (await todayCandidates(day, db)).filter((t) => isDeferred(t, day));
 }
 
 /** The next `days` worth of dated work, excluding today. */
@@ -157,8 +184,7 @@ export async function openTasks(limit = 500, db: TendDb = getDb()): Promise<Task
   return rows.filter((t) => t.parentTaskId === NO_PARENT).sort(compareRank);
 }
 
-/** Unfiled top-level tasks, which is what Inbox means. */
-export async function inboxList(db: TendDb = getDb()): Promise<Task[]> {
+async function inboxCandidates(db: TendDb): Promise<Task[]> {
   const rows = await db.tasks
     .where('[_del+projectId+_done+sortKey]')
     .between([0, NO_PROJECT, 0, ''], [0, NO_PROJECT, 0, MAX_STR], true, true)
@@ -166,13 +192,30 @@ export async function inboxList(db: TendDb = getDb()): Promise<Task[]> {
   return rows.filter((t) => t.parentTaskId === NO_PARENT).sort(compareRank);
 }
 
-/** Dateless tasks, the "no commitment yet" pile. */
-export async function somedayList(db: TendDb = getDb()): Promise<Task[]> {
+/** Unfiled top-level tasks, which is what Inbox means. */
+export async function inboxList(db: TendDb = getDb(), day = today()): Promise<Task[]> {
+  return (await inboxCandidates(db)).filter((t) => !isDeferred(t, day));
+}
+
+export async function inboxDeferred(db: TendDb = getDb(), day = today()): Promise<Task[]> {
+  return (await inboxCandidates(db)).filter((t) => isDeferred(t, day));
+}
+
+async function somedayCandidates(db: TendDb): Promise<Task[]> {
   const rows = await db.tasks
     .where('[_del+_done+_dueDay+sortKey]')
     .between([0, 0, NO_DUE_DAY, ''], [0, 0, NO_DUE_DAY, MAX_STR], true, true)
     .toArray();
   return rows.filter((t) => t.parentTaskId === NO_PARENT);
+}
+
+/** Dateless tasks, the "no commitment yet" pile. */
+export async function somedayList(db: TendDb = getDb(), day = today()): Promise<Task[]> {
+  return (await somedayCandidates(db)).filter((t) => !isDeferred(t, day));
+}
+
+export async function somedayDeferred(db: TendDb = getDb(), day = today()): Promise<Task[]> {
+  return (await somedayCandidates(db)).filter((t) => isDeferred(t, day));
 }
 
 export async function projectList(projectId: string, db: TendDb = getDb()): Promise<Task[]> {
@@ -509,6 +552,27 @@ export async function logbook(limit = 100, db: TendDb = getDb()): Promise<Task[]
  * appears: it carries no completion instant, so the index skips it, which is the
  * right answer for a screen about what got done.
  */
+/**
+ * The cancelled pile, newest first.
+ *
+ * One range scan over `[_del+cancelledAt]`, and the index is the list: only a
+ * cancelled row carries a `cancelledAt`, and IndexedDB leaves a record out of a
+ * compound index when a component is null, so nothing else is in there to
+ * filter out.
+ *
+ * Bounded like the logbook. Work you gave up on is worth being able to find, not
+ * worth deserializing all of.
+ */
+export async function cancelledList(limit = 100, db: TendDb = getDb()): Promise<Task[]> {
+  const rows = await db.tasks
+    .where('[_del+cancelledAt]')
+    .between([0, ''], [0, MAX_STR], true, true)
+    .reverse()
+    .limit(limit)
+    .toArray();
+  return rows.filter((t) => t.parentTaskId === NO_PARENT);
+}
+
 export async function completedBetween(
   from: Instant,
   to: Instant,

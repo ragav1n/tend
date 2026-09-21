@@ -103,6 +103,7 @@ export function defineSchema(db: Dexie): void {
     savedViews: ['id', '_del', 'rowVersion', '[_del+sortKey]'].join(', '),
   });
 
+
   // v6 adds areas, which have existed server-side since 0001 so a project could
   // point at one. The list is short and always read whole, so sortKey is the
   // only ordering index it needs.
@@ -123,4 +124,31 @@ export function defineSchema(db: Dexie): void {
       // Not through `writeCursor`, which refuses to move the cursor backwards.
       await tx.table('syncMeta').delete('sync.cursor');
     });
+
+  // v7 indexes the cancelled pile.
+  //
+  // Only `cancelledAt` is added to `tasks`, and only cancelled rows carry a
+  // value for it, so this index *is* the cancelled list rather than a filter
+  // over every task: IndexedDB leaves a record out of a compound index when any
+  // component is null or absent, which is usually the trap and here is the
+  // mechanism. No `.upgrade()` for the same reason. Nothing is cancelled yet,
+  // and an existing row with no `cancelledAt` is correctly absent.
+  db.version(7).stores({
+    tasks: [
+      'id',
+      '_del',
+      'projectId',
+      'parentTaskId',
+      'seriesId',
+      'rowVersion',
+      '[_del+_done+_dueDay+sortKey]',
+      '[_del+_done+_plannedDay+plannedSortKey]',
+      '[_del+projectId+_done+sortKey]',
+      '[_del+parentTaskId+sortKey]',
+      '[_del+_done+completedAt]',
+      '[_del+cancelledAt]',
+      '*_tagIds',
+      '*_words',
+    ].join(', '),
+  });
 }

@@ -10,9 +10,9 @@
  * 2. **Derived fields prefixed `_`.** Computed by `derive.ts` and never sent to
  *    the server. They exist so the hot queries are index-bound.
  *
- * Server-owned columns (`updatedAt`, `rowVersion`, `completedAt`, `depth`) appear
- * here because the client reads them, but `mutations.ts` never puts them in an
- * outbox patch. Triggers own them.
+ * Server-owned columns (`updatedAt`, `rowVersion`, `completedAt`, `cancelledAt`,
+ * `depth`) appear here because the client reads them, but `mutations.ts` never
+ * puts them in an outbox patch. Triggers own them.
  */
 
 /** Wall-clock calendar date, `YYYY-MM-DD`. Never an instant. */
@@ -95,6 +95,16 @@ export interface Task extends SyncedRow, DerivedTaskFields {
 
   /** Server-derived from `status`. Never sent by the client. */
   completedAt: Instant | null;
+  /**
+   * When the task was cancelled. Server-derived from `status` the same way, and
+   * kept apart from `completedAt` on purpose: the review, the streak and the
+   * digest all read that column, and abandoning something is not finishing it.
+   *
+   * Null on everything else, which is what puts only cancelled rows in the
+   * `[_del+cancelledAt]` index: IndexedDB does not index null, so the index is
+   * the cancelled list rather than a filter over every task.
+   */
+  cancelledAt: Instant | null;
   cancelReason: CancelReason | null;
   archivedAt: Instant | null;
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useId, useState } from 'react';
+import Link from 'next/link';
 import {
   ArrowClockwise,
   Bell,
@@ -9,11 +10,13 @@ import {
   Globe,
   HardDrives,
   MoonStars,
+  SignOut,
 } from '@phosphor-icons/react/dist/ssr';
 import { Segmented } from '@/components/ui/Segmented';
 import { Toggle } from '@/components/ui/Toggle';
 import { controlClass } from '@/components/ui/Field';
 import { ViewHeader } from '@/components/views/ViewHeader';
+import { signOut, useAccountEmail } from '@/hooks/use-account';
 import { useAppUpdate } from '@/hooks/use-app-update';
 import { usePrefs } from '@/hooks/use-prefs';
 import { toast } from 'sonner';
@@ -381,6 +384,8 @@ function DeviceGroup() {
 
   return (
     <Group title="This device" icon={HardDrives}>
+      <AccountRow />
+
       {/* Theme sits here rather than under a synced group on purpose. A phone in
           a dark bedroom and a laptop under an office light are one person making
           two different choices, and a synced setting makes one of them wrong. */}
@@ -575,6 +580,77 @@ function ExportButton() {
  * an account, so with no session the browser would subscribe, the POST would come
  * back 401, and the switch would flick itself off with nothing said.
  */
+/**
+ * The account this device is signed in to, and the way out.
+ *
+ * Until this existed there was none: `grep signOut` answered with nothing, so an
+ * account was something you could join and never leave. It sits in the device
+ * group because a session is per device, which is also what `scope: 'local'` in
+ * `signOut` is about.
+ *
+ * Push goes off first. A subscription is stored server-side against the user, so
+ * leaving it behind means this device keeps receiving reminders for an account
+ * it is no longer signed in to. Best effort on purpose: a failed unsubscribe is
+ * not a reason to trap somebody in a session, and the send path already drops a
+ * subscription after `MAX_FAILURES`.
+ */
+function AccountRow() {
+  const email = useAccountEmail();
+  const { subscribed, disable } = usePush();
+  const [busy, setBusy] = useState(false);
+
+  async function leave() {
+    setBusy(true);
+    try {
+      if (subscribed) {
+        try {
+          await disable();
+        } catch {
+          // Reported by the toast below rather than here, since the session is
+          // the thing being asked for.
+        }
+      }
+      await signOut();
+      toast('Signed out', { description: 'Your tasks stay on this device.' });
+    } catch {
+      toast('Could not sign out', { description: 'Try again in a moment.' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (email === null) {
+    return (
+      <Row
+        label="Account"
+        hint="Tend works signed out. An account is what syncs it to your other devices."
+      >
+        {() => (
+          <Link href="/signin" className={cn(controlClass, 'inline-flex px-3 text-sm')}>
+            Sign in
+          </Link>
+        )}
+      </Row>
+    );
+  }
+
+  return (
+    <Row label="Account" hint={`Signed in as ${email}. Your tasks stay here either way.`}>
+      {() => (
+        <button
+          type="button"
+          onClick={() => void leave()}
+          disabled={busy}
+          className={cn(controlClass, 'inline-flex items-center gap-1.5 px-3 text-sm')}
+        >
+          <SignOut size={13} aria-hidden />
+          {busy ? 'Signing out' : 'Sign out'}
+        </button>
+      )}
+    </Row>
+  );
+}
+
 function NotificationRow() {
   const { ready, availability, subscribed, busy, enable, disable } = usePush();
   const { method } = useInstall();

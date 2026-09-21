@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import Dexie from 'dexie';
 import { setDb, TendDb } from './client';
 import {
+  cancelTasks,
   clearTaskRecurrence,
   completeTask,
   createArea,
@@ -27,6 +28,7 @@ import {
   reorderTask,
   restoreTask,
   setTaskRecurrence,
+  uncancelTasks,
   setTaskTags,
   updateTask,
 } from './mutations';
@@ -37,10 +39,15 @@ import {
   dueBetween,
   focusBetween,
   focusSeconds,
+  cancelledList,
+  logbook,
+  taskById,
+  inboxDeferred,
   inboxList,
   unfinishedFocus,
   projectList,
   searchTasks,
+  somedayDeferred,
   somedayList,
   subtasksOf,
   taggedWith,
@@ -52,6 +59,7 @@ import {
   projectOptions,
   taskHistory,
   today,
+  todayDeferred,
   todayList,
   upcomingList,
   VIEW_CANDIDATE_LIMIT,
@@ -1311,5 +1319,150 @@ describe('one task\'s history', () => {
     const history = await taskHistory(id, 2, db);
     expect(history).toHaveLength(2);
     expect(history.map((e) => e.after.priority)).toEqual([2, 1]);
+  });
+});
+
+describe('a start date holds a task back', () => {
+  it('keeps a task out of Today until the day it starts', async () => {
+    const id = await createTask({ title: 'Term paper', dueDate: TODAY }, db);
+    expect((await todayList(TODAY, db)).map((t) => t.id)).toEqual([id]);
+
+    await updateTask(id, { startDate: addDays(TODAY, 7) }, db);
+    expect(await todayList(TODAY, db)).toHaveLength(0);
+    expect((await todayDeferred(TODAY, db)).map((t) => t.id)).toEqual([id]);
+  });
+
+  it('lets it back in on the day itself', async () => {
+    const id = await createTask({ title: 'Starts today', dueDate: TODAY }, db);
+    await updateTask(id, { startDate: TODAY }, db);
+
+    // The boundary is inclusive. "Starts today" has started.
+    expect((await todayList(TODAY, db)).map((t) => t.id)).toEqual([id]);
+    expect(await todayDeferred(TODAY, db)).toHaveLength(0);
+  });
+
+  it('keeps a deferred capture out of the Inbox', async () => {
+    const id = await createTask({ title: 'Later thought' }, db);
+    await updateTask(id, { startDate: addDays(TODAY, 3) }, db);
+
+    expect(await inboxList(db, TODAY)).toHaveLength(0);
+    expect((await inboxDeferred(db, TODAY)).map((t) => t.id)).toEqual([id]);
+  });
+
+  it('keeps a deferred dateless task out of Someday', async () => {
+    const id = await createTask({ title: 'Parked' }, db);
+    await updateTask(id, { startDate: addDays(TODAY, 30) }, db);
+
+    expect(await somedayList(db, TODAY)).toHaveLength(0);
+    expect((await somedayDeferred(db, TODAY)).map((t) => t.id)).toEqual([id]);
+  });
+
+  it('leaves it on Upcoming, which is the screen meant to warn you', async () => {
+    const id = await createTask({ title: 'Proposal', dueDate: addDays(TODAY, 14) }, db);
+    await updateTask(id, { startDate: addDays(TODAY, 7) }, db);
+
+    expect((await upcomingList(TODAY, 30, db)).map((t) => t.id)).toEqual([id]);
+  });
+
+  it('leaves a task with no start date alone', async () => {
+    const id = await createTask({ title: 'Plain', dueDate: TODAY }, db);
+    expect((await todayList(TODAY, db)).map((t) => t.id)).toEqual([id]);
+    expect(await todayDeferred(TODAY, db)).toHaveLength(0);
+  });
+});
+
+describe('cancelling a task', () => {
+  it('takes it off the open lists and puts it in the cancelled pile', async () => {
+    const id = await createTask({ title: 'Optional problem set', dueDate: TODAY }, db);
+    expect((await todayList(TODAY, db)).map((t) => t.id)).toEqual([id]);
+
+    await cancelTasks([id], 'skipped', db);
+
+    expect(await todayList(TODAY, db)).toHaveLength(0);
+    expect((await cancelledList(100, db)).map((t) => t.id)).toEqual([id]);
+  });
+
+  it('keeps it out of the logbook, which is finished work', async () => {
+    const cancelled = await createTask({ title: 'Dropped', dueDate: TODAY }, db);
+    const done = await createTask({ title: 'Finished', dueDate: TODAY }, db);
+
+    await cancelTasks([cancelled], 'obsolete', db);
+    await completeTask(done, true, db);
+
+    // The whole reason cancelled_at is its own column. A cancellation in here
+    // would count toward the streak and the weekly review.
+    expect((await logbook(100, db)).map((t) => t.id)).toEqual([done]);
+  });
+
+  it('records the reason', async () => {
+    const id = await createTask({ title: 'Same as the other one' }, db);
+    await cancelTasks([id], 'duplicate', db);
+
+    const row = await taskById(id, db);
+    expect(row!.status).toBe('cancelled');
+    expect(row!.cancelReason).toBe('duplicate');
+    expect(row!.cancelledAt).not.toBeNull();
+  });
+
+  it('stamps cancelledAt locally, so the pile works offline', async () => {
+    // Server-owned, so no patch carries it and no pull is coming. Without the
+    // optimistic stamp the row leaves the open lists and reaches nothing.
+    const id = await createTask({ title: 'Offline drop' }, db);
+    await cancelTasks([id], 'other', db);
+
+    const queued = await db.outbox.toArray();
+    const patches = queued.filter((o) => 'cancelledAt' in (o.patch as object));
+    expect(patches).toEqual([]);
+    expect((await taskById(id, db))!.cancelledAt).not.toBeNull();
+  });
+
+  it('cancels several as one undo step', async () => {
+    const a = await createTask({ title: 'One' }, db);
+    const b = await createTask({ title: 'Two' }, db);
+    await cancelTasks([a, b], 'obsolete', db);
+
+    expect((await cancelledList(100, db)).map((t) => t.id).sort()).toEqual([a, b].sort());
+
+    await undoLast(db);
+    expect(await cancelledList(100, db)).toHaveLength(0);
+    expect((await inboxList(db, TODAY)).map((t) => t.id).sort()).toEqual([a, b].sort());
+  });
+
+  it('leaves an already cancelled task alone', async () => {
+    const id = await createTask({ title: 'Twice' }, db);
+    await cancelTasks([id], 'other', db);
+    const first = (await taskById(id, db))!.cancelledAt;
+
+    await cancelTasks([id], 'duplicate', db);
+
+    const row = await taskById(id, db);
+    expect(row!.cancelledAt).toBe(first);
+    expect(row!.cancelReason).toBe('other');
+  });
+
+  it('drops the reason when the row is unchecked back into the list', async () => {
+    // The pile shows a checkbox, and unchecking it is a reopen. A task back on
+    // the list carrying "duplicate" is a field that outlived its subject.
+    const id = await createTask({ title: 'Unchecked' }, db);
+    await cancelTasks([id], 'duplicate', db);
+
+    await completeTask(id, false, db);
+
+    const row = await taskById(id, db);
+    expect(row!.status).toBe('active');
+    expect(row!.cancelReason).toBeNull();
+    expect(row!.cancelledAt).toBeNull();
+  });
+
+  it('puts one back on the list it came from', async () => {
+    const id = await createTask({ title: 'Kept after all' }, db);
+    await cancelTasks([id], 'other', db);
+    await uncancelTasks([id], db);
+
+    const row = await taskById(id, db);
+    expect(row!.status).toBe('active');
+    expect(row!.cancelReason).toBeNull();
+    expect(row!.cancelledAt).toBeNull();
+    expect(await cancelledList(100, db)).toHaveLength(0);
   });
 });

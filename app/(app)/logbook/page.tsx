@@ -2,10 +2,11 @@
 
 import { useMemo } from 'react';
 import { CheckCircle } from '@phosphor-icons/react/dist/ssr';
+import { CancelledSection } from '@/components/views/FoldedTasks';
 import { EmptyState } from '@/components/views/EmptyState';
 import { TaskList } from '@/components/views/TaskList';
 import { ViewHeader } from '@/components/views/ViewHeader';
-import { useFirstLoadComplete, useLogbook } from '@/hooks/use-tasks';
+import { useCancelledList, useFirstLoadComplete, useLogbook } from '@/hooks/use-tasks';
 import { addDays, today } from '@/lib/db/queries';
 import type { Task } from '@/lib/db/types';
 
@@ -66,6 +67,7 @@ export default function LogbookPage() {
   const loaded = useFirstLoadComplete();
   const todayDate = today();
 
+  const cancelled = useCancelledList();
   const days = useMemo(() => groupByDay(tasks, todayDate), [tasks, todayDate]);
 
   return (
@@ -102,6 +104,11 @@ export default function LogbookPage() {
           ))}
         </div>
       )}
+
+      {/* Its own fold rather than mixed into the days above. Cancelled work is
+          closed, which is why it belongs on this page, but it is not finished,
+          which is why it does not belong in the count or the streak. */}
+      <CancelledSection tasks={cancelled} />
     </>
   );
 }

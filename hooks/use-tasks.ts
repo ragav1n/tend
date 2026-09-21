@@ -6,6 +6,8 @@ import {
   completedBetween,
   dueBetween,
   focusBetween,
+  cancelledList,
+  inboxDeferred,
   inboxList,
   logbook,
   openTasks,
@@ -14,6 +16,7 @@ import {
   searchTasks,
   seriesById,
   sidebarCounts,
+  somedayDeferred,
   somedayList,
   subtasksForParents,
   subtasksOf,
@@ -24,6 +27,7 @@ import {
   taskHistory,
   tasksByIds,
   today,
+  todayDeferred,
   todayList,
   todayProgress,
   upcomingList,
@@ -42,6 +46,26 @@ const NO_TASKS: Task[] = [];
 
 export function useTodayList(): Task[] {
   return useStableLiveQuery(() => todayList(today()), [], NO_TASKS);
+}
+
+/**
+ * What each working list is holding back until its start date.
+ *
+ * A second live query per page rather than a second return value on the first,
+ * which would have changed the shape every list hook and twenty-odd assertions
+ * already agree on. Both run the same index-bound scan, and the deferred half of
+ * a task list is a handful of rows.
+ */
+export function useTodayDeferred(): Task[] {
+  return useStableLiveQuery(() => todayDeferred(today()), [], NO_TASKS);
+}
+
+export function useInboxDeferred(): Task[] {
+  return useStableLiveQuery(() => inboxDeferred(), [], NO_TASKS);
+}
+
+export function useSomedayDeferred(): Task[] {
+  return useStableLiveQuery(() => somedayDeferred(), [], NO_TASKS);
 }
 
 export function useUpcomingList(days = 30): Task[] {
@@ -64,6 +88,11 @@ export function useOpenTasks(): Task[] {
 
 export function useSomedayList(): Task[] {
   return useStableLiveQuery(() => somedayList(), [], NO_TASKS);
+}
+
+/** Work given up on, newest first. One scan over `[_del+cancelledAt]`. */
+export function useCancelledList(limit = 100): Task[] {
+  return useStableLiveQuery(() => cancelledList(limit), [limit], NO_TASKS);
 }
 
 export function useLogbook(limit = 100): Task[] {

@@ -1,18 +1,23 @@
 'use client';
 
-import { motion, useReducedMotion } from 'motion/react';
+import { motion, useReducedMotion, type PanInfo } from 'motion/react';
 import {
   Check,
   CalendarBlank,
   Flag,
   ListChecks,
+  Prohibit,
   WarningCircle,
 } from '@phosphor-icons/react/dist/ssr';
 import { PRESS_DEPTH, ROW, SNAPPY, rowVariants } from '@/lib/motion';
 import { formatClock, formatDueLabel } from '@/lib/format/date';
 import { today } from '@/lib/db/queries';
 import { NO_DUE_DAY, type Task } from '@/lib/db/types';
+import { CANCEL_REASON_LABEL } from './TaskDetail';
 import { cn } from '@/lib/utils';
+import { ReorderStack } from '@/components/ui/ReorderStack';
+import { useLongPressDrag } from '@/hooks/use-long-press-drag';
+import type { Move, RowMove } from '@/lib/views/reorder';
 import { StruckTitle } from './StruckTitle';
 import { TaskCheck } from './TaskCheck';
 
@@ -46,6 +51,14 @@ interface TaskRowProps {
    *  row. A count was all this row used to show, which made a tag something you
    *  could add and then never see again. */
   tagNames?: readonly string[];
+  /** Where this row can go, when the list it is in is hand-arranged. Absent on
+   *  a list whose order is the query's rather than the user's, which is most of
+   *  them: the logbook is completion order and Upcoming is date order. */
+  move?: RowMove | null;
+  onMove?: (move: Move) => void;
+  /** Where a drag that ended over another row should put this one. The list
+   *  resolves the slot, because only it knows the order. */
+  onDrop?: (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => void;
   /** Rendered inside this row's list item, under the card. The subtasks go
    *  here: they belong to this row rather than beside it, and a second `li`
    *  wrapping both would be an `li` inside an `li`. */
@@ -71,10 +84,18 @@ export function TaskRow({
   onPick,
   subtaskCount = null,
   tagNames = [],
+  move = null,
+  onMove,
+  onDrop,
   children,
 }: TaskRowProps) {
   const reduced = useReducedMotion();
+  // A row only lifts on a list that has an order to change, and only while the
+  // carets are live, so a sorted list stays still.
+  const draggable = move !== null && onDrop !== undefined && !selectable;
+  const { controls, armed, release, handlers } = useLongPressDrag(draggable);
   const done = task._done === 1;
+  const cancelled = task.status === 'cancelled';
   const overdue = !done && task._dueDay !== NO_DUE_DAY && task._dueDay < todayDate;
   const hasDue = task._dueDay !== NO_DUE_DAY;
 
@@ -86,7 +107,33 @@ export function TaskRow({
       animate="visible"
       exit="exit"
       transition={ROW}
-      className="list-none"
+      // The slot a drop lands on. Read off the stack under the pointer by the
+      // same hit test the calendar and the board use, since the element under a
+      // dragging finger is the dragged row itself.
+      data-row-slot={task.id}
+      drag={draggable ? 'y' : false}
+      // Motion starts nothing on its own; the long press decides. Snapping back
+      // on release hands the row to `layout`, which animates it to the slot the
+      // reorder just gave it rather than leaving it at a dragged offset until
+      // the query catches up.
+      dragListener={false}
+      dragControls={controls}
+      dragSnapToOrigin
+      dragMomentum={false}
+      dragElastic={0.12}
+      onDragEnd={(event, info) => {
+        release();
+        onDrop?.(event, info);
+      }}
+      className={cn('list-none', armed && 'relative z-10 select-none')}
+      // At rest `touch-action` stays `auto`, or the list would not scroll. It is
+      // locked only once a row is up, which is safe because the press only wins
+      // after 350ms of a finger that has not moved: the browser has started no
+      // scroll to fight over. Motion blocks `touchmove` itself once it owns the
+      // pointer, so this is belt and braces for engines that re-read the
+      // property mid-gesture.
+      style={armed ? { touchAction: 'none', WebkitTouchCallout: 'none' } : undefined}
+      {...handlers}
     >
       <motion.div
         className={cn(
@@ -101,8 +148,8 @@ export function TaskRow({
           'has-[[data-row-id]:focus-visible]:outline-offset-2',
           selected ? 'border-clay-400' : 'border-line',
         )}
-        style={{ boxShadow: 'var(--shadow-flush)' }}
-        whileTap={reduced ? undefined : { y: 1 }}
+        style={{ boxShadow: armed ? 'var(--shadow-raised)' : 'var(--shadow-flush)' }}
+        whileTap={reduced || armed ? undefined : { y: 1 }}
         transition={PRESS_DEPTH}
       >
         {selectable && (
@@ -173,7 +220,7 @@ export function TaskRow({
             />
           </span>
 
-          {(hasDue || task.priority > 0 || tagNames.length > 0 || subtaskCount) && (
+          {(hasDue || cancelled || task.priority > 0 || tagNames.length > 0 || subtaskCount) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
               {hasDue && (
                 <span
@@ -191,6 +238,15 @@ export function TaskRow({
                     {formatDueLabel(task._dueDay, todayDate)}
                     {task.dueTime ? ` ${formatClock(task.dueTime)}` : ''}
                   </span>
+                </span>
+              )}
+
+              {/* Why it was dropped. Without it the cancelled pile is a list of
+                  struck-through titles and no account of any of them. */}
+              {cancelled && (
+                <span className="inline-flex items-center gap-1 text-xs text-text-lo">
+                  <Prohibit size={13} aria-hidden />
+                  {CANCEL_REASON_LABEL[task.cancelReason ?? 'other']}
                 </span>
               )}
 
@@ -227,6 +283,22 @@ export function TaskRow({
             </div>
           )}
         </button>
+
+        {/* Buttons rather than a drag, for the reason `ReorderStack` gives: a
+            drag is a pointer shortcut and never the only path. Always on rather
+            than behind `group-hover`, because a control revealed by hover does
+            not exist on a phone at all. Hidden while selecting, where the whole
+            row is a target and a caret inside it would pick instead of move. */}
+        {move && onMove && !selectable && (
+          <ReorderStack
+            label={task.title}
+            first={move.first}
+            last={move.last}
+            onUp={() => move.up && onMove(move.up)}
+            onDown={() => move.down && onMove(move.down)}
+            className="mt-px"
+          />
+        )}
       </motion.div>
 
       {children}

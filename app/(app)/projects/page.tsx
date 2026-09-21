@@ -361,6 +361,7 @@ function OneProject({ project, onEdit }: { project: Project; onEdit: () => void 
       <TaskList
         tasks={tasks}
         loading={!loaded}
+        reorder={{ field: 'sortKey' }}
         empty={
           <EmptyState
             icon={FolderSimple}

@@ -38,6 +38,7 @@ export const MIGRATIONS = [
   '0019_saved_views',
   '0020_project_completed_at',
   '0021_push_unique_violation',
+  '0022_task_cancelled_at',
 ];
 
 export function migrationSql(name: string): string {

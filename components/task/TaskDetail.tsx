@@ -8,20 +8,23 @@ import {
   Flag,
   FolderSimple,
   Hourglass,
+  Prohibit,
   Sun,
   TrashSimple,
 } from '@phosphor-icons/react/dist/ssr';
 import {
+  cancelTasks,
   createProject,
   deleteTask,
   ensureTag,
   restoreTask,
   setTaskTags,
+  uncancelTasks,
   updateTask,
   type TaskPatch,
 } from '@/lib/db/mutations';
 import { today } from '@/lib/db/queries';
-import { NO_PROJECT, type Priority, type Task } from '@/lib/db/types';
+import { NO_PROJECT, type CancelReason, type Priority, type Task } from '@/lib/db/types';
 import { useProjects, useSeries, useTags } from '@/hooks/use-tasks';
 import { Field, FieldGroup, controlClass } from '@/components/ui/Field';
 import { Markdown } from '@/components/ui/Markdown';
@@ -132,6 +135,25 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
     if (trimmed.length === 0) return;
     const projectId = await createProject({ name: trimmed });
     patch({ projectId });
+  }
+
+  /**
+   * Gives up on the task, with a reason.
+   *
+   * The panel stays open, unlike delete. A cancellation is a state the task is
+   * in rather than the task leaving, and the row underneath is the one place the
+   * reason is visible.
+   *
+   * The repeat warning is the honest part. The next occurrence of a series is
+   * materialized when one is completed, so cancelling one ends the repeat there.
+   * Saying so beats a cancel that quietly spawns a successor and leaves two open
+   * occurrences of a series that promises exactly one.
+   */
+  function handleCancel(reason: CancelReason) {
+    void cancelTasks([task.id], reason);
+    toast('Task cancelled', {
+      description: task.seriesId !== '' ? 'This also ends the repeat.' : undefined,
+    });
   }
 
   function handleDelete() {
@@ -405,18 +427,77 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
             })}
           </span>
         </p>
-        <button
-          type="button"
-          onClick={handleDelete}
-          className={cn(
-            'inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5',
-            'text-xs text-text-lo hover:border-clay-400 hover:text-clay-300',
+        <div className="flex items-center gap-2">
+          {task.status === 'cancelled' ? (
+            <button
+              type="button"
+              onClick={() => void uncancelTasks([task.id])}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5',
+                'text-xs text-text-lo hover:border-olive-400 hover:text-olive-300',
+              )}
+            >
+              <Prohibit size={14} aria-hidden />
+              Keep it
+            </button>
+          ) : (
+            <CancelMenu onPick={handleCancel} />
           )}
-        >
-          <TrashSimple size={14} aria-hidden />
-          Delete
-        </button>
+
+          <button
+            type="button"
+            onClick={handleDelete}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5',
+              'text-xs text-text-lo hover:border-clay-400 hover:text-clay-300',
+            )}
+          >
+            <TrashSimple size={14} aria-hidden />
+            Delete
+          </button>
+        </div>
       </footer>
     </div>
+  );
+}
+
+/** What the four reasons are called. Kept beside the control that writes them. */
+export const CANCEL_REASON_LABEL: Record<CancelReason, string> = {
+  skipped: 'Skipped it',
+  obsolete: 'No longer needed',
+  duplicate: 'Duplicate',
+  other: 'Cancelled',
+};
+
+/**
+ * Cancel, and why.
+ *
+ * A select rather than a button plus a follow-up sheet. The reason is the part
+ * that makes the status worth having over a delete, and asking for it in a
+ * second step is how it ends up as 'other' every time.
+ */
+function CancelMenu({ onPick }: { onPick: (reason: CancelReason) => void }) {
+  return (
+    <label className="inline-flex items-center">
+      <span className="sr-only">Cancel this task, and why</span>
+      <select
+        value=""
+        onChange={(event) => {
+          const reason = event.target.value;
+          if (reason !== '') onPick(reason as CancelReason);
+        }}
+        className={cn(
+          'cursor-pointer appearance-none rounded-md border border-line px-2.5 py-1.5',
+          'text-xs text-text-lo hover:border-clay-400 hover:text-clay-300',
+        )}
+      >
+        <option value="">Cancel…</option>
+        {(Object.keys(CANCEL_REASON_LABEL) as CancelReason[]).map((reason) => (
+          <option key={reason} value={reason}>
+            {CANCEL_REASON_LABEL[reason]}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

@@ -24,6 +24,7 @@ function task(over: Partial<Task> = {}): Task {
     plannedFor: null,
     estimateMinutes: null,
     completedAt: null,
+    cancelledAt: null,
     cancelReason: null,
     archivedAt: null,
     sortKey: 'a0',

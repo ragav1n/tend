@@ -1,16 +1,23 @@
 'use client';
 
 import { useEffect, useId, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
 import { COMPLETED_ROW_LINGER_MS, listVariants, QUICK_FADE } from '@/lib/motion';
 import { withHeld, type Held } from '@/lib/views/held';
-import { completeTask } from '@/lib/db/mutations';
+import { completeTask, reorderTask } from '@/lib/db/mutations';
+import { movesFor, moveToIndex, type Move, type RankField } from '@/lib/views/reorder';
+import { clientPoint, targetFromStack } from '@/lib/dnd/drop';
+import { sortTasks, type ViewSort } from '@/lib/views/filter';
+import { SORT_LABEL } from '@/lib/views/list-sort';
+import { useListSort } from '@/hooks/use-list-sort';
 import { today } from '@/lib/db/queries';
 import type { Task } from '@/lib/db/types';
 import { useSelectionStore } from '@/hooks/use-selection';
 import { useSubtasksFor } from '@/hooks/use-tasks';
 import { useUiStore } from '@/hooks/use-ui';
 import { SubtaskRows, subtaskProgress } from '@/components/task/SubtaskRows';
+import { cn } from '@/lib/utils';
 import { useTagNames } from '@/components/task/TagNames';
 import { TaskRow } from '@/components/task/TaskRow';
 
@@ -37,6 +44,23 @@ import { TaskRow } from '@/components/task/TaskRow';
  * the page: the keyboard cursor and the action bar both live in the shell, and a
  * page can hold several lists.
  *
+ * On touch the carets are not a target worth aiming at, so a row can also be
+ * picked up with a long press and dropped on another row's slot. The list
+ * resolves that drop, because the row knows where the pointer landed and only
+ * the list knows the order it landed in.
+ *
+ * A list that can be hand-arranged can also be sorted another way, so `reorder`
+ * brings a sort picker with it. Picking anything but "My order" takes the carets
+ * away for as long as it is picked: a caret writes a rank, and a list ordered by
+ * due date would not read it back, so the row would appear not to move.
+ *
+ * Hand-arranged lists pass `reorder`, and the rows grow a pair of carets. Only
+ * the lists whose order is the user's own take it: the logbook is completion
+ * order and Upcoming is date order, so a caret there would write a rank nothing
+ * reads. `movesFor` decides what each row can do, including the case Today
+ * needs, where overdue work sits above the rest and a row cannot cross between
+ * the two runs.
+ *
  * Subtasks render under their parent here. Every list query already drops them
  * from the top level with a note saying they appear underneath it, so until this
  * existed a subtask could only be reached by opening the parent. They are
@@ -44,14 +68,28 @@ import { TaskRow } from '@/components/task/TaskRow';
  * row is a live query per row.
  */
 
+/** How a list's hand-arranged order works, on the lists that have one. */
+export interface ReorderMode {
+  /** The column the order lives in. Today is the only `plannedSortKey` list. */
+  field: RankField;
+  /** Rows sharing a key reorder among themselves. The caller passes rows already
+   *  grouped, since the group is what the query sorted by. */
+  group?: (task: Task) => string;
+}
+
 interface TaskListProps {
   tasks: Task[];
   loading?: boolean;
   empty?: React.ReactNode;
+  reorder?: ReorderMode;
 }
 
-export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
+export function TaskList({ tasks, loading = false, empty, reorder }: TaskListProps) {
   const todayDate = today();
+  // Keyed by route rather than by list, so the two lists on the projects page do
+  // not need names. Only the reorderable one shows the picker.
+  const route = usePathname();
+  const { sort, setSort } = useListSort(route);
   const openTask = useUiStore((state) => state.openTask);
   const selecting = useSelectionStore((state) => state.active);
   const selectedIds = useSelectionStore((state) => state.ids);
@@ -124,7 +162,49 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
   // Held rows go back where they were, so the list does not reflow under a
   // finger mid-animation. The placement rule lives in `withHeld`, where a test
   // can hold it.
-  const shown = withHeld(tasks, lingering);
+  const ordered = reorder && sort !== 'manual' ? sortTasks(tasks, sort) : tasks;
+  const shown = withHeld(ordered, lingering);
+
+  // Read off the rendered list rather than the query result, so a row lingering
+  // through its completion animation holds its slot and the rows around it keep
+  // the ranks they are showing.
+  const arranged = reorder && sort === 'manual';
+  const moves = arranged ? movesFor(shown, reorder.field, reorder.group) : null;
+
+  function handleMove(move: Move) {
+    if (!reorder || !arranged) return;
+    void reorderTask(move.id, move.prev, move.next, reorder.field);
+  }
+
+  /**
+   * Where a dragged row was let go.
+   *
+   * Hit-tested against the pointer rather than tracked with hover, for the
+   * reason `lib/dnd/drop.ts` gives: the element under a dragging finger is the
+   * dragged row, and pointer capture means no target ever sees an enter event.
+   * A drop that resolves to nothing, or back onto the row's own slot, is a drag
+   * that moved nowhere, which `moveToIndex` answers with null.
+   */
+  function handleDrop(
+    from: number,
+    event: MouseEvent | TouchEvent | PointerEvent,
+    info: Parameters<typeof clientPoint>[1],
+  ) {
+    if (!reorder || !arranged) return;
+
+    const point = clientPoint(event, info);
+    const source = document.querySelector(`[data-row-slot="${shown[from]?.id ?? ''}"]`);
+    const slot = targetFromStack(
+      document.elementsFromPoint(point.x, point.y),
+      source,
+      'data-row-slot',
+    );
+    if (slot === null) return;
+
+    const to = shown.findIndex((task) => task.id === slot);
+    const move = moveToIndex(shown, from, to, reorder.field, reorder.group);
+    if (move) void reorderTask(move.id, move.prev, move.next, reorder.field);
+  }
 
   const order = shown.map((task) => task.id);
   // One query for the whole page. The key is the joined ids, so it re-runs when
@@ -175,7 +255,10 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
           and the mode spans both. This list's own count answers first so the
           button does not appear a frame late on every ordinary view. */}
       {(shown.length > 1 || pageRows > 1) && (
-        <div className="mb-2 flex justify-end">
+        <div className="mb-2 flex items-center justify-end gap-1">
+          {reorder && !selecting && shown.length > 1 && (
+            <SortPicker sort={sort} onChange={setSort} />
+          )}
           <button
             type="button"
             onClick={selecting ? endSelect : beginSelect}
@@ -196,7 +279,7 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
         className="space-y-2"
       >
         <AnimatePresence mode="popLayout" initial={false}>
-          {shown.map((task) => {
+          {shown.map((task, index) => {
             const children = subtasks.get(task.id);
             return (
               <TaskRow
@@ -209,6 +292,11 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
                 selected={selectedIds.has(task.id)}
                 onPick={(id, extend) => pickRow(id, order, extend)}
                 subtaskCount={subtaskProgress(children)}
+                move={moves?.[index] ?? null}
+                onMove={arranged ? handleMove : undefined}
+                onDrop={
+                  arranged ? (event, info) => handleDrop(index, event, info) : undefined
+                }
                 tagNames={task._tagIds
                   .map((id) => tagNames.get(id))
                   .filter((name): name is string => name !== undefined)}
@@ -227,5 +315,43 @@ export function TaskList({ tasks, loading = false, empty }: TaskListProps) {
         </AnimatePresence>
       </motion.ul>
     </LayoutGroup>
+  );
+}
+
+/**
+ * The list's order, as a native select.
+ *
+ * Native rather than a custom menu: five options is past what a segmented
+ * control can hold, and a phone gets its own wheel for free. Styled down to the
+ * size of the Select button beside it so the pair reads as one row of controls
+ * rather than a form.
+ */
+function SortPicker({
+  sort,
+  onChange,
+}: {
+  sort: ViewSort;
+  onChange: (sort: ViewSort) => void;
+}) {
+  return (
+    <label className="label flex items-center gap-1 !text-[0.625rem]">
+      <span className="sr-only">Order</span>
+      <select
+        value={sort}
+        onChange={(event) => onChange(event.target.value as ViewSort)}
+        aria-label="Order this list by"
+        className={cn(
+          'label cursor-pointer appearance-none rounded-md bg-transparent py-1 pl-2 pr-1',
+          '!text-[0.625rem] hover:text-text-mid focus-visible:outline focus-visible:outline-2',
+          'focus-visible:outline-clay-400',
+        )}
+      >
+        {(Object.keys(SORT_LABEL) as ViewSort[]).map((value) => (
+          <option key={value} value={value}>
+            {SORT_LABEL[value]}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

@@ -7,12 +7,13 @@ import {
   CalendarBlank,
   CheckCircle,
   FolderSimple,
+  Prohibit,
   Trash,
   X,
 } from '@phosphor-icons/react/dist/ssr';
-import { completeTasks, deleteTasks, restoreTasks, updateTasks } from '@/lib/db/mutations';
+import { cancelTasks, completeTasks, deleteTasks, restoreTasks, updateTasks } from '@/lib/db/mutations';
 import { addDays, today } from '@/lib/db/queries';
-import { NO_PROJECT } from '@/lib/db/types';
+import { NO_PROJECT, type CancelReason } from '@/lib/db/types';
 import { chordIndex, inScope, SELECTION_ACTIONS, typingSafe } from '@/lib/keys/map';
 import { QUICK_FADE, SHEET, sheetVariants } from '@/lib/motion';
 import { cn } from '@/lib/utils';
@@ -93,7 +94,7 @@ function SelectionBar() {
   const clear = useSelectionStore((state) => state.clear);
   const selectAll = useSelectionStore((state) => state.selectAll);
   const projects = useProjects();
-  const [sheet, setSheet] = useState<'schedule' | 'project' | null>(null);
+  const [sheet, setSheet] = useState<'schedule' | 'project' | 'cancel' | null>(null);
 
   const picked = [...ids];
   const count = picked.length;
@@ -124,6 +125,12 @@ function SelectionBar() {
         }),
       () => toast('Could not delete those', { description: 'They are all still here.' }),
     );
+  }
+
+  function cancel(reason: CancelReason) {
+    setSheet(null);
+    const count = picked.length;
+    run(cancelTasks(picked, reason), `${count} ${count === 1 ? 'task' : 'tasks'} cancelled`);
   }
 
   function schedule(dueDate: string | null) {
@@ -184,6 +191,7 @@ function SelectionBar() {
             />
             <BarButton label="Schedule" icon={CalendarBlank} onClick={() => setSheet('schedule')} />
             <BarButton label="Move" icon={FolderSimple} onClick={() => setSheet('project')} />
+            <BarButton label="Cancel" icon={Prohibit} onClick={() => setSheet('cancel')} />
             <BarButton label="Delete" icon={Trash} danger onClick={() => count > 0 && remove()} />
           </div>
 
@@ -218,6 +226,22 @@ function SelectionBar() {
             />
           </li>
         </ul>
+      </Sheet>
+
+      <Sheet open={sheet === 'cancel'} onClose={() => setSheet(null)} label="Cancel tasks">
+        <h2 className="text-lg">Cancel {count} {count === 1 ? 'task' : 'tasks'}</h2>
+        {/* Said here as well as in the detail panel. The next occurrence of a
+            repeat is materialized on completion, so cancelling one ends it. */}
+        <p className="mt-1 text-xs text-text-lo">
+          They leave your lists and collect under Cancelled in the logbook. Anything that
+          repeats stops repeating.
+        </p>
+        <div className="mt-4 space-y-1">
+          <SheetOption label="Skipped it" onClick={() => cancel('skipped')} />
+          <SheetOption label="No longer needed" onClick={() => cancel('obsolete')} />
+          <SheetOption label="Duplicate" onClick={() => cancel('duplicate')} />
+          <SheetOption label="Some other reason" onClick={() => cancel('other')} />
+        </div>
       </Sheet>
 
       <Sheet open={sheet === 'project'} onClose={() => setSheet(null)} label="Move to project">
