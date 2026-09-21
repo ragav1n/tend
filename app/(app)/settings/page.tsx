@@ -13,12 +13,14 @@ import {
   Hourglass,
   MoonStars,
   SignOut,
+  Sparkle,
 } from '@phosphor-icons/react/dist/ssr';
 import { Segmented } from '@/components/ui/Segmented';
 import { Toggle } from '@/components/ui/Toggle';
 import { controlClass } from '@/components/ui/Field';
 import { ViewHeader } from '@/components/views/ViewHeader';
 import { FeedSettings } from '@/components/courses/FeedSettings';
+import { ModelSettings } from '@/components/courses/ModelSettings';
 import { CapacityRow } from '@/components/views/CapacityRow';
 import { signOut, useAccountEmail } from '@/hooks/use-account';
 import { useAppUpdate } from '@/hooks/use-app-update';
@@ -249,6 +251,10 @@ export default function SettingsPage() {
 
       <Group title="Coursework" icon={GraduationCap}>
         <FeedSettings />
+      </Group>
+
+      <Group title="Local model" icon={Sparkle}>
+        <ModelSettings />
       </Group>
 
       <Group title="Your week" icon={Hourglass}>

@@ -3,7 +3,13 @@
 import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { CaretDown, GraduationCap, PencilSimple, Plus } from '@phosphor-icons/react/dist/ssr';
+import {
+  CaretDown,
+  ClipboardText,
+  GraduationCap,
+  PencilSimple,
+  Plus,
+} from '@phosphor-icons/react/dist/ssr';
 import { QuickAdd } from '@/components/task/QuickAdd';
 import { EmptyState } from '@/components/views/EmptyState';
 import { TaskList } from '@/components/views/TaskList';
@@ -12,6 +18,7 @@ import { CourseEditor } from '@/components/courses/CourseEditor';
 import { CourseCard } from '@/components/courses/CourseCard';
 import { GradesTab } from '@/components/courses/GradesTab';
 import { TermGpa } from '@/components/courses/TermGpa';
+import { SyllabusImport } from '@/components/courses/SyllabusImport';
 import { MEETING_DAYS } from '@/components/courses/MeetingRows';
 import { TermEditor } from '@/components/courses/TermEditor';
 import {
@@ -58,6 +65,7 @@ function CoursesScreen() {
   const router = useRouter();
   const openId = useSearchParams().get('c');
   const open = useCourse(openId);
+  const terms = useTerms();
 
   const [editing, setEditing] = useState<{ course?: Course; termId?: string } | null>(null);
   const [editingTerm, setEditingTerm] = useState<{ term?: Term } | null>(null);
@@ -76,6 +84,7 @@ function CoursesScreen() {
         <OneCourse
           key={open.id}
           course={open}
+          term={terms.find((each) => each.id === open.termId)}
           onEdit={() => setEditing({ course: open })}
         />
       ) : (
@@ -222,9 +231,18 @@ function CourseIndex({
 
 type Tab = 'work' | 'grades' | 'schedule';
 
-function OneCourse({ course, onEdit }: { course: Course; onEdit: () => void }) {
+function OneCourse({
+  course,
+  term,
+  onEdit,
+}: {
+  course: Course;
+  term: Term | undefined;
+  onEdit: () => void;
+}) {
   const [tab, setTab] = useState<Tab>('work');
   const [showDone, setShowDone] = useState(false);
+  const [importing, setImporting] = useState(false);
   const tasks = useCourseList(course.id);
   const finished = useCourseDone(course.id);
   const components = useComponents(course.id);
@@ -251,13 +269,29 @@ function OneCourse({ course, onEdit }: { course: Course; onEdit: () => void }) {
         </Link>
         <button
           type="button"
-          onClick={onEdit}
+          onClick={() => setImporting(true)}
           className="label ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 hover:text-text-mid"
+        >
+          <ClipboardText size={13} aria-hidden />
+          Syllabus
+        </button>
+        <button
+          type="button"
+          onClick={onEdit}
+          className="label flex items-center gap-1.5 rounded-md px-2 py-1 hover:text-text-mid"
         >
           <PencilSimple size={13} aria-hidden />
           Edit
         </button>
       </div>
+
+      <SyllabusImport
+        open={importing}
+        course={course}
+        term={term}
+        components={components}
+        onClose={() => setImporting(false)}
+      />
 
       {/* Tabs as local state rather than a second search param. A route that
           reads two of them is a route with two ways to be wrong, and the tab you

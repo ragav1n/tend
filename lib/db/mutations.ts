@@ -86,6 +86,10 @@ export interface NewTaskInput {
   /** Explicit position. Defaults to the end of the list. */
   sortKey?: string;
   courseId?: string;
+  /** Which weighted bucket it counts toward, and what it is out of. Set by the
+   *  syllabus import, which knows both at the moment it creates the task. */
+  componentId?: string;
+  pointsPossible?: number | null;
 }
 
 /** Fields a caller may change. Server-owned columns are absent by construction. */
@@ -363,6 +367,7 @@ export async function createTask(input: NewTaskInput, db: TendDb = getDb()): Pro
       userId: LOCAL_USER_ID,
       projectId: parentTaskId === NO_PARENT ? (input.projectId ?? NO_PROJECT) : NO_PROJECT,
       courseId: parentTaskId === NO_PARENT ? (input.courseId ?? NO_COURSE) : NO_COURSE,
+      pointsPossible: input.pointsPossible ?? null,
       parentTaskId,
       seriesId: '',
       depth: (parentTaskId === NO_PARENT ? 0 : 1) as 0 | 1,
@@ -378,8 +383,7 @@ export async function createTask(input: NewTaskInput, db: TendDb = getDb()): Pro
       completedAt: null,
       cancelledAt: null,
       cancelReason: null,
-      componentId: NO_COMPONENT,
-      pointsPossible: null,
+      componentId: parentTaskId === NO_PARENT ? (input.componentId ?? NO_COMPONENT) : NO_COMPONENT,
       pointsEarned: null,
       gradedAt: null,
       feedUid: null,
