@@ -757,10 +757,16 @@ export async function tagCounts(db: TendDb = getDb()): Promise<Map<string, numbe
 /**
  * Tag filter, served by the multiEntry `_tagIds` index.
  *
- * Top level only, like every other list here: a subtask renders under its
- * parent. Without that filter the tag screen showed a tagged subtask twice,
- * once as a row of its own and once nested under its parent, two DOM nodes
- * carrying the same id for the keyboard cursor to walk onto.
+ * Top level only: a subtask renders under its parent. Without that filter the
+ * tag screen showed a tagged subtask twice, once as a row of its own and once
+ * nested under its parent, two DOM nodes carrying the same id for the keyboard
+ * cursor to walk onto.
+ *
+ * `nestedUnder` in `TaskList` now holds that second half for every list, so this
+ * filter is a choice rather than the only defence: a tag screen is not a
+ * calendar, and a tagged part of a bigger task is more useful under the task it
+ * belongs to. The dated queries make the other choice through
+ * `withoutNestedChildren`, and `tagCounts` counts whatever this lists.
  */
 export async function taggedWith(tagId: string, db: TendDb = getDb()): Promise<Task[]> {
   const rows = await db.tasks.where('_tagIds').equals(tagId).toArray();

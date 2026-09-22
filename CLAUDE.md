@@ -80,6 +80,25 @@ right and this file is the constitution. Phases 6 through 13 came from a later p
 - **`TaskRow` names the parent of a surfaced subtask** from `useParentTitles`,
   which `TaskList` asks for itself rather than taking from a page, and
   `SubtaskRows` shows a child's date only when its parent does not share it.
+- **A subtask is filed by its parent, and three places say so.** `createTask`
+  forces a child's project, course and component to nothing, `TaskDetail` hides
+  all three for `depth !== 0`, and `writeTaskPatch` clears them on the patch
+  path. Postgres holds the project half with `tasks_subtask_has_no_project`, and
+  a violation is a 23514 the client classifies **fatal**: the mutation
+  deadletters and the local row keeps a project the server never took. The patch
+  path had no copy of the rule until bulk "Move" could reach a subtask.
+- **A hydration key is named after the element it sits on**
+  (`key={`month-${hydrated}`}`), never the bare `hydrated ? 'client' : 'server'`.
+  Review had two bare ones as siblings in a header `<div>` and logged
+  "Encountered two children with the same key" on every load, in a build where
+  React warns such children "may be duplicated and/or omitted" and so might skip
+  the remount the key exists for. `hooks/use-hydrated.test.tsx` scans the source
+  for both halves: no bare keys, and no key written twice in one file.
+- **`digest_items` orders before it cuts.** The `limit` sat inside a subquery
+  with no `order by` while the ordering sat outside in the `jsonb_agg`, so from
+  0008 to 0027 a digest past 25 qualifying tasks kept an arbitrary 25 and then
+  sorted them, which looks right in the email and holds the wrong tasks. Any
+  future `limit` in that pipeline needs its `order by` in the same subquery.
 - **A key binding is scoped.** `lib/keys/map.ts` is the one list; the dispatcher
   binds `scope: 'global'` and the selection bar binds its own. Backspace must
   not be an app-wide delete key.

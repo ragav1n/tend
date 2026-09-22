@@ -116,11 +116,11 @@ export default function ReviewPage() {
       <header className="mb-5 flex items-end justify-between gap-4">
         <div>
           <p className="label mb-1.5">Review</p>
-          <h1 className="font-display text-[2rem] leading-none" key={hydrated ? 'client' : 'server'} suppressHydrationWarning>
+          <h1 className="font-display text-[2rem] leading-none" key={`week-${hydrated}`} suppressHydrationWarning>
             {thisWeek ? 'This week' : rangeLabel(start, shiftDays(start, 6))}
           </h1>
           {thisWeek && (
-            <p className="mt-2 text-sm text-text-lo" key={hydrated ? 'client' : 'server'} suppressHydrationWarning>
+            <p className="mt-2 text-sm text-text-lo" key={`range-${hydrated}`} suppressHydrationWarning>
               {rangeLabel(start, shiftDays(start, 6))}
             </p>
           )}
@@ -160,7 +160,7 @@ export default function ReviewPage() {
       <section className="mb-7 rounded-lg border border-line bg-surface/40 px-3 py-4">
         <WeekChart days={summary.days} todayDate={todayDate} />
         {summary.best && (
-          <p className="mt-4 text-center text-xs text-text-lo" key={hydrated ? 'client' : 'server'} suppressHydrationWarning>
+          <p className="mt-4 text-center text-xs text-text-lo" key={`best-${hydrated}`} suppressHydrationWarning>
             Best day was{' '}
             {new Date(`${summary.best.date}T12:00:00`).toLocaleDateString(undefined, {
               weekday: 'long',

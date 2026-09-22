@@ -101,7 +101,7 @@ export default function CalendarPage() {
       <header className="mb-5 flex items-end justify-between gap-4">
         <div>
           <p className="label mb-1.5">Calendar</p>
-          <h1 className="font-display text-[2rem] leading-none" key={hydrated ? 'client' : 'server'} suppressHydrationWarning>
+          <h1 className="font-display text-[2rem] leading-none" key={`month-${hydrated}`} suppressHydrationWarning>
             {monthLabel(month)}
           </h1>
         </div>
@@ -154,7 +154,7 @@ export default function CalendarPage() {
       />
 
       <section className="mt-7">
-        <h2 className="mb-3 text-sm text-text-mid" key={hydrated ? 'client' : 'server'} suppressHydrationWarning>
+        <h2 className="mb-3 text-sm text-text-mid" key={`day-${hydrated}`} suppressHydrationWarning>
           {dayLabel(selected, todayDate)}
         </h2>
 

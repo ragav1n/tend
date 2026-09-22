@@ -18,7 +18,7 @@ import { chordIndex, inScope, SELECTION_ACTIONS, typingSafe } from '@/lib/keys/m
 import { QUICK_FADE, SHEET, sheetVariants } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 import { useHotkeys } from '@/hooks/use-hotkeys';
-import { useProjects } from '@/hooks/use-tasks';
+import { useProjects, useTasksByIds } from '@/hooks/use-tasks';
 import { useSelectionStore } from '@/hooks/use-selection';
 import { Sheet } from '@/components/ui/Sheet';
 
@@ -98,6 +98,18 @@ function SelectionBar() {
 
   const picked = [...ids];
   const count = picked.length;
+  // A subtask is filed by its parent, which is why `TaskDetail` hides the
+  // project field for one and `writeTaskPatch` refuses it. A selection can hold
+  // one now that a subtask carrying its own deadline is a row in Today, Upcoming
+  // and the calendar, so Move says what it left behind rather than appearing to
+  // move rows it cannot.
+  const rows = useTasksByIds(picked);
+  // `useStableLiveQuery` shows its placeholder while a dependency change
+  // settles, so the rows lag the ids by a few milliseconds after each pick.
+  // Every count below is read only once they agree.
+  const known = rows.length === count;
+  const movable = rows.filter((task) => task.depth === 0).map((task) => task.id);
+  const staying = known ? count - movable.length : 0;
 
   /**
    * Runs a bulk write and reports either way.
@@ -131,6 +143,17 @@ function SelectionBar() {
     setSheet(null);
     const count = picked.length;
     run(cancelTasks(picked, reason), `${count} ${count === 1 ? 'task' : 'tasks'} cancelled`);
+  }
+
+  function move(projectId: string, name: string) {
+    // The ids when the rows are not in yet. The write door refuses a subtask's
+    // project either way, and one spare history entry beats moving nothing at
+    // all because a query had not landed.
+    const targets = known ? movable : picked;
+    run(
+      updateTasks(targets, { projectId }),
+      staying > 0 ? `${movable.length} moved to ${name}` : `Moved to ${name}`,
+    );
   }
 
   function schedule(dueDate: string | null) {
@@ -245,13 +268,21 @@ function SelectionBar() {
       </Sheet>
 
       <Sheet open={sheet === 'project'} onClose={() => setSheet(null)} label="Move to project">
-        <h2 className="text-lg">Move {count} {count === 1 ? 'task' : 'tasks'}</h2>
+        <h2 className="text-lg">
+          Move {known ? movable.length : count} {(known ? movable.length : count) === 1 ? 'task' : 'tasks'}
+        </h2>
+        {staying > 0 && (
+          <p className="mt-1 text-xs text-text-lo">
+            {staying === 1 ? 'One subtask stays' : `${staying} subtasks stay`} with{' '}
+            {staying === 1 ? 'its parent' : 'their parents'}.
+          </p>
+        )}
         <ul className="mt-4 space-y-2 pb-2">
           <SheetOption
             label="Inbox"
             onClick={() => {
               setSheet(null);
-              run(updateTasks(picked, { projectId: NO_PROJECT }), 'Moved to Inbox');
+              move(NO_PROJECT, 'Inbox');
             }}
           />
           {projects.map((project) => (
@@ -260,7 +291,7 @@ function SelectionBar() {
               label={project.name}
               onClick={() => {
                 setSheet(null);
-                run(updateTasks(picked, { projectId: project.id }), `Moved to ${project.name}`);
+                move(project.id, project.name);
               }}
             />
           ))}

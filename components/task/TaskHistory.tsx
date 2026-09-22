@@ -82,7 +82,7 @@ export function TaskHistory({ taskId }: { taskId: string }) {
               <time
                 dateTime={entry.createdAt}
                 className="tnum w-[4.5rem] shrink-0 pt-px text-text-lo"
-                key={hydrated ? 'client' : 'server'}
+                key={`at-${hydrated}`}
                 suppressHydrationWarning
               >
                 {formatSince(entry.createdAt)}

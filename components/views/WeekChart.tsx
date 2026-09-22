@@ -65,7 +65,7 @@ export function WeekChart({ days, todayDate }: { days: DayStat[]; todayDate: str
                 'label !text-[0.5625rem] !tracking-[0.1em]',
                 isToday && '!text-clay-300',
               )}
-              key={hydrated ? 'client' : 'server'}
+              key={`weekday-${hydrated}`}
               suppressHydrationWarning
             >
               {weekdayLabel(day.date)}

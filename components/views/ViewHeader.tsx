@@ -40,7 +40,7 @@ export function ViewHeader({ title, eyebrow, subtitle, progress }: ViewHeaderPro
           // the server's locale and timezone while the browser uses the user's.
           // The client value is the correct one, so the mismatch is suppressed
           // rather than papered over with a mount flag, which would pop in.
-          <p className="label mb-1.5" key={hydrated ? 'client' : 'server'} suppressHydrationWarning>
+          <p className="label mb-1.5" key={`eyebrow-${hydrated}`} suppressHydrationWarning>
             {eyebrow}
           </p>
         )}

@@ -44,6 +44,7 @@ export const MIGRATIONS = [
   '0025_capacity',
   '0026_mail_capture',
   '0027_task_reminders_sync',
+  '0028_digest_order_before_limit',
 ];
 
 export function migrationSql(name: string): string {

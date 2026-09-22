@@ -576,7 +576,7 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
       <footer className="flex items-center justify-between gap-3 border-t border-line pt-4">
         <p className="text-xs text-text-lo">
           Added{' '}
-          <span className="tnum" key={hydrated ? 'client' : 'server'} suppressHydrationWarning>
+          <span className="tnum" key={`added-${hydrated}`} suppressHydrationWarning>
             {new Date(task.createdAt).toLocaleDateString(undefined, {
               month: 'short',
               day: 'numeric',

@@ -304,11 +304,43 @@ async function writeTaskPatch(
   id: string,
   patch: TaskPatch,
   db: TendDb,
-): Promise<Task | null> {
+): Promise<{ before: Task; applied: TaskPatch } | null> {
   const current = await db.tasks.get(id);
   if (!current) return null;
 
+  const applied: TaskPatch = { ...patch };
   const next = { ...current, ...patch, updatedAt: nowIso() };
+
+  /**
+   * A subtask is filed by its parent, never by itself.
+   *
+   * `createTask` has always forced a child's project, course and component to
+   * nothing, and `TaskDetail` hides all three for `depth !== 0`. This is the
+   * same rule on the patch path, which had no copy of it, so the two paths
+   * could not agree. Postgres holds the project half outright with
+   * `tasks_subtask_has_no_project`, and a violation is a 23514 the client
+   * classifies fatal: the local row keeps a project, the mutation goes to the
+   * deadletter, and the two stay disagreed until a pull overwrites it.
+   *
+   * Two patches reach here. Bulk "Move to project" over a selection holding a
+   * subtask, which only became reachable when a subtask carrying its own
+   * deadline became a selectable row in Today, Upcoming and the calendar. And
+   * filing a task and then making it a subtask, which carries its project in.
+   */
+  if ((patch.parentTaskId ?? current.parentTaskId) !== NO_PARENT) {
+    if (next.projectId !== NO_PROJECT) {
+      next.projectId = NO_PROJECT;
+      applied.projectId = NO_PROJECT;
+    }
+    if (next.courseId !== NO_COURSE) {
+      next.courseId = NO_COURSE;
+      applied.courseId = NO_COURSE;
+    }
+    if (next.componentId !== NO_COMPONENT) {
+      next.componentId = NO_COMPONENT;
+      applied.componentId = NO_COMPONENT;
+    }
+  }
 
   // completedAt is server-derived, but the optimistic row still needs a value
   // so the UI can show "done 2 minutes ago" before the next pull lands.
@@ -336,8 +368,11 @@ async function writeTaskPatch(
   const row: Task = { ...next, ...deriveTask(next, tagIds) };
   await db.tasks.put(row);
 
-  await db.outbox.add(outboxRecord('tasks', id, 'update', { ...patch }, current.rowVersion));
-  return current;
+  // `applied` rather than `patch`, so the outbox carries what the local row
+  // actually holds. Pushing the refused field instead is the divergence the
+  // rule above exists to prevent.
+  await db.outbox.add(outboxRecord('tasks', id, 'update', { ...applied }, current.rowVersion));
+  return { before: current, applied };
 }
 
 // ─── Tasks ────────────────────────────────────────────────────────────────────
@@ -462,16 +497,19 @@ export async function updateTasks(
 
   await db.transaction('rw', TASK_TABLES(db), async () => {
     for (const id of ids) {
-      const before = await writeTaskPatch(id, patch, db);
-      if (!before) continue;
+      const written = await writeTaskPatch(id, patch, db);
+      if (!written) continue;
 
+      // Logged as applied, not as asked. A patch the row refused, which is the
+      // project on a subtask, would otherwise leave an entry claiming a change
+      // that never happened and an undo that writes it back.
       await logActivity(db, {
         action: 'update',
         entityId: id,
         group,
-        before: previousValues(before, patch),
-        after: { ...patch },
-        summary: summarize('update', before.title),
+        before: previousValues(written.before, written.applied),
+        after: { ...written.applied },
+        summary: summarize('update', written.before.title),
       });
     }
   });

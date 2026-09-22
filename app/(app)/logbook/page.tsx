@@ -100,7 +100,7 @@ export default function LogbookPage() {
         <div className="space-y-6">
           {days.map((day) => (
             <section key={day.key}>
-              <h2 className="label mb-2" key={hydrated ? 'client' : 'server'} suppressHydrationWarning>
+              <h2 className="label mb-2" key={`heading-${hydrated}`} suppressHydrationWarning>
                 {day.label}
               </h2>
               {/* Keyed on the day so a row moving between groups remounts

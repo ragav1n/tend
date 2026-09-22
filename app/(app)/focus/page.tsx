@@ -246,7 +246,7 @@ export default function FocusPage() {
                   <span className="min-w-0 flex-1 truncate text-sm text-text-mid">
                     {labelFor(session.taskId)}
                   </span>
-                  <span className="tnum text-xs text-text-lo" key={hydrated ? 'client' : 'server'} suppressHydrationWarning>
+                  <span className="tnum text-xs text-text-lo" key={`started-${hydrated}`} suppressHydrationWarning>
                     {new Date(session.startedAt).toLocaleTimeString(undefined, {
                       hour: 'numeric',
                       minute: '2-digit',

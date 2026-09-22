@@ -1414,3 +1414,85 @@ describe('notifications when email is off', () => {
     expect(await deliveries(user, 'daily_digest')).toHaveLength(0);
   });
 });
+
+/**
+ * Which twenty-five tasks a digest carries.
+ *
+ * `digest_items` caps its list, and from 0008 to 0027 it did the cutting before
+ * the sorting: the `limit` sat inside a subquery with no `order by` and the
+ * ordering sat outside it in the `jsonb_agg`. So Postgres returned whichever
+ * rows it liked and the sort arranged that arbitrary set, which is why the bug
+ * was invisible from the outside. The email is in date order either way. It
+ * just holds the wrong tasks.
+ *
+ * The fixtures are inserted far dates first so the physical order disagrees
+ * with the date order. Inserted the other way round a sequential scan hands
+ * back the right rows by luck and the test passes against the bug.
+ */
+describe('cutting the digest list down', () => {
+  async function itemTitles(user: string, from: string, to: string, limit: number) {
+    const row = await one<{ items: { title: string }[] }>(
+      'select public.digest_items($1, $2::date, $3::date, false, $4) as items',
+      [user, from, to, limit],
+    );
+    return row.items.map((item) => item.title);
+  }
+
+  it('keeps the soonest deadlines rather than an arbitrary handful', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+
+    for (const days of [30, 29, 28]) {
+      await newTask(user, { title: `far ${days}`, dueDate: shiftDay(today, days) });
+    }
+    for (const days of [1, 2, 3]) {
+      await newTask(user, { title: `soon ${days}`, dueDate: shiftDay(today, days) });
+    }
+
+    expect(await itemTitles(user, today, shiftDay(today, 60), 3)).toEqual([
+      'soon 1',
+      'soon 2',
+      'soon 3',
+    ]);
+  });
+
+  it('took the wrong three before 0028, which is what that migration is for', async () => {
+    // The same scenario against the schema as it stood, because a test that
+    // passes on both sides of a fix is not testing the fix.
+    const old = await bootPostgres(MIGRATIONS.filter((name) => name < '0028'));
+    try {
+      const user = '00000000-0000-4000-8000-0000000000fe';
+      await createUsers(old, [user]);
+
+      const today = day(
+        (await old.query<{ d: Date }>(`select (now() at time zone 'UTC')::date as d`)).rows[0]!.d,
+      )!;
+
+      let n = 0;
+      for (const days of [30, 29, 28, 1, 2, 3]) {
+        n += 1;
+        await old.query(
+          `insert into public.tasks (id, user_id, title, status, due_date, sort_key)
+           values ($1, $2, $3, 'active', $4, 'a0')`,
+          [
+            `33333333-0000-4000-8000-${String(n).padStart(12, '0')}`,
+            user,
+            days > 20 ? `far ${days}` : `soon ${days}`,
+            shiftDay(today, days),
+          ],
+        );
+      }
+
+      const { rows } = await old.query<{ items: { title: string }[] }>(
+        'select public.digest_items($1, $2::date, $3::date, false, 3) as items',
+        [user, today, shiftDay(today, 60)],
+      );
+
+      // The three it kept are the three it happened to read first, and the sort
+      // outside the limit then made them look deliberate.
+      expect(rows[0]!.items.map((item) => item.title)).toEqual(['far 28', 'far 29', 'far 30']);
+    } finally {
+      await old.close();
+    }
+  }, 60_000);
+});

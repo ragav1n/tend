@@ -31,6 +31,7 @@ import {
   uncancelTasks,
   setTaskTags,
   updateTask,
+  updateTasks,
 } from './mutations';
 import {
   addDays,
@@ -247,6 +248,62 @@ describe('hierarchy', () => {
     const child = await createTask({ title: 'Buy a washer', parentTaskId: parent }, db);
 
     expect((await db.tasks.get(child))!.projectId).toBe('');
+  });
+});
+
+describe('a subtask is filed by its parent', () => {
+  it('refuses a project on a subtask, locally and in the outbox', async () => {
+    // Postgres holds this with `tasks_subtask_has_no_project`, and a violation
+    // is a 23514 the client calls fatal: the mutation deadletters and the local
+    // row keeps a project the server never took. Reachable through bulk "Move"
+    // once a subtask with its own deadline became a selectable row.
+    const project = await createProject({ name: 'Reading' }, db);
+    const parent = await createTask({ title: 'Finish the novel' }, db);
+    const child = await createTask({ title: 'Read chapter 4', parentTaskId: parent }, db);
+
+    await updateTasks([child], { projectId: project }, db);
+
+    expect((await db.tasks.get(child))!.projectId).toBe(NO_PROJECT);
+
+    const pushed = (await db.outbox.toArray()).filter(
+      (r) => r.table === 'tasks' && r.entityId === child && r.op === 'update',
+    );
+    expect(pushed).toHaveLength(1);
+    expect((pushed[0]!.patch as { projectId?: string }).projectId).toBe(NO_PROJECT);
+  });
+
+  it('clears the project off a filed task that becomes a subtask', async () => {
+    // The other way in, and the one the server would also refuse: the task
+    // carries its project in with it.
+    const project = await createProject({ name: 'Reading' }, db);
+    const parent = await createTask({ title: 'Finish the novel' }, db);
+    const task = await createTask({ title: 'Read chapter 4', projectId: project }, db);
+
+    await updateTask(task, { parentTaskId: parent }, db);
+
+    const row = await db.tasks.get(task);
+    expect(row!.projectId).toBe(NO_PROJECT);
+    expect(row!.depth).toBe(1);
+  });
+
+  it('logs what was applied, so undo does not write back a refused field', async () => {
+    const project = await createProject({ name: 'Reading' }, db);
+    const parent = await createTask({ title: 'Finish the novel' }, db);
+    const child = await createTask({ title: 'Read chapter 4', parentTaskId: parent }, db);
+
+    await updateTasks([child], { projectId: project, priority: 2 }, db);
+
+    const entry = (await taskHistory(child, 50, db)).find((e) => e.action === 'update');
+    expect((entry!.after as { projectId?: string }).projectId).toBe(NO_PROJECT);
+    expect((entry!.after as { priority?: number }).priority).toBe(2);
+  });
+
+  it('leaves a top-level task alone', async () => {
+    const project = await createProject({ name: 'Reading' }, db);
+    const task = await createTask({ title: 'Finish the novel' }, db);
+
+    await updateTasks([task], { projectId: project }, db);
+    expect((await db.tasks.get(task))!.projectId).toBe(project);
   });
 });
 
