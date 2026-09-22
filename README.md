@@ -15,6 +15,10 @@ IndexedDB is the working copy, and the UI never waits on a request.
 
 ## Principles
 
+The design direction, and why the palette works the way it does, is in
+[DESIGN.md](DESIGN.md). The original architecture plan is in
+[docs/architecture.md](docs/architecture.md).
+
 **Offline is correctness, not caching.** Completing a task on the subway and editing that
 same task on a laptop has to converge to one answer. Every row carries a client-generated
 UUIDv7, the server stamps a monotonic `row_version`, deletes are tombstones, and merges

@@ -231,6 +231,42 @@
     overscroll-behavior-y: none;
   }
 
+  /**
+   * The grain.
+   *
+   * "Grain, not texture", from the design plan: a 2 to 3% noise overlay on
+   * large surfaces, and no faux paper or leather imagery. It is what makes the
+   * tactile material direction read as material rather than as flat fills.
+   *
+   * Generated with feTurbulence rather than downloaded. The plan pointed at a
+   * noise generator, which would have meant a binary asset nobody could
+   * regenerate; this is deterministic, reproducible from the source, weighs
+   * nothing and needs no build step. Desaturated to grey so it adds grain
+   * rather than colour, which would fight both accent ramps.
+   *
+   * Fixed and over everything, so the grain belongs to the screen rather than
+   * to the page and does not slide when a list scrolls. `pointer-events: none`
+   * because it covers every control in the app. One composited layer, painted
+   * once, nothing animating on it.
+   */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    pointer-events: none;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22160%22%20height%3D%22160%22%3E%3Cfilter%20id%3D%22g%22%3E%3CfeTurbulence%20type%3D%22fractalNoise%22%20baseFrequency%3D%220.82%22%20numOctaves%3D%223%22%20stitchTiles%3D%22stitch%22%2F%3E%3CfeColorMatrix%20type%3D%22saturate%22%20values%3D%220%22%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%22160%22%20height%3D%22160%22%20filter%3D%22url(%23g)%22%2F%3E%3C%2Fsvg%3E");
+    background-repeat: repeat;
+  }
+
+  /* Ink, and a PDF of a page is not the page. */
+  @media print {
+    body::after {
+      display: none;
+    }
+  }
+
   h1, h2, h3 {
     color: var(--color-text-hi);
     letter-spacing: -0.015em;

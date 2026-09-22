@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { ArrowsClockwise, Trash, WarningCircle } from '@phosphor-icons/react/dist/ssr';
 import { createFeed, deleteFeed, updateFeed } from '@/lib/db/mutations';
 import type { Feed } from '@/lib/db/types';
-import { useFeeds } from '@/hooks/use-courses';
+import { useCourses, useFeeds } from '@/hooks/use-courses';
 import { formatSince } from '@/lib/format/date';
 import { cn } from '@/lib/utils';
 import { controlClass } from '@/components/ui/Field';
@@ -47,6 +47,7 @@ interface ImportResult {
 
 export function FeedSettings() {
   const feeds = useFeeds();
+  const courses = useCourses();
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -60,8 +61,31 @@ export function FeedSettings() {
     }
     await createFeed({ url: trimmed });
     setUrl('');
-    // Imported straight away. Adding a feed and being told nothing happened is
-    // how somebody concludes it does not work.
+
+    /**
+     * Imported straight away, but only once there is something to match
+     * against.
+     *
+     * Reading a feed with no courses files every deadline in the Inbox
+     * unfiled, which looks like a mess and invites clearing it out. That is the
+     * trap: a deleted import is a tombstone, and a tombstone blocks the same
+     * item from ever arriving again, so creating the courses afterwards and
+     * re-importing recovers nothing. It cost a real afternoon and the only way
+     * back was SQL.
+     *
+     * So the feed is saved and left unread, and the reason is said out loud.
+     * Adding a feed and being told nothing happened is how somebody concludes
+     * it does not work, so silence is not an option either.
+     */
+    if (courses.length === 0) {
+      toast('Feed saved, and not read yet', {
+        description:
+          'Create your courses first, then press Read the feeds. Importing now would file every ' +
+          'deadline in the Inbox with no course on it, and deleting those stops them coming back.',
+      });
+      return;
+    }
+
     await run();
   }
 
@@ -100,8 +124,12 @@ export function FeedSettings() {
             result.skipped > 0
               ? `${result.skipped} already handled, so they were left alone`
               : null,
+            // Says what deleting them costs. The never-resurrect rule is right
+            // and it is not guessable: clearing an unfiled import stops those
+            // deadlines arriving ever again, on any later read.
             result.unmatched > 0
-              ? `${result.unmatched} matched no course, so they are in the Inbox`
+              ? `${result.unmatched} matched no course and are in the Inbox. File them rather ` +
+                `than deleting them, or they will not come back`
               : null,
             ...(result.failures ?? []).map((failure) => `${failure.label}: ${failure.reason}`),
           ]

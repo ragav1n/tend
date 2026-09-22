@@ -6,7 +6,9 @@ Offline-first daily task PWA. Next.js 16 App Router + React 19 + TypeScript, Tai
 Supabase (Postgres + Auth + RLS), deployed on Vercel. Installed as a PWA on iOS, Android,
 macOS and Windows.
 
-The full architecture plan lives at `~/.claude/plans/i-want-to-create-noble-flame.md`.
+The original architecture plan is committed at [`docs/architecture.md`](docs/architecture.md).
+It covers phases 0 through 5 and predates the code, so where the two disagree the code is
+right and this file is the constitution. Phases 6 through 13 came from a later plan.
 
 ## Stack
 
@@ -109,6 +111,13 @@ The full architecture plan lives at `~/.claude/plans/i-want-to-create-noble-flam
 - Bump `version` in `package.json` on every change. Patch for fixes, minor for features.
 - Do not over-engineer. Minimum complexity for the task at hand.
 - Do not add comments to code that was not changed.
+
+## Design
+
+[`DESIGN.md`](DESIGN.md) is the design constitution: the direction, why clay means interaction and
+olive means state, why the supplied terracotta had to be re-ramped, the grain, and the anti-slop
+guardrails. It holds the reasoning and deliberately restates none of the hard rules above, because
+two copies of a constitution is how one starts lying.
 
 ## Writing style, in code comments and UI copy
 
