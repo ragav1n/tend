@@ -6,6 +6,7 @@ import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
 import { COMPLETED_ROW_LINGER_MS, listVariants, QUICK_FADE } from '@/lib/motion';
 import { withHeld, type Held } from '@/lib/views/held';
 import { completeTask, reorderTask } from '@/lib/db/mutations';
+import { nestedUnder } from '@/lib/views/nest';
 import { movesFor, moveToIndex, type Move, type RankField } from '@/lib/views/reorder';
 import { slackFor } from '@/lib/workload/slack';
 import type { DaySlack } from '@/lib/workload/slack';
@@ -16,7 +17,7 @@ import { useListSort } from '@/hooks/use-list-sort';
 import { today } from '@/lib/db/queries';
 import type { Task } from '@/lib/db/types';
 import { useSelectionStore } from '@/hooks/use-selection';
-import { useSubtasksFor } from '@/hooks/use-tasks';
+import { useParentTitles, useSubtasksFor } from '@/hooks/use-tasks';
 import { useUiStore } from '@/hooks/use-ui';
 import { SubtaskRows, subtaskProgress } from '@/components/task/SubtaskRows';
 import { cn } from '@/lib/utils';
@@ -63,11 +64,19 @@ import { TaskRow } from '@/components/task/TaskRow';
  * needs, where overdue work sits above the rest and a row cannot cross between
  * the two runs.
  *
- * Subtasks render under their parent here. Every list query already drops them
- * from the top level with a note saying they appear underneath it, so until this
- * existed a subtask could only be reached by opening the parent. They are
- * fetched for the whole page in one hook rather than per row, because a hook per
- * row is a live query per row.
+ * Subtasks render under their parent here, and they are fetched for the whole
+ * page in one hook rather than per row, because a hook per row is a live query
+ * per row.
+ *
+ * A row can also *be* a subtask. The queries surface a child whose deadline is
+ * not its parent's, which is how a part due today inside a task due next week
+ * reaches Today at all, so the row asks `useParentTitles` what it came out of
+ * and says so under its title.
+ *
+ * Which makes this list the place that guarantees a task appears once. A parent
+ * and a surfaced child can both be rows here, on a view spanning days, so the
+ * parent's nested group leaves out any child that is already a row of its own.
+ * `nestedUnder` holds that rule and a test pins it.
  */
 
 /** How a list's hand-arranged order works, on the lists that have one. */
@@ -87,21 +96,9 @@ interface TaskListProps {
   /** Slack per due day, when the page has worked it out. A row uses it to say
    *  its deadline has already gone, which a due date alone cannot. */
   slack?: Map<string, DaySlack>;
-  /** Title by parent id, for a list that can hold a subtask at top level. The
-   *  calendar is the only one: a subtask with a deadline its parent does not
-   *  share belongs to the day it is due, and the parent is not the row above
-   *  it there. */
-  parentTitles?: Map<string, string>;
 }
 
-export function TaskList({
-  tasks,
-  loading = false,
-  empty,
-  reorder,
-  slack,
-  parentTitles,
-}: TaskListProps) {
+export function TaskList({ tasks, loading = false, empty, reorder, slack }: TaskListProps) {
   const todayDate = today();
   // Keyed by route rather than by list, so the two lists on the projects page do
   // not need names. Only the reorderable one shows the picker.
@@ -232,12 +229,19 @@ export function TaskList({
   }
 
   const order = shown.map((task) => task.id);
+  // What this list already has a row for, so a parent does not nest a child that
+  // is standing on its own further up.
+  const rendered = new Set(order);
   // One query for the whole page. The key is the joined ids, so it re-runs when
   // the list changes rather than on every render.
   const subtasks = useSubtasksFor(order);
   // One lookup for the page, from the shell. A row holds tag ids, and a tag it
   // cannot name is a tag nobody can see.
   const tagNames = useTagNames();
+  // Asked for here rather than passed in, so any list that surfaces a subtask
+  // says what the subtask belongs to. Empty for the lists that hold none, which
+  // is most of them.
+  const parentTitles = useParentTitles(shown);
   // Joined so the dependency is a value. An array literal changes identity every
   // render and would re-run this on each one.
   const orderKey = order.join(',');
@@ -306,6 +310,7 @@ export function TaskList({
         <AnimatePresence mode="popLayout" initial={false}>
           {shown.map((task, index) => {
             const children = subtasks.get(task.id);
+            const nested = nestedUnder(children, rendered);
             return (
               <TaskRow
                 key={task.id}
@@ -317,7 +322,7 @@ export function TaskList({
                 selected={selectedIds.has(task.id)}
                 onPick={(id, extend) => pickRow(id, order, extend)}
                 subtaskCount={subtaskProgress(children)}
-                parentTitle={parentTitles?.get(task.parentTaskId) ?? null}
+                parentTitle={parentTitles.get(task.parentTaskId) ?? null}
                 slack={slack ? slackFor(task, slack) : null}
                 move={moves?.[index] ?? null}
                 onMove={arranged ? handleMove : undefined}
@@ -328,9 +333,9 @@ export function TaskList({
                   .map((id) => tagNames.get(id))
                   .filter((name): name is string => name !== undefined)}
               >
-                {children && (
+                {nested.length > 0 && (
                   <SubtaskRows
-                    subtasks={children}
+                    subtasks={nested}
                     onToggle={handleToggle}
                     onOpen={openTask}
                     inset={selecting}

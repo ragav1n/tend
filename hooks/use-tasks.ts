@@ -20,6 +20,7 @@ import {
   somedayList,
   subtasksForParents,
   subtasksOf,
+  taskTitles,
   taggedWith,
   tagCounts,
   tagOptions,
@@ -33,6 +34,7 @@ import {
   todayProgress,
   upcomingList,
 } from '@/lib/db/queries';
+import { NO_PARENT } from '@/lib/db/types';
 import type { DueWindow } from '@/lib/db/queries';
 import type {
   ActivityEntry,
@@ -124,6 +126,36 @@ export function useSubtasksFor(parentIds: readonly string[]): Map<string, Task[]
     () => subtasksForParents(key === '' ? [] : key.split(',')),
     [key],
     NO_SUBTASKS,
+  );
+}
+
+const NO_TITLES = new Map<string, string>();
+
+/**
+ * The titles of the parents of any subtask in a list.
+ *
+ * A list surfaces a child at top level when its parent is not in the same list,
+ * and a row reading "Draft the intro" with nothing saying what it drafts is a
+ * puzzle. `TaskList` asks for this itself rather than taking it from a page, so
+ * every list that can surface a child says where it came from without nine
+ * pages having to wire it.
+ *
+ * The ids are sorted into the dependency key, so reordering the rows the list is
+ * already showing does not re-run the query. Same joined-string trick
+ * `useSubtasksFor` uses, for the same reason: an array literal is a new identity
+ * on every render.
+ */
+export function useParentTitles(tasks: readonly Task[]): Map<string, string> {
+  const key = [
+    ...new Set(tasks.map((t) => t.parentTaskId).filter((id) => id !== NO_PARENT)),
+  ]
+    .sort()
+    .join(',');
+
+  return useStableLiveQuery(
+    () => taskTitles(key === '' ? [] : key.split(',')),
+    [key],
+    NO_TITLES,
   );
 }
 

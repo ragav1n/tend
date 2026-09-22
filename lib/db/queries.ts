@@ -76,6 +76,41 @@ export async function plannedFor(day: PlainDate, db: TendDb = getDb()): Promise<
 }
 
 /**
+ * Which of a window's rows stand as rows of their own.
+ *
+ * A subtask is dropped in one case only: its parent is in the same window *on
+ * the same day*, which is where it adds nothing, because the parent is right
+ * there and the child renders underneath it. Everywhere else it stands alone.
+ *
+ * Both halves of that are load-bearing and each was got wrong once.
+ *
+ * Dropping every child is what hid these deadlines to begin with: a part due
+ * Friday inside a task due the following Thursday marked Thursday and left
+ * Friday empty, in the grid and in every list.
+ *
+ * Dropping a child whose parent is anywhere in the window is the version that
+ * looks right and fails on a list spanning a month. A thesis due in 25 days
+ * with a chapter due in 5 is not a parent standing next to its child; it is a
+ * deadline filed twenty rows below the day it falls on. So the day decides, not
+ * mere membership.
+ *
+ * A parent outside the window counts as absent, which is right: a child whose
+ * parent is due in December is the only thing this month has to show.
+ *
+ * Pure, and it needs no read. If the parent is not in the rows the child stands
+ * alone whatever day the parent holds, and if it is in the rows its day is right
+ * here to compare.
+ */
+export function withoutNestedChildren(rows: readonly Task[]): Task[] {
+  const byId = new Map(rows.map((t) => [t.id, t]));
+  return rows.filter((t) => {
+    if (t.parentTaskId === NO_PARENT) return true;
+    const parent = byId.get(t.parentTaskId);
+    return parent === undefined || parent._dueDay !== t._dueDay;
+  });
+}
+
+/**
  * Which run of the Today list a row sits in.
  *
  * Exported because the reorder carets have to group by the same rule this sort
@@ -103,14 +138,18 @@ export function todayGroup(task: Task, day: PlainDate): 'overdue' | 'today' {
 async function todayCandidates(day: PlainDate, db: TendDb): Promise<Task[]> {
   const [due, planned] = await Promise.all([dueThrough(day, db), plannedFor(day, db)]);
 
+  // Children are in, and `withoutNestedChildren` takes back only the ones whose
+  // parent is here on the same day. Dropping them all, which is what this did,
+  // hid a part due today inside a task due next week: the parent is not in this
+  // list, so the child had nowhere left to appear.
   const byId = new Map<string, Task>();
-  for (const t of [...due, ...planned]) {
-    if (t.parentTaskId !== NO_PARENT) continue;
-    byId.set(t.id, t);
-  }
+  for (const t of [...due, ...planned]) byId.set(t.id, t);
 
-  // Overdue first, then today's work. Inside each group, the user's order.
-  const rows = [...byId.values()];
+  // Overdue first, then today's work. Inside each group, the user's order. A
+  // subtask takes its run from its own due day, which is the point of it having
+  // one, and sorts in among the rest: the runs here are hand-arranged, and a
+  // sort that held children apart would undo half the moves the carets offer.
+  const rows = withoutNestedChildren([...byId.values()]);
   rows.sort((a, b) => {
     const aOver = todayGroup(a, day) === 'overdue' ? 0 : 1;
     const bOver = todayGroup(b, day) === 'overdue' ? 0 : 1;
@@ -129,7 +168,15 @@ export async function todayDeferred(day = today(), db: TendDb = getDb()): Promis
   return (await todayCandidates(day, db)).filter((t) => isDeferred(t, day));
 }
 
-/** The next `days` worth of dated work, excluding today. */
+/**
+ * The next `days` worth of dated work, excluding today.
+ *
+ * Ordered by `compareDueRank`, the same rule the calendar uses, so a day's own
+ * commitments sit above the deadlines borrowed from a bigger piece of work.
+ * The index gives the day ordering already; what it cannot give is the order
+ * inside a day, because a child's `sortKey` ranks it among its siblings and
+ * says nothing about where it stands next to a top-level task.
+ */
 export async function upcomingList(
   day = today(),
   days = 30,
@@ -141,7 +188,7 @@ export async function upcomingList(
     .where('[_del+_done+_dueDay+sortKey]')
     .between([0, 0, from, ''], [0, 0, to, MAX_STR], true, true)
     .toArray();
-  return rows.filter((t) => t.parentTaskId === NO_PARENT);
+  return withoutNestedChildren(rows).sort(compareDueRank);
 }
 
 /** What the calendar reads: the window's rows, and the parents they hang off. */
@@ -176,15 +223,9 @@ function compareDueRank(a: Task, b: Task): number {
  * stays in the answer: a month with nothing on the days already lived through
  * reads as a broken calendar rather than a finished week.
  *
- * A subtask is in the answer when its deadline is not its parent's. Dropping
- * every child, which is what the list queries do, threw away a date somebody set
- * on purpose: a part due Friday inside a task due the following Thursday marked
- * Thursday and nothing else, so the calendar disagreed with the task. A child
- * that shares its parent's day still stays out, because the parent already marks
- * that cell and the child renders underneath it there.
- *
- * The parents are fetched by primary key, one get per distinct parent of a dated
- * child in the window, which is bounded by the window rather than by the store.
+ * Which subtasks are in the answer is `withoutNestedChildren`, the same rule
+ * every dated list uses. The titles are read separately, because a parent can
+ * be outside the window the child is in and the chip still has to name it.
  */
 export async function dueBetween(
   from: PlainDate,
@@ -202,35 +243,11 @@ export async function dueBetween(
       .toArray(),
   ]);
 
-  const rows = [...open, ...closed];
-  const parentIds = [
-    ...new Set(rows.filter((t) => t.parentTaskId !== NO_PARENT).map((t) => t.parentTaskId)),
-  ];
-  const parents = new Map(
-    (await db.tasks.bulkGet(parentIds))
-      // A deleted parent counts as no parent. It draws no chip of its own, so
-      // measuring a child against its day would hide the child on a day nothing
-      // else marks. A delete cascades to its children, so this is the narrow
-      // case of a child restored on its own.
-      .filter((row): row is Task => row !== undefined && row._del === 0)
-      .map((row) => [row.id, row]),
+  const tasks = withoutNestedChildren([...open, ...closed]).sort(compareDueRank);
+  const parentTitles = await taskTitles(
+    [...new Set(tasks.filter((t) => t.parentTaskId !== NO_PARENT).map((t) => t.parentTaskId))],
+    db,
   );
-
-  const tasks = rows
-    .filter((t) => {
-      if (t.parentTaskId === NO_PARENT) return true;
-      const parent = parents.get(t.parentTaskId);
-      // A parent the local copy has not got is no reason to hide a date. The
-      // child's own day is the only fact here either way.
-      return parent === undefined || parent._dueDay !== t._dueDay;
-    })
-    .sort(compareDueRank);
-
-  const parentTitles = new Map<string, string>();
-  for (const task of tasks) {
-    const parent = parents.get(task.parentTaskId);
-    if (parent) parentTitles.set(parent.id, parent.title);
-  }
 
   return { tasks, parentTitles };
 }
@@ -325,6 +342,26 @@ export async function subtasksForParents(
     const rows = groups[i];
     if (rows && rows.length > 0) out.set(id, rows.sort(compareRank));
   });
+  return out;
+}
+
+/**
+ * Titles for a handful of tasks by id.
+ *
+ * What lets a row name the parent it was surfaced out of. One `bulkGet` over the
+ * primary key, bounded by the list asking rather than by the store, and nothing
+ * at all for the lists holding no children. A deleted parent is left out: a row
+ * should not name something that is no longer there.
+ */
+export async function taskTitles(
+  ids: readonly string[],
+  db: TendDb = getDb(),
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (ids.length === 0) return out;
+  for (const row of await db.tasks.bulkGet([...ids])) {
+    if (row && row._del === 0) out.set(row.id, row.title);
+  }
   return out;
 }
 
@@ -872,7 +909,9 @@ export async function gradedBetween(
 /** Open work whose due date has already passed. */
 export async function overdueList(day = today(), db: TendDb = getDb()): Promise<Task[]> {
   const rows = await dueThrough(addDays(day, -1), db);
-  return rows.filter((t) => t.parentTaskId === NO_PARENT).sort(compareRank);
+  // Same rule as Today's overdue run, or Review would report two overdue while
+  // the list they came from shows three.
+  return withoutNestedChildren(rows).sort(compareRank);
 }
 
 // ─── Focus ────────────────────────────────────────────────────────────────────
@@ -910,21 +949,30 @@ export async function unfinishedFocus(
 }
 
 /** Counts for the sidebar badges. Uses key-only counts, so no rows deserialize. */
+/**
+ * The numbers on the rail, each one counted off the list it names.
+ *
+ * Two of them used to be an index `count()` over a range, which is cheaper and
+ * was wrong. The unfiled range holds every subtask in the store, because a child
+ * is forced to no project, so the Inbox badge read 17 beside a list of 10; the
+ * dated range counted children Upcoming dropped. A badge that disagrees with the
+ * screen it points at is worse than a scan: these are bounded to unfiled open
+ * work and thirty days of deadlines, and the rail already materialized Today.
+ */
 export async function sidebarCounts(day = today(), db: TendDb = getDb()) {
-  const [todayRows, inbox, upcoming] = await Promise.all([
+  const [todayRows, inboxRows, upcomingRows] = await Promise.all([
     todayList(day, db),
-    db.tasks
-      .where('[_del+projectId+_done+sortKey]')
-      .between([0, NO_PROJECT, 0, ''], [0, NO_PROJECT, 0, MAX_STR], true, true)
-      .count(),
-    db.tasks
-      .where('[_del+_done+_dueDay+sortKey]')
-      .between([0, 0, addDays(day, 1), ''], [0, 0, addDays(day, 30), MAX_STR], true, true)
-      .count(),
+    inboxList(db, day),
+    upcomingList(day, 30, db),
   ]);
 
   const overdue = todayRows.filter((t) => t._dueDay < day && t._dueDay !== NO_DUE_DAY).length;
-  return { today: todayRows.length, overdue, inbox, upcoming };
+  return {
+    today: todayRows.length,
+    overdue,
+    inbox: inboxRows.length,
+    upcoming: upcomingRows.length,
+  };
 }
 
 /** Completed versus total for today, which drives the progress ring. */

@@ -47,6 +47,8 @@ import {
   unfinishedFocus,
   projectList,
   searchTasks,
+  overdueList,
+  sidebarCounts,
   somedayDeferred,
   somedayList,
   subtasksOf,
@@ -537,6 +539,108 @@ describe('views', () => {
 
     const { tasks } = await dueBetween(daysFrom(0), daysFrom(30), db);
     expect(tasks.map((t) => t.id)).toEqual([own, part, parent]);
+  });
+
+  it('puts a subtask in Today when its parent is due later', async () => {
+    // The whole point of giving a part its own deadline. The parent is due next
+    // week, so it is not in this list and there is nothing for the child to
+    // render underneath.
+    const parent = await createTask({ title: 'Submit the report', dueDate: daysFrom(7) }, db);
+    const part = await createTask(
+      { title: 'Draft the intro', dueDate: TODAY, parentTaskId: parent },
+      db,
+    );
+
+    expect((await todayList(TODAY, db)).map((t) => t.id)).toEqual([part]);
+  });
+
+  it('gives an overdue subtask its own row beside an overdue parent', async () => {
+    // Both overdue, on different days. Membership alone is the rule that looks
+    // right and is wrong: these are two deadlines, and Today is the list you
+    // work from. `TaskList` is what stops the child also nesting under it.
+    const parent = await createTask({ title: 'Move flat', dueDate: daysFrom(-2) }, db);
+    const part = await createTask(
+      { title: 'Book a van', dueDate: daysFrom(-4), parentTaskId: parent },
+      db,
+    );
+
+    const ids = (await todayList(TODAY, db)).map((t) => t.id);
+    expect(ids).toHaveLength(2);
+    expect(ids).toContain(parent);
+    expect(ids).toContain(part);
+  });
+
+  it('surfaces a dateless subtask somebody planned for today', async () => {
+    // Neither carries a due date, so the day comparison alone would call them
+    // equal and hide the child. The parent is not in this list at all, which is
+    // the half of the rule that catches it.
+    const parent = await createTask({ title: 'Move flat' }, db);
+    const part = await createTask(
+      { title: 'Book a van', plannedFor: TODAY, parentTaskId: parent },
+      db,
+    );
+
+    expect((await todayList(TODAY, db)).map((t) => t.id)).toEqual([part]);
+  });
+
+  it("leaves a subtask nested when it shares its parent's day", async () => {
+    const parent = await createTask({ title: 'Ship it', dueDate: TODAY }, db);
+    await createTask({ title: 'Write the notes', dueDate: TODAY, parentTaskId: parent }, db);
+
+    expect((await todayList(TODAY, db)).map((t) => t.id)).toEqual([parent]);
+  });
+
+  it('does not let a deferred parent bury a subtask that is live today', async () => {
+    // The rule runs per half. Applied before the split, the parent counts as
+    // present and the child lands in the fold at the foot of the page, which is
+    // the one place somebody looking at today will not read.
+    const parent = await createTask(
+      { title: 'Plan the term', dueDate: daysFrom(-1), startDate: daysFrom(5) },
+      db,
+    );
+    const part = await createTask(
+      { title: 'Book the room', dueDate: TODAY, parentTaskId: parent },
+      db,
+    );
+
+    expect((await todayList(TODAY, db)).map((t) => t.id)).toEqual([part]);
+    expect((await todayDeferred(TODAY, db)).map((t) => t.id)).toEqual([parent]);
+  });
+
+  it("puts a subtask in Upcoming, under the day's own work", async () => {
+    const parent = await createTask({ title: 'Thesis', dueDate: daysFrom(25) }, db);
+    const part = await createTask(
+      { title: 'Chapter two', dueDate: daysFrom(5), parentTaskId: parent },
+      db,
+    );
+    const own = await createTask({ title: 'Renew the pass', dueDate: daysFrom(5) }, db);
+
+    expect((await upcomingList(TODAY, 30, db)).map((t) => t.id)).toEqual([own, part, parent]);
+  });
+
+  it('puts an overdue subtask in the overdue list', async () => {
+    const parent = await createTask({ title: 'Grant application', dueDate: daysFrom(9) }, db);
+    const part = await createTask(
+      { title: 'Chase the reference', dueDate: daysFrom(-3), parentTaskId: parent },
+      db,
+    );
+
+    expect((await overdueList(TODAY, db)).map((t) => t.id)).toEqual([part]);
+  });
+
+  it('counts the rail off the lists it names', async () => {
+    // Both of these used to be an index count over a range. The unfiled range
+    // holds every subtask in the store, because a child is forced to no
+    // project, so the Inbox badge read one more than the list it pointed at.
+    const parent = await createTask({ title: 'Project', dueDate: daysFrom(20) }, db);
+    await createTask({ title: 'A part of it', parentTaskId: parent }, db);
+    await createTask({ title: 'Unfiled thought' }, db);
+    await createTask({ title: 'Deferred', startDate: daysFrom(4) }, db);
+
+    const counts = await sidebarCounts(TODAY, db);
+    expect(counts.inbox).toBe((await inboxList(db, TODAY)).length);
+    expect(counts.upcoming).toBe((await upcomingList(TODAY, 30, db)).length);
+    expect(counts.inbox).toBe(2);
   });
 
   it('keeps a filed task out of the inbox', async () => {

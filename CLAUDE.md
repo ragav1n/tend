@@ -53,16 +53,33 @@ right and this file is the constitution. Phases 6 through 13 came from a later p
   `pt-[calc(1.5rem+env(safe-area-inset-top))]`. Anything with a hardcoded offset
   above the bottom nav (the sync badge, the toaster) needs the inset in that sum
   too.
-- **Subtasks render under their parent in the list**, which is what every list
-  query already promises by filtering them out of the top level. `TaskList`
-  fetches them for the whole page with `useSubtasksFor`, never per row, because a
-  hook per row is a live query per row. Past three they collapse behind a count.
-  **`dueBetween` is the one exception**: a subtask whose deadline is not its
-  parent's is on the calendar in its own right, because dropping it hid a date
-  somebody set on purpose. One sharing the parent's day still goes, since the
-  parent already marks that cell. The query returns the parent titles with the
-  rows, so `TaskRow` can say what a top-level subtask belongs to, and
-  `SubtaskRows` shows a child's date only when the parent does not share it.
+- **Subtasks render under their parent in the list.** `TaskList` fetches them for
+  the whole page with `useSubtasksFor`, never per row, because a hook per row is
+  a live query per row. Past three they collapse behind a count.
+- **A subtask with a deadline of its own is a row of its own**, and
+  `withoutNestedChildren` in `queries.ts` is the only statement of that rule.
+  Every dated query runs it: `dueBetween`, `todayCandidates`, `upcomingList`,
+  `overdueList`. It drops a child in one case, when its parent is in the same
+  window *on the same day*, which is where the child adds nothing. Both halves
+  were got wrong once. Dropping every child, which is what the list filters used
+  to do, hid a date somebody set on purpose. Dropping a child whose parent is
+  anywhere in the window looks right and fails on a list spanning a month: a
+  thesis due in 25 days is not standing next to its chapter due in 5, it is
+  twenty rows below the day the chapter falls on.
+- **A list renders a task once, and `TaskList` is what guarantees it**, through
+  `nestedUnder`: a parent leaves out of its nested group any child that is
+  already a row of its own. Two rows for one task also puts `data-row-id` in the
+  DOM twice, which the keyboard cursor collects and walks onto twice. The count
+  on the parent still covers every child, because it describes the task rather
+  than the list.
+- **Every number on the rail is counted off the list it names.** Two of them were
+  an index `count()` over a range, which is cheaper and was wrong: the unfiled
+  range holds every subtask in the store, because a child is forced to no
+  project, so Inbox read 17 beside a list of 10. Inbox and Someday keep filtering
+  children out of their lists and must, for the same reason.
+- **`TaskRow` names the parent of a surfaced subtask** from `useParentTitles`,
+  which `TaskList` asks for itself rather than taking from a page, and
+  `SubtaskRows` shows a child's date only when its parent does not share it.
 - **A key binding is scoped.** `lib/keys/map.ts` is the one list; the dispatcher
   binds `scope: 'global'` and the selection bar binds its own. Backspace must
   not be an app-wide delete key.

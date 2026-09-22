@@ -57,9 +57,9 @@ export default function CalendarPage() {
   const [selected, setSelected] = useState<PlainDate>(todayDate);
 
   const { from, to } = gridRange(month, prefs.weekStart);
-  // `parentTitles` covers the subtasks in here: one carrying a deadline its
-  // parent does not share is on the grid in its own right, and a row that reads
-  // "Draft the intro" with nothing saying what it belongs to is a puzzle.
+  // `parentTitles` is for the grid's chips, whose tooltip is the only room a
+  // 104px cell has for the name of the thing a subtask came out of. The list
+  // under the grid resolves its own, like every other list.
   const { tasks, parentTitles } = useDueBetween(from, to);
   const byDay = useMemo(() => groupByDate(tasks, (task) => task._dueDay), [tasks]);
   const dayTasks = byDay.get(selected) ?? NO_TASKS;
@@ -167,7 +167,6 @@ export default function CalendarPage() {
         <TaskList
           tasks={dayTasks}
           slack={workload.byDay}
-          parentTitles={parentTitles}
           empty={<EmptyState icon={CalendarBlank} title="Nothing due on this day" />}
         />
       </section>
