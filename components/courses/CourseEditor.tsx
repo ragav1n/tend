@@ -266,9 +266,15 @@ export function CourseEditor({
           </div>
         </Field>
 
-        <Field label="Meets">
+        {/* Stacked, not a `Field`. A `Field` spends 6.5rem of a 27rem panel on
+            its label, and what is left has to hold a day, two native time
+            inputs and a remove button. At that width Chrome clipped the times
+            to "11:" and pushed the clock icon over the edge. A row of controls
+            needs the whole width; a row with one control does not. */}
+        <div className="py-1.5">
+          <span className="mb-1.5 block text-xs text-text-lo">Meets</span>
           <MeetingRows meetings={meetings} onChange={setMeetings} />
-        </Field>
+        </div>
       </div>
 
       <div className="mt-5 flex items-center gap-2">
