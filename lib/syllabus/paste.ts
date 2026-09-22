@@ -43,6 +43,33 @@ export interface SyllabusRow {
   dueText: string;
 }
 
+/**
+ * Whether an undated line is plausibly something to hand in.
+ *
+ * Only consulted for a list paste, and only for a line carrying no date.
+ * A table's rows are all items by construction, and a dated line said so
+ * itself.
+ *
+ * A whole syllabus pasted in is the case this exists for: a real one came back
+ * as 226 rows, two of them dated, offering to file "Georgia Institute of
+ * Technology" and "1" as coursework. Prose runs long and a deliverable line is
+ * short, so length carries as much of the decision as the words do.
+ *
+ * It errs towards keeping. A few headings survive and you delete them, which
+ * is the grid working. The opposite mistake, dropping a real deadline, is the
+ * one that costs something.
+ */
+const DELIVERABLE =
+  /\b(due|assignment|lab|quiz|exam|midterm|finals?|report|case stud(y|ies)|project|paper|homework|problem set|milestone|presentation|deliverable|essay|draft|proposal|reading)\b/i;
+
+/** Past this a line is a sentence about a policy, not a thing to hand in. */
+const MAX_DELIVERABLE_LENGTH = 90;
+
+export function looksLikeDeliverable(line: string): boolean {
+  const text = line.trim();
+  return text.length > 0 && text.length <= MAX_DELIVERABLE_LENGTH && DELIVERABLE.test(text);
+}
+
 /** A table needs this share of its lines to agree on a delimiter. */
 const AGREEMENT = 0.6;
 
@@ -237,13 +264,14 @@ export function applyMapping(
       // the parser hands back a year it chose, and choosing that year again is
       // the whole job of `resolveSyllabusDate`.
       const spoken = parsed.tokens.find((token) => token.kind === 'date')?.text.trim() ?? '';
+      const due = spoken === '' ? null : resolveSyllabusDate(spoken, window);
 
-      out.push({
-        title,
-        due: spoken === '' ? null : resolveSyllabusDate(spoken, window),
-        points: null,
-        dueText: spoken,
-      });
+      // An undated line that names nothing to hand in is prose. Pasting a whole
+      // syllabus rather than its schedule table is the ordinary case, and every
+      // sentence of it was arriving as a row to review.
+      if (due === null && !looksLikeDeliverable(line)) continue;
+
+      out.push({ title, due, points: null, dueText: spoken });
       continue;
     }
 

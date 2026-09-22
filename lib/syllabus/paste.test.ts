@@ -170,3 +170,48 @@ describe('reading the rows', () => {
     expect(applyMapping(rows, detectColumns(rows, FALL), FALL)).toEqual([]);
   });
 });
+
+describe('a whole syllabus rather than its schedule', () => {
+  /**
+   * The real thing, cut down. Pasting the document instead of the table is the
+   * ordinary mistake, and the whole document used to arrive as rows: 226 of
+   * them from one real syllabus, two dated, offering to file "Georgia
+   * Institute of Technology" and "1" as coursework.
+   */
+  const DOCUMENT = [
+    'Georgia Institute of Technology',
+    'Syllabus: Incident Response',
+    '1',
+    'CS 6261/CS 4803',
+    'Dr. Vijay Madisetti vkm@gatech.edu',
+    'This course provides students with the background information and skillsets necessary to operate',
+    'Office hours will be held once per week.',
+    'Case Study 2: Desert Sands Case Study Report',
+    'Lab 1 Due: Splunk for Logs Analysis (Part 1)',
+    'Midterm',
+  ].join('\n');
+
+  it('keeps what you hand in and drops the prose', () => {
+    const { rows } = toRows(DOCUMENT);
+    const out = applyMapping(rows, detectColumns(rows, FALL), FALL);
+    const titles = out.map((row) => row.title);
+
+    expect(titles).toContain('Case Study 2: Desert Sands Case Study Report');
+    expect(titles).toContain('Lab 1 Due: Splunk for Logs Analysis (Part 1)');
+    expect(titles).toContain('Midterm');
+
+    expect(titles).not.toContain('Georgia Institute of Technology');
+    expect(titles).not.toContain('1');
+    expect(titles).not.toContain('Dr. Vijay Madisetti vkm@gatech.edu');
+    // Long enough to be a sentence about the course rather than a deadline.
+    expect(titles.some((t) => t.startsWith('This course provides'))).toBe(false);
+  });
+
+  it('keeps a dated line whatever it says', () => {
+    // The date is the strongest signal there is, so it overrides the wording.
+    const { rows } = toRows('Guest speaker on Oct 14');
+    const out = applyMapping(rows, detectColumns(rows, FALL), FALL);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.due).toBe('2026-10-14');
+  });
+});
