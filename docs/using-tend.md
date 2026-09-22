@@ -190,16 +190,24 @@ Three things are true of it by design:
 - **Nothing leaves your machine.** The request goes to loopback. No API key exists anywhere in
   the app.
 
-The default model is `qwen3.5:4b`, which is enough: a syllabus table is extraction, not
-reasoning, and a JSON schema does the structural work. The model name is a settings field, so a
-bad result can be answered by pointing at a bigger model.
+The default model is `qwen3.5:9b`. `qwen3.5:4b` was the original choice on the grounds that
+extraction is not reasoning, and measuring two real syllabi moved it: on a full sixteen week
+schedule the 4b returned the same homework three times, dated a third of what it found, and
+invented an exam that does not exist. The 9b returned fourteen items, no duplicates, every one
+dated, and correctly took the *due* date over the "released" date sitting on the same line. Both
+answer in about twenty seconds. The model name is a settings field, so a machine that only has
+the smaller one can say so without a code change.
+
+**The grid is often the better tool anyway.** On a syllabus that writes real dates, the plain
+parser found more of them than the 4b did. The assist earns its place on prose and on tables the
+parser reads crookedly, not on every syllabus.
 
 **Starting Ollama.** Nothing to leave open and nothing to configure, as long as the Ollama
 server is up:
 
 ```
 ollama serve          # or just open the Ollama app once
-ollama pull qwen3.5:4b
+ollama pull qwen3.5:9b
 ```
 
 You do not need to load or warm the model. Tend names it per request and Ollama loads it on

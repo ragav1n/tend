@@ -16,9 +16,15 @@ import { resolveSyllabusDate, type DateWindow } from './dates';
  * configured: a 4B model is 3GB of VRAM and a request made once a semester has
  * no business keeping it.
  *
- * Measured against `qwen3.5:4b` on a real syllabus: 2 to 5 seconds, every
- * graded item found with its points, and office hours, a reading with no
- * deliverable and the late policy all correctly left out.
+ * Measured against two real Georgia Tech syllabi on 2026-09-21, which changed
+ * the answer. On a short list `qwen3.5:4b` is fine. On a full sixteen week
+ * schedule it is not: it returned Homework 5 three times, Coding HW2 four
+ * times, dated a third of what it found, and invented a "Final Exam" the
+ * syllabus does not have. `qwen3.5:9b` on the same text returned fourteen
+ * items, no duplicates, every one dated, and it picked the *due* date over the
+ * "released" date on the same line, which is the judgement the plain parser
+ * cannot make. Both answered in about twenty seconds, so the larger model
+ * costs disk and nothing else per request.
  *
  * ── Why the output can be trusted enough to show ───────────────────────────
  *
@@ -33,9 +39,19 @@ import { resolveSyllabusDate, type DateWindow } from './dates';
  * That is the only reason it is safe to point a 4B model at a deadline list.
  */
 
-/** Small on purpose. A syllabus table is extraction, not reasoning, and the
- *  schema does the structural work a bigger model would be paid for. */
-export const DEFAULT_MODEL = 'qwen3.5:4b';
+/**
+ * The smallest that actually does the job, which is the rule; 4b was the guess
+ * and measurement moved it. See above: on a full semester schedule 4b
+ * duplicates and invents, 9b does not, and neither is slower than the other in
+ * practice because the run is dominated by reading the prompt. Still loaded on
+ * demand and unloaded immediately, so the cost is 6.6GB on disk rather than
+ * anything resident.
+ *
+ * It is a settings field. A machine that only has the 4b can say so without a
+ * code change, which is the whole reason the endpoint and the model are
+ * per-device and not synced.
+ */
+export const DEFAULT_MODEL = 'qwen3.5:9b';
 export const DEFAULT_ENDPOINT = 'http://localhost:11434';
 
 /**

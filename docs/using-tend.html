@@ -123,7 +123,7 @@ h2,h3,table,pre { break-inside:avoid; }
   <h1>Using&nbsp;Tend</h1>
   <p class="sub">Every feature, the quick-add syntax, setting up a semester, Canvas import and the local model assist.</p>
   <div class="meta">
-    <span>Version <b>0.53.1</b></span>
+    <span>Version <b>0.54.0</b></span>
     <span>21 September 2026</span>
     <span>tend-iota-jade.vercel.app</span>
   </div>
@@ -359,13 +359,20 @@ answer comes back. Nothing sits in RAM between imports.</li>
 <li><strong>Nothing leaves your machine.</strong> The request goes to loopback. No API key exists anywhere in
 the app.</li>
 </ul>
-<p>The default model is <code>qwen3.5:4b</code>, which is enough: a syllabus table is extraction, not
-reasoning, and a JSON schema does the structural work. The model name is a settings field, so a
-bad result can be answered by pointing at a bigger model.</p>
+<p>The default model is <code>qwen3.5:9b</code>. <code>qwen3.5:4b</code> was the original choice on the grounds that
+extraction is not reasoning, and measuring two real syllabi moved it: on a full sixteen week
+schedule the 4b returned the same homework three times, dated a third of what it found, and
+invented an exam that does not exist. The 9b returned fourteen items, no duplicates, every one
+dated, and correctly took the <em>due</em> date over the &quot;released&quot; date sitting on the same line. Both
+answer in about twenty seconds. The model name is a settings field, so a machine that only has
+the smaller one can say so without a code change.</p>
+<p><strong>The grid is often the better tool anyway.</strong> On a syllabus that writes real dates, the plain
+parser found more of them than the 4b did. The assist earns its place on prose and on tables the
+parser reads crookedly, not on every syllabus.</p>
 <p><strong>Starting Ollama.</strong> Nothing to leave open and nothing to configure, as long as the Ollama
 server is up:</p>
 <pre><code>ollama serve          # or just open the Ollama app once
-ollama pull qwen3.5:4b
+ollama pull qwen3.5:9b
 </code></pre>
 <p>You do not need to load or warm the model. Tend names it per request and Ollama loads it on
 demand.</p>

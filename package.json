@@ -1,6 +1,6 @@
 {
   "name": "tend",
-  "version": "0.53.3",
+  "version": "0.54.0",
   "private": true,
   "engines": {
     "node": ">=22"
