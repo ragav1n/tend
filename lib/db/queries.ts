@@ -269,6 +269,28 @@ export async function openTasks(limit = 500, db: TendDb = getDb()): Promise<Task
   return rows.filter((t) => t.parentTaskId === NO_PARENT).sort(compareRank);
 }
 
+/**
+ * Every open task, children included, which is what the workload reads.
+ *
+ * `openTasks` above drops subtasks because the board groups top-level work into
+ * columns. The workload cannot afford to: a part with a deadline and an estimate
+ * of its own is hours that land on a day, and dropping it is how a project split
+ * into three estimated parts read as an empty week. `lib/workload/estimates.ts`
+ * is what stops the parent's own figure being counted on top of theirs.
+ *
+ * The same scan and the same bound as `openTasks`, unsorted, because every
+ * consumer buckets by date rather than reading rows in order. The bound now
+ * covers parents and children together, which is the honest reading of it: a
+ * forecast over more than five hundred open rows is not a figure anybody reads.
+ */
+export async function openWork(limit = 500, db: TendDb = getDb()): Promise<Task[]> {
+  return db.tasks
+    .where('[_del+_done+_dueDay+sortKey]')
+    .between([0, 0, '', ''], [0, 0, NO_DUE_DAY, MAX_STR], true, true)
+    .limit(limit)
+    .toArray();
+}
+
 async function inboxCandidates(db: TendDb): Promise<Task[]> {
   const rows = await db.tasks
     .where('[_del+projectId+_done+sortKey]')

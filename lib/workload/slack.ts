@@ -1,5 +1,6 @@
 import { NO_DUE_DAY, type PlainDate, type Task } from '@/lib/db/types';
 import { capacityBetween, type Capacity } from './capacity';
+import { contributions } from './estimates';
 
 /**
  * Whether a deadline is still reachable.
@@ -53,11 +54,11 @@ export function slackByDay(
   today: PlainDate,
   capacity: Capacity,
 ): Map<PlainDate, DaySlack> {
-  // Open, dated, top level. A subtask's estimate belongs to its parent's day and
-  // counting both would double the load.
-  const dated = tasks.filter(
-    (task) => task._done === 0 && task._dueDay !== NO_DUE_DAY && task.parentTaskId === '',
-  );
+  // Open and dated, children included: a part with a deadline of its own is
+  // owed by that date whoever it belongs to. `contributions` is what keeps the
+  // parent's own figure from being added on top of theirs.
+  const dated = tasks.filter((task) => task._done === 0 && task._dueDay !== NO_DUE_DAY);
+  const counted = contributions(dated);
 
   const days = [...new Set(dated.map((task) => task._dueDay))].sort();
   const out = new Map<PlainDate, DaySlack>();
@@ -72,9 +73,9 @@ export function slackByDay(
 
   for (const date of days) {
     while (index < byDay.length && byDay[index]!._dueDay <= date) {
-      const task = byDay[index]!;
-      if (task.estimateMinutes === null) unestimated += 1;
-      else committed += task.estimateMinutes;
+      const contribution = counted.get(byDay[index]!.id);
+      if (contribution?.kind === 'blank') unestimated += 1;
+      else if (contribution?.kind === 'minutes') committed += contribution.minutes;
       index += 1;
     }
 

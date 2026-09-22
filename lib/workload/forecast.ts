@@ -1,5 +1,6 @@
 import { NO_DUE_DAY, type PlainDate, type Task } from '@/lib/db/types';
 import { capacityOf, daysBetween, type Capacity } from './capacity';
+import { contributions } from './estimates';
 
 /**
  * What each day is carrying.
@@ -54,19 +55,34 @@ export function forecast(
   to: PlainDate,
   capacity: Capacity,
 ): DayLoad[] {
-  const open = tasks.filter((task) => task._done === 0 && task.parentTaskId === '');
+  // Every open task that lands on a day, inside the window or out of it. Which
+  // parents their children cover is a fact about the work, not about the
+  // fortnight on screen: decided over the window alone, a part due next month
+  // would stop covering a parent due this week and the parent's whole figure
+  // would reappear here.
+  const landing = tasks
+    .filter((task) => task._done === 0)
+    .map((task) => ({ task, day: dayFor(task) }))
+    .filter((row): row is { task: Task; day: PlainDate } => row.day !== null);
+  const counted = contributions(landing.map((row) => row.task));
 
   const minutes = new Map<PlainDate, number>();
   const counts = new Map<PlainDate, number>();
   const blanks = new Map<PlainDate, number>();
 
-  for (const task of open) {
-    const day = dayFor(task);
-    if (day === null || day < from || day > to) continue;
+  for (const { task, day } of landing) {
+    if (day < from || day > to) continue;
 
+    // Counted whatever it contributes. A covered parent is still a thing due
+    // on this day, and a day reading "2 tasks, 3h" where one of them is priced
+    // through its parts is the honest version of both numbers.
     counts.set(day, (counts.get(day) ?? 0) + 1);
-    if (task.estimateMinutes === null) blanks.set(day, (blanks.get(day) ?? 0) + 1);
-    else minutes.set(day, (minutes.get(day) ?? 0) + task.estimateMinutes);
+
+    const contribution = counted.get(task.id);
+    if (contribution?.kind === 'blank') blanks.set(day, (blanks.get(day) ?? 0) + 1);
+    else if (contribution?.kind === 'minutes') {
+      minutes.set(day, (minutes.get(day) ?? 0) + contribution.minutes);
+    }
   }
 
   return daysBetween(from, to).map((date) => {

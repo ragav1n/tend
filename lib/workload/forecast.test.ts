@@ -106,18 +106,55 @@ describe('a day load', () => {
     expect(days.every((day) => day.minutes === 0)).toBe(true);
   });
 
-  it('leaves finished work and subtasks out', () => {
+  it('leaves finished work out and puts a part on its own day', () => {
+    // The subtask's parent is elsewhere, which is the ordinary case. Dropped,
+    // as it was until a subtask could hold its own date, the hour it takes
+    // lands on no day at all.
     const days = forecast(
       [
         task({ _dueDay: '2026-09-22', estimateMinutes: 60, _done: 1 }),
-        task({ _dueDay: '2026-09-22', estimateMinutes: 60, parentTaskId: 'task-1' }),
+        task({ _dueDay: '2026-09-22', estimateMinutes: 60, parentTaskId: 'elsewhere' }),
         task({ _dueDay: '2026-09-22', estimateMinutes: 60 }),
       ],
       '2026-09-22',
       '2026-09-22',
       WEEKDAYS,
     );
-    expect(dayOf(days, '2026-09-22')).toMatchObject({ minutes: 60, tasks: 1 });
+    expect(dayOf(days, '2026-09-22')).toMatchObject({ minutes: 120, tasks: 2 });
+  });
+
+  it('prices a parent through its parts rather than twice', () => {
+    // The parent still counts as a task on its day, because it is still due
+    // then. Its hours are on the days its parts are due.
+    const days = forecast(
+      [
+        task({ id: 'parent', _dueDay: '2026-09-23', estimateMinutes: 360 }),
+        task({ _dueDay: '2026-09-22', estimateMinutes: 180, parentTaskId: 'parent' }),
+        task({ _dueDay: '2026-09-23', estimateMinutes: 180, parentTaskId: 'parent' }),
+      ],
+      '2026-09-22',
+      '2026-09-23',
+      WEEKDAYS,
+    );
+
+    expect(dayOf(days, '2026-09-22')).toMatchObject({ minutes: 180, tasks: 1 });
+    expect(dayOf(days, '2026-09-23')).toMatchObject({ minutes: 180, tasks: 2 });
+  });
+
+  it('covers a parent from a part that is outside the window', () => {
+    // Covering decided over the window alone would hand the parent's whole
+    // figure back the moment its parts fell off the end of the strip.
+    const days = forecast(
+      [
+        task({ id: 'whole', _dueDay: '2026-09-22', estimateMinutes: 600 }),
+        task({ _dueDay: '2026-10-30', estimateMinutes: 600, parentTaskId: 'whole' }),
+      ],
+      '2026-09-22',
+      '2026-09-23',
+      WEEKDAYS,
+    );
+
+    expect(dayOf(days, '2026-09-22')).toMatchObject({ minutes: 0, tasks: 1, unestimated: 0 });
   });
 
   it('gives a strip something to scale by', () => {

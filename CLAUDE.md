@@ -94,6 +94,15 @@ right and this file is the constitution. Phases 6 through 13 came from a later p
   React warns such children "may be duplicated and/or omitted" and so might skip
   the remount the key exists for. `hooks/use-hydrated.test.tsx` scans the source
   for both halves: no bare keys, and no key written twice in one file.
+- **`lib/workload/estimates.ts` decides whose estimate counts**, and the answer
+  is not "top level only". `openWork` feeds the workload children as well as
+  parents, because a part with its own deadline and its own estimate is hours
+  that land on a day: dropping them read a project priced by its parts as an
+  empty week. A parent whose children carry estimates does not count its own,
+  or the same nine hours is counted again in three-hour pieces. Covering is
+  decided from the rows the caller passes, so a part whose estimate would land
+  nowhere covers nothing. `openTasks` keeps its top-level filter: the board
+  groups top-level work into columns.
 - **`digest_items` orders before it cuts.** The `limit` sat inside a subquery
   with no `order by` while the ordering sat outside in the `jsonb_agg`, so from
   0008 to 0027 a digest past 25 qualifying tasks kept an arbitrary 25 and then

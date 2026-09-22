@@ -48,6 +48,8 @@ import {
   unfinishedFocus,
   projectList,
   searchTasks,
+  openTasks,
+  openWork,
   overdueList,
   sidebarCounts,
   somedayDeferred,
@@ -698,6 +700,25 @@ describe('views', () => {
     expect(counts.inbox).toBe((await inboxList(db, TODAY)).length);
     expect(counts.upcoming).toBe((await upcomingList(TODAY, 30, db)).length);
     expect(counts.inbox).toBe(2);
+  });
+
+  it('gives the workload the children the board leaves out', async () => {
+    // `openTasks` drops subtasks because the board groups top-level work into
+    // columns. The workload needs them: a part with its own deadline and its
+    // own estimate is hours that land on a day.
+    const parent = await createTask({ title: 'Thesis', dueDate: daysFrom(20) }, db);
+    const part = await createTask(
+      { title: 'Chapter two', dueDate: daysFrom(5), estimateMinutes: 180, parentTaskId: parent },
+      db,
+    );
+    const done = await createTask({ title: 'Finished', dueDate: TODAY }, db);
+    await completeTask(done, true, db);
+
+    const work = (await openWork(500, db)).map((t) => t.id);
+    expect(work).toContain(parent);
+    expect(work).toContain(part);
+    expect(work).not.toContain(done);
+    expect((await openTasks(500, db)).map((t) => t.id)).not.toContain(part);
   });
 
   it('keeps a filed task out of the inbox', async () => {

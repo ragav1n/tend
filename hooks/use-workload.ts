@@ -3,10 +3,11 @@
 import { useMemo } from 'react';
 import { usePrefs } from './use-prefs';
 import { useStableLiveQuery } from './use-live';
-import { openTasks, today } from '@/lib/db/queries';
+import { openWork, today } from '@/lib/db/queries';
 import { addDays, type Capacity } from '@/lib/workload/capacity';
 import { forecast, type DayLoad } from '@/lib/workload/forecast';
 import { firstOverdrawn, slackByDay, type DaySlack } from '@/lib/workload/slack';
+import { contributions } from '@/lib/workload/estimates';
 import { NO_DUE_DAY, type PlainDate, type Task } from '@/lib/db/types';
 
 /**
@@ -16,10 +17,12 @@ import { NO_DUE_DAY, type PlainDate, type Task } from '@/lib/db/types';
  * alternative was a query per surface, and Today, Upcoming and the calendar all
  * want a different slice of the same answer.
  *
- * `openTasks` is the board's query, bounded at 500 and already index-bound.
- * Reusing it means the workload costs one more live query for the page rather
- * than a new scan, and the bound is the right one: a slack figure over more open
- * tasks than that is not a figure anybody is reading.
+ * `openWork` is the board's scan without its top-level filter, bounded at 500
+ * and index-bound. The workload needs the children: a part carrying its own
+ * deadline and its own estimate is hours that land on a day, and the board's
+ * query drops it. Which of those estimates count is
+ * `lib/workload/estimates.ts`, so the parent's own figure is not added on top
+ * of the parts that priced it.
  */
 
 const NO_TASKS: Task[] = [];
@@ -36,7 +39,7 @@ export interface Workload {
 
 export function useWorkload(days = 14): Workload {
   const prefs = usePrefs();
-  const tasks = useStableLiveQuery(() => openTasks(), [], NO_TASKS);
+  const tasks = useStableLiveQuery(() => openWork(), [], NO_TASKS);
 
   const dailyMinutes = prefs.dailyCapacityMinutes;
   // Joined so the dependency is a value rather than an array identity.
@@ -51,18 +54,17 @@ export function useWorkload(days = 14): Workload {
     const from = today();
     const to = addDays(from, days - 1);
     const byDay = slackByDay(tasks, from, capacity);
+    const dated = tasks.filter((task) => task._done === 0 && task._dueDay !== NO_DUE_DAY);
 
     return {
       days: forecast(tasks, from, to, capacity),
       byDay,
       overdrawn: firstOverdrawn(byDay),
-      unestimated: tasks.filter(
-        (task) =>
-          task._done === 0 &&
-          task._dueDay !== NO_DUE_DAY &&
-          task.parentTaskId === '' &&
-          task.estimateMinutes === null,
-      ).length,
+      // Read off the same rule and the same set slack uses, so the count beside
+      // a figure is a count of what went into it. A parent priced through its
+      // parts is not unestimated, which is the case that used to be reported as
+      // one dated task with no estimate while three estimated parts sat under it.
+      unestimated: [...contributions(dated).values()].filter((c) => c.kind === 'blank').length,
       capacity,
     };
   }, [tasks, dailyMinutes, workKey, days]);

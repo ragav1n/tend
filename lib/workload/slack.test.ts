@@ -90,16 +90,51 @@ describe('slack for a day', () => {
     expect(byDay.get('2026-09-23')!.committed).toBe(900);
   });
 
-  it('leaves a subtask out, since its parent already carries the day', () => {
+  it('counts a part against its own deadline', () => {
+    // Its parent is not in this window at all, which is the ordinary case: a
+    // chapter due Wednesday inside a thesis due next month. Skipped, as it was
+    // until a subtask could hold its own date, those five hours are owed by
+    // Wednesday and appear nowhere.
     const byDay = slackByDay(
       [
         due('2026-09-23', 300),
-        task({ _dueDay: '2026-09-23', estimateMinutes: 300, parentTaskId: 'task-1' }),
+        task({ _dueDay: '2026-09-23', estimateMinutes: 300, parentTaskId: 'elsewhere' }),
       ],
       MONDAY,
       WEEKDAYS,
     );
-    expect(byDay.get('2026-09-23')!.committed).toBe(300);
+    expect(byDay.get('2026-09-23')!.committed).toBe(600);
+  });
+
+  it('prices a parent through its parts rather than twice', () => {
+    // Nine hours broken into three threes is nine hours of work. The parent's
+    // own figure is the same work priced whole, so counting both is eighteen.
+    const parent = task({ id: 'parent', _dueDay: '2026-09-25', estimateMinutes: 540 });
+    const byDay = slackByDay(
+      [
+        parent,
+        task({ _dueDay: '2026-09-23', estimateMinutes: 180, parentTaskId: 'parent' }),
+        task({ _dueDay: '2026-09-24', estimateMinutes: 180, parentTaskId: 'parent' }),
+        task({ _dueDay: '2026-09-25', estimateMinutes: 180, parentTaskId: 'parent' }),
+      ],
+      MONDAY,
+      WEEKDAYS,
+    );
+
+    expect(byDay.get('2026-09-25')!.committed).toBe(540);
+  });
+
+  it('does not call a parent unestimated when its parts carry the numbers', () => {
+    // The count beside a figure says how much of it was guessed at. A parent
+    // priced by its parts was guessed at nowhere.
+    const parent = task({ id: 'whole', _dueDay: '2026-09-25' });
+    const byDay = slackByDay(
+      [parent, task({ _dueDay: '2026-09-23', estimateMinutes: 180, parentTaskId: 'whole' })],
+      MONDAY,
+      WEEKDAYS,
+    );
+
+    expect(byDay.get('2026-09-25')).toMatchObject({ committed: 180, unestimated: 0 });
   });
 
   it('has nothing to say about an undated task', () => {
