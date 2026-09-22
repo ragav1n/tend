@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Using Tend</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --void:#F8F4EF; --surface:#FFFDFB; --raised:#EFE9E4; --sunken:#EBE4DD;
+  --clay-600:#8D321F; --clay-300:#9F422F; --clay-200:#882D1A;
+  --olive-600:#505935; --olive-300:#5C6541;
+  --sand-300:#7F5B33;
+  --text-hi:#241D15; --text-mid:#594E42; --text-lo:#6E6152;
+  --line:#E2D9D0; --on-accent:#F7F0E9;
+}
+@page { size: letter; margin: 17mm 16mm 18mm; }
+* { box-sizing:border-box; }
+html { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+/* The page itself stays white. Chrome never paints a page's margin area, so a
+   tinted body came out as a cream block floating in a white frame on every
+   sheet. The warmth lives in the blocks instead, which is the right call for
+   paper anyway: less ink, and a code sample reads as an object on the page
+   rather than as a slightly different shade of the page. */
+body {
+  margin:0; color:var(--text-mid);
+  font-family:'Instrument Sans',ui-sans-serif,system-ui,sans-serif;
+  font-size:10.2pt; line-height:1.62; font-feature-settings:'ss01','cv01';
+}
+.page { max-width:none; }
+
+/* ── Cover ─────────────────────────────────────────────────────────────── */
+.cover { page-break-after:always; padding-top:46mm; }
+.mark {
+  display:inline-grid; place-items:center; width:46px; height:46px;
+  border-radius:11px; background:var(--clay-600); color:var(--on-accent);
+  font-family:'Instrument Serif',serif; font-size:27px; line-height:1;
+  padding-bottom:3px; margin-bottom:26px;
+}
+.cover h1 {
+  font-family:'Instrument Serif',serif; font-weight:400;
+  font-size:56pt; line-height:0.98; letter-spacing:-0.015em;
+  color:var(--text-hi); margin:0 0 14px;
+}
+.cover .sub { font-size:13pt; color:var(--text-lo); margin:0 0 40px; max-width:110mm; }
+.cover .meta {
+  border-top:1px solid var(--line); padding-top:14px;
+  font-family:'JetBrains Mono',ui-monospace,monospace; font-size:8pt;
+  letter-spacing:0.08em; text-transform:uppercase; color:var(--text-lo);
+  display:flex; gap:26px; flex-wrap:wrap;
+}
+.cover .meta b { color:var(--clay-300); font-weight:500; }
+
+/* ── Headings ──────────────────────────────────────────────────────────── */
+h2 {
+  font-family:'Instrument Serif',serif; font-weight:400; font-size:23pt;
+  line-height:1.12; color:var(--text-hi);
+  margin:30px 0 11px; padding-bottom:7px; border-bottom:1px solid var(--line);
+  page-break-after:avoid;
+}
+h3 {
+  font-size:11.5pt; font-weight:600; color:var(--clay-300);
+  margin:20px 0 7px; page-break-after:avoid;
+}
+h2 + h3 { margin-top:12px; }
+p { margin:0 0 10px; }
+a { color:var(--clay-300); text-decoration:none; border-bottom:1px solid #E6CFC7; }
+
+/* ── Lists ─────────────────────────────────────────────────────────────── */
+ul,ol { margin:0 0 12px; padding-left:19px; }
+li { margin:0 0 5px; padding-left:2px; }
+li::marker { color:var(--sand-300); }
+ul ul, ol ol, ul ol, ol ul { margin:5px 0 0; }
+
+/* ── Code ──────────────────────────────────────────────────────────────── */
+code {
+  font-family:'JetBrains Mono',ui-monospace,monospace; font-size:0.845em;
+  background:#F1E9E2; color:var(--clay-200);
+  padding:1.5px 5px; border-radius:4px; white-space:nowrap;
+}
+pre {
+  background:var(--void); border:1px solid var(--line);
+  border-left:3px solid var(--clay-600);
+  border-radius:7px; padding:11px 14px; margin:0 0 13px;
+  overflow:hidden; page-break-inside:avoid;
+}
+pre code {
+  background:none; padding:0; color:var(--text-hi);
+  font-size:8.9pt; line-height:1.55; white-space:pre-wrap; word-break:break-word;
+}
+
+/* ── Tables ────────────────────────────────────────────────────────────── */
+table {
+  width:100%; border-collapse:collapse; margin:0 0 14px;
+  font-size:9.3pt; page-break-inside:avoid;
+  border:1px solid var(--line); border-radius:7px; overflow:hidden;
+}
+thead { background:#F1EAE3; }
+th {
+  text-align:left; font-size:7.6pt; font-weight:600; letter-spacing:0.09em;
+  text-transform:uppercase; color:var(--text-lo);
+  padding:8px 11px; border-bottom:1px solid var(--line);
+}
+td { padding:7px 11px; border-bottom:1px solid var(--line); vertical-align:top; color:var(--text-mid); }
+tbody tr:last-child td { border-bottom:none; }
+tbody tr:nth-child(even) { background:#FAF6F2; }
+td code { white-space:normal; }
+td:first-child { color:var(--text-hi); }
+
+strong { color:var(--text-hi); font-weight:600; }
+hr { border:none; border-top:1px solid var(--line); margin:26px 0; }
+blockquote {
+  margin:0 0 13px; padding:2px 0 2px 14px;
+  border-left:3px solid var(--olive-600); color:var(--text-lo);
+}
+h2,h3,table,pre { break-inside:avoid; }
+</style>
+</head>
+<body>
+<section class="cover">
+  <div class="mark">t</div>
+  <h1>Using&nbsp;Tend</h1>
+  <p class="sub">Every feature, the quick-add syntax, setting up a semester, Canvas import and the local model assist.</p>
+  <div class="meta">
+    <span>Version <b>0.53.0</b></span>
+    <span>21 September 2026</span>
+    <span>tend-iota-jade.vercel.app</span>
+  </div>
+</section>
+<main class="page">
+<p>Everything the app does, from nothing. The README next to this file covers running and
+deploying it; this one covers using it.</p>
+<h2>What it is</h2>
+<p>A personal task app. Three things shape the rest:</p>
+<p><strong>Offline first.</strong> The app reads and writes a database inside your browser, never the server
+directly. Every edit lands locally and instantly, and a background sync pushes it up and pulls
+your other devices&#39; changes down. With no network nothing degrades and nothing is lost.</p>
+<p><strong>One person.</strong> No sharing, no assignment, no collaborators.</p>
+<p><strong>Installable.</strong> Add it to your home screen and it runs like a native app, with its own icon
+and no browser chrome.</p>
+<h2>Getting around</h2>
+<p>Press <code>g</code> then a letter.</p>
+<table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Views</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Plan</td>
+<td>Today <code>g t</code>, Upcoming <code>g u</code>, Calendar <code>g c</code></td>
+</tr>
+<tr>
+<td>Work</td>
+<td>Inbox <code>g i</code>, Courses <code>g o</code>, Projects <code>g p</code>, Someday <code>g s</code></td>
+</tr>
+<tr>
+<td>Looking back</td>
+<td>Logbook <code>g l</code>, Review <code>g r</code></td>
+</tr>
+<tr>
+<td>More</td>
+<td>Tags <code>g h</code>, Views <code>g v</code>, Board <code>g b</code>, Focus <code>g f</code></td>
+</tr>
+<tr>
+<td></td>
+<td>Settings <code>g ,</code></td>
+</tr>
+</tbody></table>
+<p>The four under More sit behind a disclosure in the sidebar, remembered per device. On a phone
+the bottom bar carries Today, Upcoming, Courses, Inbox and More.</p>
+<p><code>Cmd+K</code> opens the command palette, which reaches every view plus every course, project, tag
+and saved view by name. <code>?</code> lists every shortcut. <code>/</code> searches tasks.</p>
+<h2>Typing a task</h2>
+<p>One line does the whole job. <code>n</code> opens the field from anywhere.</p>
+<pre><code>Read chapter 4 friday 9am !p1 #reading +CS6260 @thesis
+</code></pre>
+<p>That becomes a task titled &quot;Read chapter 4&quot;, due Friday at 9am, top priority, tagged
+<code>reading</code>, attached to course CS 6260 and project thesis. Everything the parser consumes
+leaves the title.</p>
+<table>
+<thead>
+<tr>
+<th>Token</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>today</code> <code>tod</code> <code>tomorrow</code> <code>tmr</code> <code>tmrw</code> <code>yesterday</code> <code>yest</code></td>
+<td>the obvious</td>
+</tr>
+<tr>
+<td><code>monday</code> ... <code>sunday</code>, or <code>next friday</code></td>
+<td>the next one of those</td>
+</tr>
+<tr>
+<td><code>in 3 days</code> <code>in 2 weeks</code> <code>in 1 month</code> <code>next week</code></td>
+<td>relative</td>
+</tr>
+<tr>
+<td><code>3 days ago</code> <code>2 weeks ago</code></td>
+<td>backwards, for logging something done</td>
+</tr>
+<tr>
+<td><code>2026-09-30</code> <code>Sep 14</code> <code>14 Sep</code></td>
+<td>explicit</td>
+</tr>
+<tr>
+<td><code>9am</code> <code>9:30pm</code> <code>14:00</code> <code>noon</code> <code>midnight</code></td>
+<td>a time</td>
+</tr>
+<tr>
+<td><code>!p1</code> <code>!p2</code> <code>!p3</code></td>
+<td>priority, 1 highest</td>
+</tr>
+<tr>
+<td><code>!</code> <code>!!</code> <code>!!!</code></td>
+<td>the same three levels, fewer keys</td>
+</tr>
+<tr>
+<td><code>#tag</code></td>
+<td>a tag, created if new</td>
+</tr>
+<tr>
+<td><code>@project</code></td>
+<td>a project, created if new</td>
+</tr>
+<tr>
+<td><code>+CS6260</code></td>
+<td>a course</td>
+</tr>
+</tbody></table>
+<p>A bare month and day rolls forward, so <code>Sep 14</code> typed in October means next year. That is
+right for quick capture and wrong for a syllabus, which is why syllabus import resolves dates
+against the term window instead.</p>
+<h2>Working a list</h2>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>j</code> <code>k</code></td>
+<td>move the cursor</td>
+</tr>
+<tr>
+<td><code>Enter</code></td>
+<td>open the task</td>
+</tr>
+<tr>
+<td><code>x</code></td>
+<td>tick it</td>
+</tr>
+<tr>
+<td><code>Shift+S</code></td>
+<td>selection mode, for acting on many at once</td>
+</tr>
+<tr>
+<td><code>Cmd+Z</code></td>
+<td>undo the last change, as one gesture rather than one field</td>
+</tr>
+</tbody></table>
+<p>Drag a row to reorder it. On a phone, hold for a moment and then drag. Each list remembers
+its own sort, per device: manual, due date, priority, created, title, or pressure.</p>
+<p>A task with a start date stays hidden until that date, collected under a &quot;Starts later&quot;
+disclosure at the foot of the list. This is how a November paper stops shouting at you in
+September.</p>
+<h2>Three ways in</h2>
+<ol>
+<li><strong>Type it.</strong> <code>n</code> anywhere.</li>
+<li><strong>Mail it.</strong> Forward anything to your capture address and it lands in the Inbox. The
+subject is read exactly as the quick-add field reads it, the body becomes the note, and
+attachments are listed by name. Only mail from your own account address is accepted.</li>
+<li><strong>Let Canvas bring it.</strong> See below.</li>
+</ol>
+<p>Anything with no home lands in the Inbox.</p>
+<h2>Setting up a semester</h2>
+<ol>
+<li><code>g o</code> for Courses, then <strong>New course</strong>. There is no separate button for a term: the Term
+dropdown carries &quot;Start a new term...&quot;, and picking it creates one guessed from today&#39;s
+date, <code>Fall 2026</code> running August to December if you are adding a course in September. You
+are not asked for exact semester dates on the way to your first course.</li>
+<li>Press <strong>Edit term</strong> in the header and correct those dates to your registrar&#39;s. Do this
+before pasting any syllabus, because syllabus import resolves a bare <code>Sep 14</code> against this
+window.</li>
+<li>Add the rest of your courses, picking the term you just made. Each one takes a code, title,
+credits, instructor, colour, and when it meets. Set the code to what you would want to type
+after <code>+</code>.</li>
+<li>In each course&#39;s <strong>Grades</strong> tab, enter the weight components from the syllabus, for example
+Homework 30, Midterm 25, Final 30, Participation 15. Set &quot;drop lowest&quot; where the syllabus
+allows it.</li>
+<li><strong>Settings, Coursework</strong>: paste your Canvas feed URL and press Add, then Read the feeds.</li>
+<li><strong>Settings, Your week</strong>: set your daily capacity in minutes and which days you work, so
+workload numbers mean something.</li>
+</ol>
+<p>A course with 0 credits is kept out of GPA while still collecting its deadlines, which is what
+you want for a non-credit shell like an orientation or a community space.</p>
+<h2>Grades</h2>
+<p>The Grades tab answers three questions.</p>
+<p><strong>Where you stand.</strong> A weighted mean over the components that have at least one graded item.
+A component nobody has marked yet is left out rather than counted as a zero.</p>
+<p><strong>Where you land.</strong> The same, with unmarked work projected at that component&#39;s current rate.</p>
+<p><strong>What you need.</strong> Set a target and it solves for the percentage required on everything still
+unearned, and says plainly when a target has stopped being reachable.</p>
+<p>Weight splits by points, not by item count. Homework worth 30% over 500 points with 200 marked
+is 12% settled and 18% still moving. Term GPA weights each course&#39;s projection by its credits
+and tells you how many courses it managed to count, because a 4.0 over one of five courses is
+not a 4.0.</p>
+<h2>Canvas</h2>
+<p>Canvas publishes a private calendar feed. There is no API token and no OAuth.</p>
+<ol>
+<li>In Canvas open <strong>Calendar</strong>, then <strong>Calendar Feed</strong> at the bottom right. Copy the <code>.ics</code>
+URL.</li>
+<li>In Tend, <strong>Settings, Coursework</strong>, paste it and press Add.</li>
+<li>Press <strong>Read the feeds</strong>.</li>
+</ol>
+<p>After that it maintains itself. The daily cron re-reads every enabled feed, so a new deadline
+appears whether or not you opened the app.</p>
+<p>Assignments become tasks. Lectures, exams and office hours become read-only events drawn
+behind the day on Today and the Calendar, so your free hours are visible.</p>
+<p>Each item is matched to a course in three passes: an explicit feed label, then your course code
+appearing inside what Canvas wrote, then the reverse for a feed that abbreviates. Canvas writes
+<code>CS-6260-A</code> where you would type <code>CS 6260</code>, and folding to letters and digits handles that. Two
+courses matching the same item resolves to nothing rather than a guess, and the item waits in
+the Inbox where you can see it.</p>
+<p>Three rules hold across re-reads, enforced in SQL rather than in the route:</p>
+<ul>
+<li>Importing twice does not duplicate. Identity is the Canvas UID.</li>
+<li>Your edits win. Each imported task stores a snapshot, and the feed may overwrite a field only
+while that field still holds what the feed last wrote.</li>
+<li>A deleted task stays deleted. The feed cannot resurrect it.</li>
+</ul>
+<p>The feed URL is credential-shaped: anybody holding it can read the whole calendar. It is masked
+to its host once saved, never logged, and never returned by the import route. Treat it like a
+password, and reset it in Canvas if it leaks.</p>
+<p><strong>What the feed cannot give you</strong> is anything an instructor left out of Canvas. That is the
+next section.</p>
+<h2>Syllabus import</h2>
+<p>Open a course and paste the grading schedule straight out of the syllabus. One item per line,
+or a table copied out of a PDF. Every line runs through the same parser as quick-add, then you
+get an editable preview with title, date, component and points. Confirm and the whole import
+commits as one batch, so one bad row does not leave you half-imported.</p>
+<p>Dates resolve against the term window rather than rolling forward, so <code>Sep 14</code> in a Fall 2026
+syllabus means September 2026 even when you paste it in November.</p>
+<h3>The local model assist</h3>
+<p>If you have Ollama running, a button appears that fills the grid in for you. It reads prose a
+plain parser cannot, for example &quot;the second project is due the Friday before fall break&quot;.</p>
+<p>Three things are true of it by design:</p>
+<ul>
+<li><strong>The model never writes a task.</strong> It fills the same form you would have filled, and you
+confirm it. A machine-extracted deadline gets a human check.</li>
+<li><strong>Nothing runs when you are not using it.</strong> Tend starts no server and holds no connection.
+It sends one request per press, with <code>keep_alive: 0</code> so the weights unload the moment the
+answer comes back. Nothing sits in RAM between imports.</li>
+<li><strong>Nothing leaves your machine.</strong> The request goes to loopback. No API key exists anywhere in
+the app.</li>
+</ul>
+<p>The default model is <code>qwen3.5:4b</code>, which is enough: a syllabus table is extraction, not
+reasoning, and a JSON schema does the structural work. The model name is a settings field, so a
+bad result can be answered by pointing at a bigger model.</p>
+<p><strong>Starting Ollama.</strong> Nothing to leave open and nothing to configure, as long as the Ollama
+server is up:</p>
+<pre><code>ollama serve          # or just open the Ollama app once
+ollama pull qwen3.5:4b
+</code></pre>
+<p>You do not need to load or warm the model. Tend names it per request and Ollama loads it on
+demand.</p>
+<p><strong>It only works when Tend is served from localhost.</strong> A request from an HTTPS page to a
+loopback address is a private-network request, which browsers gate behind a preflight Ollama
+does not answer, and the call hangs rather than failing. Measured against the deployed app: still
+pending after two minutes. So the probe gives up after 1.5 seconds and the button simply never
+appears on the deployed site. Run <code>npm run dev</code> and use <code>http://localhost:3000</code> when you want
+the assist.</p>
+<p>A failed probe is the ordinary case, not an error. The row reads &quot;not reachable&quot; and the button
+is absent. No toast, no retry, no spinner waiting on a daemon nobody started. On a phone there
+is no Ollama at all and the manual grid is the whole feature, which is the degradation working.</p>
+<h2>Workload</h2>
+<p>Put a time estimate on a task and it starts counting. Given your daily capacity and working
+days, Tend reports each day as light, full or over.</p>
+<p>The number that earns its place is slack: the working hours available before a deadline, minus
+the estimates of everything due on or before it. Negative slack means the deadline is already
+gone, and it says so three days early instead of on the morning. Slack belongs to a day rather
+than a task, so two things due the same day share one figure, because they compete for the same
+hours.</p>
+<p>A task with no estimate contributes nothing and is counted out loud, so the strip says &quot;2 with
+no estimate&quot; rather than inventing a duration.</p>
+<p>Surfaces: a capacity strip across Upcoming, a load pip per Calendar cell, today&#39;s load in the
+Today header, an overdrawn badge on a row, a Pressure sort, and an Unplanned tray beside the
+Calendar that makes planning a week the same gesture as dragging.</p>
+<h2>Reminders</h2>
+<p>Email runs off a SQL pipeline: a morning digest of what is due, a nudge for what slipped, and a
+weekly review. Times are wall clock in the timezone set in Settings, so changing timezone does
+not silently reschedule your mornings. Every email carries a link that turns that kind off
+without signing in.</p>
+<p>Per-task reminders sit in the detail panel, which is how &quot;remind me two days before&quot; gets said.
+The global lead time cannot express that.</p>
+<p>Web push is available too, per device.</p>
+<h2>Your day, as a student</h2>
+<p>Today carries a strip of the nearest deadline per active course with a day count, plus today&#39;s
+classes read off each course&#39;s meeting times. Courses carries a three-week exam radar. Review
+carries focused minutes per course and points landed against points available, with time that
+cannot be attributed to a course said out loud rather than spread around.</p>
+<h2>Sync and devices</h2>
+<p>Sign in with an emailed code. Every device holds its own full copy and converges per field, so
+completing a task on your phone while retitling it on your laptop gives you a completed and
+retitled task. Signing out keeps anything not yet pushed.</p>
+<p>Some settings are per device on purpose and never sync: theme, list sorts, the local model
+endpoint, and push subscriptions. A model endpoint is a property of a machine.</p>
+
+</main>
+</body>
+</html>

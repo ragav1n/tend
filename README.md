@@ -4,6 +4,8 @@ An offline-first daily task PWA. Tend to what needs doing.
 
 **Using it:** [docs/using-tend.md](docs/using-tend.md) covers every feature, the
 quick-add syntax, setting up a semester, Canvas import and the local model assist.
+`npm run docs` renders it to [a printable PDF](docs/using-tend.pdf) from that same
+markdown, so the handout cannot drift from the source.
 
 ## What this is
 
