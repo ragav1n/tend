@@ -4,7 +4,9 @@ import { useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { CaretDown } from '@phosphor-icons/react/dist/ssr';
 import { QUICK_FADE, ROW, rowVariants } from '@/lib/motion';
-import type { Task } from '@/lib/db/types';
+import { formatDueLabel } from '@/lib/format/date';
+import { today } from '@/lib/db/queries';
+import { NO_DUE_DAY, type Task } from '@/lib/db/types';
 import { cn } from '@/lib/utils';
 import { StruckTitle } from './StruckTitle';
 import { TaskCheck } from './TaskCheck';
@@ -20,6 +22,12 @@ import { TaskCheck } from './TaskCheck';
  * nothing else: giving it the full row's due chip, priority flag and tag count
  * turns a three-item checklist into a wall the parent gets lost in. Tapping the
  * title still opens the detail panel, so nothing is unreachable.
+ *
+ * The one exception is a deadline the parent does not share. A part due Friday
+ * inside a task due the following Thursday was showing Thursday on the row and
+ * nothing at all underneath it, so the earlier date existed only in the detail
+ * panel of the child. A date equal to the parent's stays off: repeating it on
+ * every child is the wall this component exists to avoid.
  */
 
 /**
@@ -39,18 +47,30 @@ interface SubtaskRowsProps {
   /** Selection mode is on, so the parent row's checkbox column is wider and
    *  these indent to match. */
   inset?: boolean;
+  /** The parent's due day, so a child only shows a date when it has one of its
+   *  own. Absent means show every child's date, since there is nothing to
+   *  compare it against. */
+  parentDueDay?: string;
+  /** Today, passed in so a page of lists computes it once. */
+  todayDate?: string;
 }
 
 function SubtaskRow({
   task,
   onToggle,
   onOpen,
+  ownDue,
+  todayDate,
 }: {
   task: Task;
   onToggle: (id: string, done: boolean) => void;
   onOpen?: (id: string) => void;
+  /** This child's own deadline, when it is not its parent's. */
+  ownDue: string | null;
+  todayDate: string;
 }) {
   const done = task._done === 1;
+  const overdue = !done && ownDue !== null && ownDue < todayDate;
 
   return (
     <motion.li
@@ -89,12 +109,30 @@ function SubtaskRow({
             )}
           />
         </button>
+
+        {ownDue !== null && (
+          <span
+            className={cn(
+              'tnum shrink-0 text-[0.6875rem]',
+              done ? 'text-text-faint' : overdue ? 'text-clay-200' : 'text-text-lo',
+            )}
+          >
+            {formatDueLabel(ownDue, todayDate)}
+          </span>
+        )}
       </div>
     </motion.li>
   );
 }
 
-export function SubtaskRows({ subtasks, onToggle, onOpen, inset = false }: SubtaskRowsProps) {
+export function SubtaskRows({
+  subtasks,
+  onToggle,
+  onOpen,
+  inset = false,
+  parentDueDay,
+  todayDate = today(),
+}: SubtaskRowsProps) {
   const reduced = useReducedMotion();
   const [expanded, setExpanded] = useState(false);
 
@@ -102,10 +140,12 @@ export function SubtaskRows({ subtasks, onToggle, onOpen, inset = false }: Subta
 
   const done = subtasks.filter((task) => task._done === 1).length;
   const overflowing = subtasks.length > COLLAPSE_AFTER;
-  // Open work first when collapsed, so the three on show are the three that
-  // still need doing rather than whichever happen to sort first.
+  // Open work first when collapsed, and inside that the nearest deadline first,
+  // so the three on show are the three that still need doing soonest rather than
+  // whichever happen to sort first. The no-date sentinel sorts last, which puts
+  // a child nobody has dated behind every child somebody has.
   const ordered = overflowing && !expanded
-    ? [...subtasks].sort((a, b) => a._done - b._done)
+    ? [...subtasks].sort((a, b) => a._done - b._done || a._dueDay.localeCompare(b._dueDay))
     : subtasks;
   const shown = overflowing && !expanded ? ordered.slice(0, COLLAPSE_AFTER) : ordered;
   const hidden = subtasks.length - shown.length;
@@ -121,7 +161,18 @@ export function SubtaskRows({ subtasks, onToggle, onOpen, inset = false }: Subta
       <ul>
         <AnimatePresence initial={false}>
           {shown.map((task) => (
-            <SubtaskRow key={task.id} task={task} onToggle={onToggle} onOpen={onOpen} />
+            <SubtaskRow
+              key={task.id}
+              task={task}
+              onToggle={onToggle}
+              onOpen={onOpen}
+              ownDue={
+                task._dueDay !== NO_DUE_DAY && task._dueDay !== parentDueDay
+                  ? task._dueDay
+                  : null
+              }
+              todayDate={todayDate}
+            />
           ))}
         </AnimatePresence>
       </ul>

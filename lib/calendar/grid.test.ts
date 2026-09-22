@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DAYS_IN_WEEK,
   WEEKS_IN_GRID,
+  columnIsoDay,
   gridRange,
   gridStart,
   groupByDate,
@@ -101,6 +102,20 @@ describe('labels', () => {
   it('names the month', () => {
     expect(monthLabel('2026-08', 'en-US')).toBe('August 2026');
     expect(monthLabel('2027-01', 'en-US')).toBe('January 2027');
+  });
+});
+
+describe('columnIsoDay', () => {
+  it('names the weekday each column holds', () => {
+    // Monday start: the last two columns are the ones prefs leaves out of a
+    // default working week.
+    expect([0, 1, 2, 3, 4, 5, 6].map((c) => columnIsoDay(1, c))).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect([0, 1, 2, 3, 4, 5, 6].map((c) => columnIsoDay(7, c))).toEqual([7, 1, 2, 3, 4, 5, 6]);
+  });
+
+  it('reads a stored 0 as Sunday, which is what gridStart already does', () => {
+    expect(columnIsoDay(0, 0)).toBe(7);
+    expect(columnIsoDay(0, 1)).toBe(1);
   });
 });
 

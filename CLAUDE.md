@@ -57,6 +57,12 @@ right and this file is the constitution. Phases 6 through 13 came from a later p
   query already promises by filtering them out of the top level. `TaskList`
   fetches them for the whole page with `useSubtasksFor`, never per row, because a
   hook per row is a live query per row. Past three they collapse behind a count.
+  **`dueBetween` is the one exception**: a subtask whose deadline is not its
+  parent's is on the calendar in its own right, because dropping it hid a date
+  somebody set on purpose. One sharing the parent's day still goes, since the
+  parent already marks that cell. The query returns the parent titles with the
+  rows, so `TaskRow` can say what a top-level subtask belongs to, and
+  `SubtaskRows` shows a child's date only when the parent does not share it.
 - **A key binding is scoped.** `lib/keys/map.ts` is the one list; the dispatcher
   binds `scope: 'global'` and the selection bar binds its own. Backspace must
   not be an app-wide delete key.

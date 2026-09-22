@@ -87,9 +87,21 @@ interface TaskListProps {
   /** Slack per due day, when the page has worked it out. A row uses it to say
    *  its deadline has already gone, which a due date alone cannot. */
   slack?: Map<string, DaySlack>;
+  /** Title by parent id, for a list that can hold a subtask at top level. The
+   *  calendar is the only one: a subtask with a deadline its parent does not
+   *  share belongs to the day it is due, and the parent is not the row above
+   *  it there. */
+  parentTitles?: Map<string, string>;
 }
 
-export function TaskList({ tasks, loading = false, empty, reorder, slack }: TaskListProps) {
+export function TaskList({
+  tasks,
+  loading = false,
+  empty,
+  reorder,
+  slack,
+  parentTitles,
+}: TaskListProps) {
   const todayDate = today();
   // Keyed by route rather than by list, so the two lists on the projects page do
   // not need names. Only the reorderable one shows the picker.
@@ -305,6 +317,7 @@ export function TaskList({ tasks, loading = false, empty, reorder, slack }: Task
                 selected={selectedIds.has(task.id)}
                 onPick={(id, extend) => pickRow(id, order, extend)}
                 subtaskCount={subtaskProgress(children)}
+                parentTitle={parentTitles?.get(task.parentTaskId) ?? null}
                 slack={slack ? slackFor(task, slack) : null}
                 move={moves?.[index] ?? null}
                 onMove={arranged ? handleMove : undefined}
@@ -321,6 +334,8 @@ export function TaskList({ tasks, loading = false, empty, reorder, slack }: Task
                     onToggle={handleToggle}
                     onOpen={openTask}
                     inset={selecting}
+                    parentDueDay={task._dueDay}
+                    todayDate={todayDate}
                   />
                 )}
               </TaskRow>

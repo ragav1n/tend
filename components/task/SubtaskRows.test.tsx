@@ -54,6 +54,11 @@ function sub(title: string, done = false): Task {
   };
 }
 
+/** A child carrying a deadline of its own. */
+function dated(task: Task, day: string): Task {
+  return { ...task, dueDate: day, _dueDay: day };
+}
+
 describe('subtaskProgress', () => {
   it('counts what is done out of the whole', () => {
     expect(subtaskProgress([sub('a', true), sub('b'), sub('c')])).toBe('1/3');
@@ -137,6 +142,61 @@ describe('SubtaskRows', () => {
 
     expect(screen.getByText('live')).toBeTruthy();
     expect(screen.getByText('3/4')).toBeTruthy();
+  });
+
+  it("shows a child's deadline only when the parent does not share it", () => {
+    // The case this whole pass exists for: a part due before the thing it
+    // belongs to. Repeated on a child that matches, the date is furniture.
+    const early = dated(sub('Draft the intro'), '2026-08-24');
+    const same = dated(sub('Print it'), '2026-08-28');
+
+    render(
+      <SubtaskRows
+        subtasks={[early, same]}
+        onToggle={() => {}}
+        parentDueDay="2026-08-28"
+        todayDate="2026-08-21"
+      />,
+    );
+
+    expect(screen.getByText('Monday')).toBeTruthy();
+    expect(screen.queryByText('Aug 28')).toBeNull();
+  });
+
+  it('marks a child whose own deadline has gone', () => {
+    render(
+      <SubtaskRows
+        subtasks={[dated(sub('Draft the intro'), '2026-08-19')]}
+        onToggle={() => {}}
+        parentDueDay="2026-08-28"
+        todayDate="2026-08-21"
+      />,
+    );
+
+    expect(screen.getByText('2 days ago').className).toContain('text-clay-200');
+  });
+
+  it('puts the nearest deadline in front of the collapse', () => {
+    // Four children, three slots. Without the date in the sort the one already
+    // overdue is as likely to be the one behind "1 more" as any other.
+    const rows = [
+      sub('No date at all'),
+      sub('Also no date'),
+      sub('Still no date'),
+      dated(sub('Patch the harness'), '2026-08-18'),
+    ];
+
+    render(
+      <SubtaskRows
+        subtasks={rows}
+        onToggle={() => {}}
+        parentDueDay="2026-08-28"
+        todayDate="2026-08-21"
+      />,
+    );
+
+    expect(screen.getByText('Patch the harness')).toBeTruthy();
+    expect(screen.getByText('1 more')).toBeTruthy();
   });
 
   it('renders nothing at all for an empty list', () => {

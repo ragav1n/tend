@@ -491,12 +491,52 @@ describe('views', () => {
     await completeTask(finished, true, db);
     await createTask({ title: 'Outside', dueDate: daysFrom(40) }, db);
     await createTask({ title: 'Dateless' }, db);
+    // The parent already marks this cell and the child renders under it there.
     await createTask({ title: 'Subtask', dueDate: daysFrom(2), parentTaskId: inside }, db);
 
-    const rows = await dueBetween(daysFrom(0), daysFrom(30), db);
+    const { tasks } = await dueBetween(daysFrom(0), daysFrom(30), db);
     // Ordered by day, and the completed one is still on the day it was due.
-    expect(rows.map((t) => t.id)).toEqual([finished, inside]);
-    expect(rows[0]!._done).toBe(1);
+    expect(tasks.map((t) => t.id)).toEqual([finished, inside]);
+    expect(tasks[0]!._done).toBe(1);
+  });
+
+  it('puts a subtask on the calendar when its deadline is not its parent\'s', async () => {
+    const parent = await createTask({ title: 'Submit the report', dueDate: daysFrom(9) }, db);
+    const part = await createTask(
+      { title: 'Draft the intro', dueDate: daysFrom(3), parentTaskId: parent },
+      db,
+    );
+
+    const { tasks, parentTitles } = await dueBetween(daysFrom(0), daysFrom(30), db);
+
+    // The earlier date is a commitment of its own, so it marks its own day.
+    expect(tasks.map((t) => t.id)).toEqual([part, parent]);
+    expect(parentTitles.get(parent)).toBe('Submit the report');
+  });
+
+  it('gives a subtask its own day even when the parent has no date', async () => {
+    const parent = await createTask({ title: 'Move flat' }, db);
+    const part = await createTask(
+      { title: 'Book a van', dueDate: daysFrom(4), parentTaskId: parent },
+      db,
+    );
+
+    const { tasks } = await dueBetween(daysFrom(0), daysFrom(30), db);
+    expect(tasks.map((t) => t.id)).toEqual([part]);
+  });
+
+  it("puts a day's own work above the deadlines borrowed from a bigger task", async () => {
+    // Both on the same day. Interleaved, the cell has two chip styles in no
+    // order and reads as noise.
+    const parent = await createTask({ title: 'Thesis', dueDate: daysFrom(20) }, db);
+    const part = await createTask(
+      { title: 'Chapter two', dueDate: daysFrom(5), parentTaskId: parent },
+      db,
+    );
+    const own = await createTask({ title: 'Renew the pass', dueDate: daysFrom(5) }, db);
+
+    const { tasks } = await dueBetween(daysFrom(0), daysFrom(30), db);
+    expect(tasks.map((t) => t.id)).toEqual([own, part, parent]);
   });
 
   it('keeps a filed task out of the inbox', async () => {

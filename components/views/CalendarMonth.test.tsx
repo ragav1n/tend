@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
-import type { PlainDate, Task } from '@/lib/db/types';
+import { cleanup, render, screen } from '@testing-library/react';
+import { NO_DUE_DAY, type PlainDate, type Task } from '@/lib/db/types';
 import { CalendarMonth } from './CalendarMonth';
 
 /**
@@ -13,6 +13,11 @@ import { CalendarMonth } from './CalendarMonth';
  * past the edge of the grid asks for a day in the next month rather than
  * stopping, one cell holds the tab stop, and a press with focus outside the grid
  * is left alone so the page still scrolls.
+ *
+ * The chips have a suite of their own below. A subtask carrying a deadline its
+ * parent does not share is on the grid in its own right, and the cell is too
+ * narrow for the parent's name, so the tooltip is what says where the work came
+ * from. That is invisible in a screenshot.
  */
 
 afterEach(cleanup);
@@ -132,5 +137,70 @@ describe('the month grid from a keyboard', () => {
     // Swallowed here, the arrow keys would stop scrolling the page.
     expect(event.defaultPrevented).toBe(false);
     expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
+/** A row on the grid. Only the fields the cell reads are filled in. */
+function task(id: string, title: string, day: PlainDate, parentTaskId = ''): Task {
+  return {
+    id,
+    title,
+    parentTaskId,
+    status: 'active',
+    _done: 0,
+    _dueDay: day,
+    _plannedDay: NO_DUE_DAY,
+  } as Task;
+}
+
+describe('the chips in a cell', () => {
+  // The stub is this suite's alone, or the file's later cases would inherit a
+  // wide screen from whichever one ran first.
+  afterEach(() => vi.unstubAllGlobals());
+
+  // The chips are the wide layout; the phone cell shows dots and no titles.
+  function wide(rows: Task[], parentTitles?: Map<string, string>) {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+
+    return render(
+      <CalendarMonth
+        month="2026-08"
+        weekStart={1}
+        tasksByDay={new Map([['2026-08-21', rows]])}
+        selected="2026-08-21"
+        todayDate="2026-08-21"
+        onSelect={vi.fn()}
+        onMove={vi.fn()}
+        onOpen={vi.fn()}
+        parentTitles={parentTitles}
+        workDays={[1, 2, 3, 4, 5]}
+      />,
+    );
+  }
+
+  it('names the parent of a subtask chip, since the cell cannot hold it', () => {
+    wide(
+      [task('t1', 'Draft the intro', '2026-08-21', 'p1')],
+      new Map([['p1', 'Submit the report']]),
+    );
+
+    expect(screen.getByTitle('Draft the intro, in Submit the report')).toBeTruthy();
+  });
+
+  it('leaves a top-level chip titled with its own title alone', () => {
+    wide([task('t1', 'Renew the pass', '2026-08-21')]);
+    expect(screen.getByTitle('Renew the pass')).toBeTruthy();
+  });
+
+  it('counts a subtask in the day the screen reader is told about', () => {
+    wide([task('t1', 'Draft the intro', '2026-08-21', 'p1')]);
+    // The label used to be built from a list a subtask never reached, so a day
+    // holding one open part announced no open work at all.
+    expect(screen.getByLabelText('2026-08-21, 1 open task')).toBeTruthy();
   });
 });

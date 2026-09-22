@@ -144,6 +144,30 @@ export async function upcomingList(
   return rows.filter((t) => t.parentTaskId === NO_PARENT);
 }
 
+/** What the calendar reads: the window's rows, and the parents they hang off. */
+export interface DueWindow {
+  tasks: Task[];
+  /** Title by parent id, for every subtask in `tasks`. A row that belongs to a
+   *  bigger piece of work has to be able to name it, and this query already
+   *  loaded the parent to decide the row belonged here at all. */
+  parentTitles: Map<string, string>;
+}
+
+/**
+ * Orders a day's rows: the day's own commitments first, then the deadlines
+ * borrowed from a bigger piece of work, each run in the user's order.
+ *
+ * Interleaving the two is what makes a cell look chaotic, because the grid draws
+ * them differently and the eye then has two patterns to unpick per day.
+ */
+function compareDueRank(a: Task, b: Task): number {
+  if (a._dueDay !== b._dueDay) return a._dueDay < b._dueDay ? -1 : 1;
+  const aChild = a.parentTaskId === NO_PARENT ? 0 : 1;
+  const bChild = b.parentTaskId === NO_PARENT ? 0 : 1;
+  if (aChild !== bChild) return aChild - bChild;
+  return compareRank(a, b);
+}
+
 /**
  * Everything dated inside a window, open and closed, for the calendar grid.
  *
@@ -151,12 +175,22 @@ export async function upcomingList(
  * so a single range would have to walk both halves of the store. Completed work
  * stays in the answer: a month with nothing on the days already lived through
  * reads as a broken calendar rather than a finished week.
+ *
+ * A subtask is in the answer when its deadline is not its parent's. Dropping
+ * every child, which is what the list queries do, threw away a date somebody set
+ * on purpose: a part due Friday inside a task due the following Thursday marked
+ * Thursday and nothing else, so the calendar disagreed with the task. A child
+ * that shares its parent's day still stays out, because the parent already marks
+ * that cell and the child renders underneath it there.
+ *
+ * The parents are fetched by primary key, one get per distinct parent of a dated
+ * child in the window, which is bounded by the window rather than by the store.
  */
 export async function dueBetween(
   from: PlainDate,
   to: PlainDate,
   db: TendDb = getDb(),
-): Promise<Task[]> {
+): Promise<DueWindow> {
   const [open, closed] = await Promise.all([
     db.tasks
       .where('[_del+_done+_dueDay+sortKey]')
@@ -168,9 +202,37 @@ export async function dueBetween(
       .toArray(),
   ]);
 
-  return [...open, ...closed]
-    .filter((t) => t.parentTaskId === NO_PARENT)
-    .sort((a, b) => (a._dueDay === b._dueDay ? compareRank(a, b) : a._dueDay < b._dueDay ? -1 : 1));
+  const rows = [...open, ...closed];
+  const parentIds = [
+    ...new Set(rows.filter((t) => t.parentTaskId !== NO_PARENT).map((t) => t.parentTaskId)),
+  ];
+  const parents = new Map(
+    (await db.tasks.bulkGet(parentIds))
+      // A deleted parent counts as no parent. It draws no chip of its own, so
+      // measuring a child against its day would hide the child on a day nothing
+      // else marks. A delete cascades to its children, so this is the narrow
+      // case of a child restored on its own.
+      .filter((row): row is Task => row !== undefined && row._del === 0)
+      .map((row) => [row.id, row]),
+  );
+
+  const tasks = rows
+    .filter((t) => {
+      if (t.parentTaskId === NO_PARENT) return true;
+      const parent = parents.get(t.parentTaskId);
+      // A parent the local copy has not got is no reason to hide a date. The
+      // child's own day is the only fact here either way.
+      return parent === undefined || parent._dueDay !== t._dueDay;
+    })
+    .sort(compareDueRank);
+
+  const parentTitles = new Map<string, string>();
+  for (const task of tasks) {
+    const parent = parents.get(task.parentTaskId);
+    if (parent) parentTitles.set(parent.id, parent.title);
+  }
+
+  return { tasks, parentTitles };
 }
 
 /**

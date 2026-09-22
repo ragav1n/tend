@@ -2,6 +2,7 @@
 
 import { motion, useReducedMotion, type PanInfo } from 'motion/react';
 import {
+  ArrowElbowDownRight,
   Check,
   CalendarBlank,
   Flag,
@@ -49,6 +50,12 @@ interface TaskRowProps {
   /** "2/5", when the task has children. Passed in because the list already
    *  fetched every parent's children in one go. */
   subtaskCount?: string | null;
+  /** What this row belongs to, when it is a subtask standing on its own. The
+   *  calendar puts a subtask carrying its own deadline in the day list, and
+   *  "Draft the intro" with nothing saying which thing it drafts is a puzzle.
+   *  Null on every list that renders children under their parent, where the
+   *  parent is the row above. */
+  parentTitle?: string | null;
   /** The names of this task's tags, in the order it holds them. Resolved by the
    *  list from one `useTags`, because a name lookup per row is a live query per
    *  row. A count was all this row used to show, which made a tag something you
@@ -89,6 +96,7 @@ export function TaskRow({
   selected = false,
   onPick,
   subtaskCount = null,
+  parentTitle = null,
   tagNames = [],
   slack = null,
   move = null,
@@ -232,6 +240,7 @@ export function TaskRow({
             (slack !== null && slack.slack < 0 && !done) ||
             task.priority > 0 ||
             tagNames.length > 0 ||
+            parentTitle ||
             subtaskCount) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
               {hasDue && (
@@ -250,6 +259,19 @@ export function TaskRow({
                     {formatDueLabel(task._dueDay, todayDate)}
                     {task.dueTime ? ` ${formatClock(task.dueTime)}` : ''}
                   </span>
+                </span>
+              )}
+
+              {/* First after the date, because it is what the title is missing.
+                  The same elbow the calendar chip wears, so the two surfaces
+                  make the claim with one glyph. */}
+              {parentTitle && (
+                <span
+                  className="inline-flex min-w-0 items-center gap-1 text-xs text-text-lo"
+                  title={`Part of ${parentTitle}`}
+                >
+                  <ArrowElbowDownRight size={13} aria-hidden className="shrink-0" />
+                  <span className="max-w-[12rem] truncate">{parentTitle}</span>
                 </span>
               )}
 

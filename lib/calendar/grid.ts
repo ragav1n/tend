@@ -80,6 +80,21 @@ export function gridRange(month: Month, weekStart: number): { from: PlainDate; t
   return { from, to: shiftDays(from, WEEKS_IN_GRID * DAYS_IN_WEEK - 1) };
 }
 
+/**
+ * The ISO weekday a grid column holds, 1 Monday through 7 Sunday.
+ *
+ * What lets a cell know whether the day carries capacity, which is the one
+ * honest reason to draw a day back: `prefs.workDays` holds ISO days, and a
+ * hardcoded Saturday and Sunday would be wrong for anybody who works them.
+ *
+ * A `weekStart` of 0 has always meant Sunday to `gridStart`, so it means Sunday
+ * here rather than a weekday that does not exist.
+ */
+export function columnIsoDay(weekStart: number, column: number): number {
+  const first = ((weekStart + 6) % DAYS_IN_WEEK) + 1;
+  return ((first - 1 + column) % DAYS_IN_WEEK) + 1;
+}
+
 /** Six weeks of seven days, ready to render row by row. */
 export function monthGrid(month: Month, weekStart: number): CalendarDay[][] {
   const start = gridStart(month, weekStart);

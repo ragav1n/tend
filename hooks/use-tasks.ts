@@ -33,6 +33,7 @@ import {
   todayProgress,
   upcomingList,
 } from '@/lib/db/queries';
+import type { DueWindow } from '@/lib/db/queries';
 import type {
   ActivityEntry,
   FocusSession,
@@ -74,9 +75,12 @@ export function useUpcomingList(days = 30): Task[] {
   return useStableLiveQuery(() => upcomingList(today(), days), [days], NO_TASKS);
 }
 
+/** Module-scope so the placeholder is one object, not a new one per render. */
+const NO_DUE_WINDOW: DueWindow = { tasks: NO_TASKS, parentTitles: new Map() };
+
 /** Everything dated inside a window, which is what the calendar grid reads. */
-export function useDueBetween(from: string, to: string): Task[] {
-  return useStableLiveQuery(() => dueBetween(from, to), [from, to], NO_TASKS);
+export function useDueBetween(from: string, to: string): DueWindow {
+  return useStableLiveQuery(() => dueBetween(from, to), [from, to], NO_DUE_WINDOW);
 }
 
 export function useInboxList(): Task[] {
