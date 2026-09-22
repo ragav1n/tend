@@ -41,6 +41,7 @@ interface ImportResult {
   updated: number;
   events: number;
   unmatched: number;
+  skipped: number;
   failures?: { label: string; reason: string }[];
 }
 
@@ -96,6 +97,9 @@ export function FeedSettings() {
           description: [
             result.updated > 0 ? `${result.updated} already here` : null,
             result.events > 0 ? `${result.events} class or exam times` : null,
+            result.skipped > 0
+              ? `${result.skipped} already handled, so they were left alone`
+              : null,
             result.unmatched > 0
               ? `${result.unmatched} matched no course, so they are in the Inbox`
               : null,

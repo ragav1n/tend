@@ -47,7 +47,7 @@ export async function POST() {
     return NextResponse.json({ error: 'could not read the feed list' }, { status: 500 });
   }
   if (!feeds || feeds.length === 0) {
-    return NextResponse.json({ feeds: 0, inserted: 0, updated: 0, events: 0, unmatched: 0 });
+    return NextResponse.json({ feeds: 0, inserted: 0, updated: 0, events: 0, unmatched: 0, skipped: 0 });
   }
 
   const { data: courseRows } = await supabase
@@ -61,7 +61,7 @@ export async function POST() {
     feedLabel: (row.feed_label as string) ?? '',
   }));
 
-  const total = { feeds: 0, inserted: 0, updated: 0, events: 0, unmatched: 0 };
+  const total = { feeds: 0, inserted: 0, updated: 0, events: 0, unmatched: 0, skipped: 0 };
   const failures: { label: string; reason: string }[] = [];
 
   for (const feed of feeds as FeedRow[]) {
@@ -77,6 +77,7 @@ export async function POST() {
     total.updated += outcome.updated;
     total.events += outcome.events;
     total.unmatched += outcome.unmatched;
+    total.skipped += outcome.skipped;
   }
 
   return NextResponse.json({ ...total, failures });
@@ -87,7 +88,8 @@ async function importOne(
   feed: FeedRow,
   courses: readonly MatchableCourse[],
 ): Promise<
-  { inserted: number; updated: number; events: number; unmatched: number } | { reason: string }
+  | { inserted: number; updated: number; events: number; unmatched: number; skipped: number }
+  | { reason: string }
 > {
   const stamp = new Date().toISOString();
 
@@ -106,7 +108,12 @@ async function importOne(
     return { reason };
   }
 
-  const counts = (data ?? {}) as { inserted?: number; updated?: number; events?: number };
+  const counts = (data ?? {}) as {
+    inserted?: number;
+    updated?: number;
+    events?: number;
+    skipped?: number;
+  };
 
   await supabase
     .from('feeds')
@@ -123,6 +130,11 @@ async function importOne(
     updated: counts.updated ?? 0,
     events: counts.events ?? 0,
     unmatched: payload.unmatched,
+    // The SQL has always counted these and the route threw the number away, so
+    // an import that filed nothing reported nothing and looked broken. A
+    // deadline you deleted is skipped on purpose; forty-eight of them is a
+    // fact worth putting on screen.
+    skipped: counts.skipped ?? 0,
   };
 }
 
