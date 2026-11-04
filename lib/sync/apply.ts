@@ -85,13 +85,44 @@ function isStale(incoming: number, local: number | undefined): boolean {
   return local !== undefined && local > 0 && incoming <= local;
 }
 
+/** Outbox states whose patch has not reached a row the server sent back yet. */
+const UNSENT = new Set(['pending', 'inflight', 'failed']);
+
+/**
+ * The fields this device has changed on each task and not yet seen come back.
+ *
+ * Push precedes pull inside a cycle, but an edit made while that pull is in
+ * flight is not in the push. The pull then carries a row whose version beats
+ * the local one and lacks the edit, so applying it as is puts the old value
+ * back on screen until the next cycle resends the edit. A due date changed
+ * right after a rename is the common case. Inserts are left out: the full row
+ * they carry would overwrite columns the server has moved since.
+ */
+async function unsentPatches(
+  db: TendDb,
+  ids: string[],
+): Promise<Map<string, Record<string, unknown>>> {
+  const records = await db.outbox
+    .where('[table+entityId]')
+    .anyOf(ids.map((id) => ['tasks', id]))
+    .toArray();
+
+  const patches = new Map<string, Record<string, unknown>>();
+  records
+    .filter((r) => r.op !== 'insert' && UNSENT.has(r.state))
+    .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
+    .forEach((r) => patches.set(r.entityId, { ...patches.get(r.entityId), ...r.patch }));
+  return patches;
+}
+
 async function applyTasks(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
   const result: ApplyResult = { applied: 0, skipped: 0 };
 
-  await db.transaction('rw', [db.tasks, db.taskTags], async () => {
+  await db.transaction('rw', [db.tasks, db.taskTags, db.outbox], async () => {
     const ids = rows.map((r) => String(r.row.id));
     const existing = await db.tasks.bulkGet(ids);
     const current = new Map(existing.filter((t): t is Task => t !== undefined).map((t) => [t.id, t]));
+    const unsent = await unsentPatches(db, ids);
 
     const puts: Task[] = [];
 
@@ -106,7 +137,11 @@ async function applyTasks(db: TendDb, rows: PullRow[]): Promise<ApplyResult> {
       // Merged over whatever is stored rather than replacing it, so a column
       // this client is too old to know about survives the round trip instead of
       // being dropped on the floor.
-      const base = { ...(current.get(id) ?? {}), ...wireToLocal('tasks', row) } as Task;
+      const base = {
+        ...(current.get(id) ?? {}),
+        ...wireToLocal('tasks', row),
+        ...unsent.get(id),
+      } as Task;
       const tagIds = tagIdsOf(row);
 
       if (tagIds !== null) {

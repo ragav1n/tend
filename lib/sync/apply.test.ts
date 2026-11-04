@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import Dexie from 'dexie';
 import { setDb, TendDb } from '@/lib/db/client';
-import { createSavedView, createTask, ensureTag, setTaskTags } from '@/lib/db/mutations';
+import {
+  createSavedView,
+  createTask,
+  deleteTask,
+  ensureTag,
+  setTaskTags,
+  updateTask,
+} from '@/lib/db/mutations';
 import { todayList, today } from '@/lib/db/queries';
 import { APPLIERS, applyPage, discardLocal, readCursor, TABLE_ORDER, writeCursor } from './apply';
 import type { PullRow, WireTable } from './protocol';
@@ -133,6 +140,105 @@ describe('applying a pulled page', () => {
     await applyPage(db, [taskRow({ deleted_at: '2026-08-18T01:00:00.000Z', row_version: 11 })]);
     expect((await db.tasks.get('task-1'))?._del).toBe(1);
     expect(await todayList(today(), db)).toHaveLength(0);
+  });
+});
+
+/**
+ * An edit made while a pull is in flight.
+ *
+ * The pull's row is newer than the local one and was read before the edit
+ * reached the server, so taken as is it puts the old value back until the next
+ * cycle resends the edit. That flash is how a due date changed right after a
+ * rename read as "did not register".
+ */
+describe('edits that have not reached the server yet', () => {
+  async function seed() {
+    await applyPage(db, [taskRow({ due_date: '2026-10-30' })]);
+  }
+
+  /** The server's copy after some other change, without the local edit. */
+  const echo = (over: Record<string, unknown> = {}) =>
+    taskRow({ due_date: '2026-10-30', title: 'Buy oat milk and bread', row_version: 11, ...over });
+
+  it('keeps a queued due date over a newer row that lacks it', async () => {
+    await seed();
+    await updateTask('task-1', { dueDate: '2026-11-05' }, db);
+
+    await applyPage(db, [echo()]);
+
+    const task = await db.tasks.get('task-1');
+    expect(task?.dueDate).toBe('2026-11-05');
+    expect(task?._dueDay).toBe('2026-11-05');
+    // Everything the edit did not touch still comes from the server.
+    expect(task?.title).toBe('Buy oat milk and bread');
+    expect(task?.rowVersion).toBe(11);
+  });
+
+  it('keeps the edit while its push is in flight or waiting on a retry', async () => {
+    for (const state of ['inflight', 'failed'] as const) {
+      await seed();
+      await updateTask('task-1', { dueDate: '2026-11-05' }, db);
+      await db.outbox.toCollection().modify({ state });
+
+      await applyPage(db, [echo()]);
+      expect((await db.tasks.get('task-1'))?.dueDate).toBe('2026-11-05');
+
+      await db.outbox.clear();
+      await db.tasks.clear();
+    }
+  });
+
+  it('lets the server win once the edit is acked', async () => {
+    await seed();
+    await updateTask('task-1', { dueDate: '2026-11-05' }, db);
+    await db.outbox.clear();
+
+    await applyPage(db, [echo({ due_date: '2026-11-20' })]);
+    expect((await db.tasks.get('task-1'))?.dueDate).toBe('2026-11-20');
+  });
+
+  it('does not hold a dead edit over the server, since nothing will resend it', async () => {
+    await seed();
+    await updateTask('task-1', { dueDate: '2026-11-05' }, db);
+    await db.outbox.toCollection().modify({ state: 'dead' });
+
+    await applyPage(db, [echo()]);
+    expect((await db.tasks.get('task-1'))?.dueDate).toBe('2026-10-30');
+  });
+
+  it('layers several queued edits in the order they were made', async () => {
+    await seed();
+    await updateTask('task-1', { dueDate: '2026-11-05' }, db);
+    await updateTask('task-1', { dueDate: '2026-11-06', priority: 2 }, db);
+
+    await applyPage(db, [echo()]);
+    const task = await db.tasks.get('task-1');
+    expect(task?.dueDate).toBe('2026-11-06');
+    expect(task?.priority).toBe(2);
+  });
+
+  it('keeps a queued delete deleted', async () => {
+    await seed();
+    await deleteTask('task-1', db);
+
+    await applyPage(db, [echo()]);
+    expect((await db.tasks.get('task-1'))?._del).toBe(1);
+  });
+
+  it('does not lay a queued insert over the server row', async () => {
+    const id = await createTask({ title: 'Local draft', dueDate: '2026-10-30' }, db);
+
+    await applyPage(db, [echo({ id, title: 'Server title' })]);
+    expect((await db.tasks.get(id))?.title).toBe('Server title');
+  });
+
+  it('touches no other task', async () => {
+    await seed();
+    await applyPage(db, [taskRow({ id: 'task-2', due_date: '2026-10-01' })]);
+    await updateTask('task-1', { dueDate: '2026-11-05' }, db);
+
+    await applyPage(db, [echo({ id: 'task-2', due_date: '2026-10-02' })]);
+    expect((await db.tasks.get('task-2'))?.dueDate).toBe('2026-10-02');
   });
 });
 

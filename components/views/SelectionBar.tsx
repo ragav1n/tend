@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import { useHotkeys } from '@/hooks/use-hotkeys';
 import { useProjects, useTasksByIds } from '@/hooks/use-tasks';
 import { useSelectionStore } from '@/hooks/use-selection';
+import { CommitInput } from '@/components/ui/CommitInput';
 import { Sheet } from '@/components/ui/Sheet';
 
 /**
@@ -238,10 +239,13 @@ function SelectionBar() {
           <SheetOption label="No date" onClick={() => schedule(null)} />
           <li className="pt-1">
             <label className="label mb-1.5 block">Pick a date</label>
-            <input
+            <CommitInput
               type="date"
               aria-label="Due date"
-              onChange={(event) => event.target.value && schedule(event.target.value)}
+              value=""
+              allowEmpty={false}
+              commitOnUnmount={false}
+              onCommit={schedule}
               className={cn(
                 'tnum w-full rounded-md border border-line bg-sunken px-2.5 py-2',
                 'text-sm text-text-hi focus:border-clay-400 focus:outline-none',

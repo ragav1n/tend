@@ -16,6 +16,7 @@ import {
   type IsoDow,
   type RecurrenceRule,
 } from '@/lib/recurrence';
+import { CommitInput } from '@/components/ui/CommitInput';
 import { controlClass, Field } from '@/components/ui/Field';
 import { Segmented } from '@/components/ui/Segmented';
 import { cn } from '@/lib/utils';
@@ -242,11 +243,11 @@ export function RecurrenceEditor({ task, series }: { task: Task; series: TaskSer
               </select>
 
               {draft.endsMode === 'on_date' && (
-                <input
+                <CommitInput
                   type="date"
                   aria-label="Ends on"
                   value={draft.endsOn ?? anchor}
-                  onChange={(e) => commit({ ...draft, endsOn: e.target.value || undefined })}
+                  onCommit={(value) => commit({ ...draft, endsOn: value || undefined })}
                   className={cn(controlClass, 'tnum bg-void')}
                 />
               )}

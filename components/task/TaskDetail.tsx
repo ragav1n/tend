@@ -40,6 +40,7 @@ import {
 import { useProjects, useSeries, useTags } from '@/hooks/use-tasks';
 import { useComponents, useCourses } from '@/hooks/use-courses';
 import { useTaskReminders } from '@/hooks/use-tasks';
+import { CommitInput } from '@/components/ui/CommitInput';
 import { Field, FieldGroup, controlClass } from '@/components/ui/Field';
 import { Markdown } from '@/components/ui/Markdown';
 import { Segmented } from '@/components/ui/Segmented';
@@ -306,43 +307,43 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
 
       <section className="border-t border-line pt-3">
         <Field label="Due" icon={CalendarBlank} htmlFor="due-date">
-          <input
+          <CommitInput
             id="due-date"
             type="date"
             value={task.dueDate ?? ''}
-            onChange={(e) => patch({ dueDate: e.target.value || null })}
+            onCommit={(value) => patch({ dueDate: value || null })}
             className={cn(controlClass, 'tnum')}
           />
         </Field>
 
         <Field label="Time" icon={Clock} htmlFor="due-time">
-          <input
+          <CommitInput
             id="due-time"
             type="time"
             value={task.dueTime ?? ''}
             disabled={task.dueDate === null}
-            onChange={(e) => patch({ dueTime: e.target.value || null })}
+            onCommit={(value) => patch({ dueTime: value || null })}
             className={cn(controlClass, 'tnum disabled:text-text-faint')}
           />
         </Field>
 
         <Field label="Start" icon={CalendarBlank} htmlFor="start-date">
-          <input
+          <CommitInput
             id="start-date"
             type="date"
             value={task.startDate ?? ''}
-            onChange={(e) => patch({ startDate: e.target.value || null })}
+            onCommit={(value) => patch({ startDate: value || null })}
             className={cn(controlClass, 'tnum')}
           />
         </Field>
 
         <Field label="Planned" icon={Sun} htmlFor="planned-for">
           <div className="flex items-center gap-1.5">
-            <input
+            <CommitInput
               id="planned-for"
               type="date"
               value={task.plannedFor ?? ''}
-              onChange={(e) => patch({ plannedFor: e.target.value || null })}
+              onCommit={(value) => patch({ plannedFor: value || null })}
               className={cn(controlClass, 'tnum')}
             />
             <button

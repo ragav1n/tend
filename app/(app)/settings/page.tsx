@@ -15,6 +15,7 @@ import {
   SignOut,
   Sparkle,
 } from '@phosphor-icons/react/dist/ssr';
+import { CommitInput } from '@/components/ui/CommitInput';
 import { Segmented } from '@/components/ui/Segmented';
 import { Toggle } from '@/components/ui/Toggle';
 import { controlClass } from '@/components/ui/Field';
@@ -794,17 +795,15 @@ function TimeInput({
   onChange: (value: string) => void;
 }) {
   return (
-    <input
+    <CommitInput
       id={id}
       type="time"
       aria-label={label}
       className={cn(controlClass, 'tnum w-[6.5rem]')}
       value={toTimeInput(value)}
       disabled={disabled}
-      onChange={(event) => {
-        if (!event.target.value) return;
-        onChange(fromTimeInput(event.target.value));
-      }}
+      allowEmpty={false}
+      onCommit={(next) => onChange(fromTimeInput(next))}
     />
   );
 }

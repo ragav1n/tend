@@ -108,6 +108,17 @@ right and this file is the constitution. Phases 6 through 13 came from a later p
   0008 to 0027 a digest past 25 qualifying tasks kept an arbitrary 25 and then
   sorted them, which looks right in the email and holds the wrong tasks. Any
   future `limit` in that pipeline needs its `order by` in the same subquery.
+- **A date or time field that writes to the store is a `CommitInput`**, never a
+  bare `<input type="date">` bound to the live row. Chrome fires `change` once per
+  typed segment that leaves a valid date (the year 2026 arrives as 0002, 0020,
+  0202), so the bare field wrote every one and React put the stored date back
+  under the cursor before the write returned: a typed due date reverted on the
+  first try. A picker change still commits at once; a typed one waits for blur,
+  Enter or unmount.
+- **A pulled task row keeps this device's unsent edits.** `applyTasks` lays the
+  patches still pending, inflight or failed in the outbox over the server row.
+  Push precedes pull inside a cycle, but an edit made while the pull is in flight
+  is not in that push, and the pulled row is newer than the local one.
 - **A key binding is scoped.** `lib/keys/map.ts` is the one list; the dispatcher
   binds `scope: 'global'` and the selection bar binds its own. Backspace must
   not be an app-wide delete key.
