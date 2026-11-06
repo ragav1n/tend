@@ -15,6 +15,7 @@ import {
   projectOptions,
   searchTasks,
   seriesById,
+  seriesOccurrences,
   sidebarCounts,
   somedayDeferred,
   somedayList,
@@ -204,6 +205,10 @@ export function useTask(id: string | null): Task | undefined {
 
 export function useSeries(seriesId: string | undefined): TaskSeries | undefined {
   return useLiveQuery(() => seriesById(seriesId ?? ''), [seriesId]);
+}
+
+export function useSeriesOccurrences(seriesId: string): Task[] {
+  return useStableLiveQuery(() => seriesOccurrences(seriesId), [seriesId], NO_TASKS);
 }
 
 const NO_PROJECTS: Project[] = [];

@@ -19,6 +19,7 @@ import {
 import { CommitInput } from '@/components/ui/CommitInput';
 import { controlClass, Field } from '@/components/ui/Field';
 import { Segmented } from '@/components/ui/Segmented';
+import { HabitStreak } from './HabitStreak';
 import { cn } from '@/lib/utils';
 
 /**
@@ -221,6 +222,20 @@ export function RecurrenceEditor({ task, series }: { task: Task; series: TaskSer
               onChange={(anchorMode) => commit({ ...draft, anchorMode })}
             />
 
+            {/* What happens to an occurrence nobody got to. Rolling it on is the
+                default, so a daily task is on Today rather than in Overdue;
+                keeping it is for somebody who wants the gap to show. */}
+            <Segmented
+              id="catchup-policy"
+              label="If missed"
+              value={draft.catchupPolicy}
+              options={[
+                { value: 'skip_to_future', label: 'Move it on' },
+                { value: 'keep_backlog', label: 'Keep it overdue' },
+              ]}
+              onChange={(catchupPolicy) => commit({ ...draft, catchupPolicy })}
+            />
+
             <div className="flex items-center gap-2">
               <select
                 value={draft.endsMode}
@@ -279,6 +294,8 @@ export function RecurrenceEditor({ task, series }: { task: Task; series: TaskSer
                 <span className="tnum"> · {series.completedCount} done</span>
               )}
             </p>
+
+            {series && <HabitStreak seriesId={series.id} rule={draft} />}
           </motion.div>
         )}
       </AnimatePresence>

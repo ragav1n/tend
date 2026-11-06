@@ -9,6 +9,7 @@ import {
   Flag,
   FolderSimple,
   Hourglass,
+  Kanban,
   GraduationCap,
   Percent,
   Prohibit,
@@ -18,6 +19,7 @@ import {
 import {
   addTaskReminder,
   cancelTasks,
+  completeTask,
   createProject,
   removeTaskReminder,
   deleteTask,
@@ -36,6 +38,7 @@ import {
   type CancelReason,
   type Priority,
   type Task,
+  type TaskStatus,
 } from '@/lib/db/types';
 import { useProjects, useSeries, useTags } from '@/hooks/use-tasks';
 import { useComponents, useCourses } from '@/hooks/use-courses';
@@ -71,6 +74,12 @@ const PRIORITY_OPTIONS: { value: Priority; label: string }[] = [
   { value: 1, label: 'Low' },
   { value: 2, label: 'Med' },
   { value: 3, label: 'High' },
+];
+
+const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
+  { value: 'inbox', label: 'Inbox' },
+  { value: 'active', label: 'Doing' },
+  { value: 'waiting', label: 'Waiting' },
 ];
 
 const NEW_PROJECT = '__new';
@@ -234,7 +243,9 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
         <div className="pt-1">
           <TaskCheck
             checked={done}
-            onChange={(next) => patch({ status: next ? 'done' : 'active' })}
+            // completeTask, as every list does. A status patch marked a repeating
+            // task done and never made the next one, so the repeat stopped.
+            onChange={(next) => void completeTask(task.id, next)}
             label={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
             layoutId={`task-check-${task.id}`}
           />
@@ -358,6 +369,21 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
             </button>
           </div>
         </Field>
+
+        {/* Done has the checkbox and cancelled has its own section, so this
+            offers only the open states. Waiting was reachable by nothing but a
+            drag on the board. */}
+        {task.status !== 'done' && task.status !== 'cancelled' && (
+          <Field label="Status" icon={Kanban}>
+            <Segmented
+              id="status"
+              label="Status"
+              value={task.status}
+              options={STATUS_OPTIONS}
+              onChange={(status) => patch({ status })}
+            />
+          </Field>
+        )}
 
         <Field label="Priority" icon={Flag}>
           <Segmented

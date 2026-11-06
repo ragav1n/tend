@@ -407,6 +407,16 @@ export async function tasksByIds(ids: readonly string[], db: TendDb = getDb()): 
 
 /** The rule a task repeats by. Undefined for an empty id or a tombstoned row,
  *  so a caller never has to check both. */
+/** Every live occurrence of a series, open and finished, for its streak. */
+export async function seriesOccurrences(seriesId: string, db: TendDb = getDb()): Promise<Task[]> {
+  if (seriesId === '') return [];
+  return db.tasks
+    .where('seriesId')
+    .equals(seriesId)
+    .filter((t) => t._del === 0)
+    .toArray();
+}
+
 export async function seriesById(
   seriesId: string,
   db: TendDb = getDb(),
