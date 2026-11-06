@@ -1506,47 +1506,47 @@ describe('cutting the digest list down', () => {
   }, 60_000);
 });
 
+let series = 0;
+
+/** An open occurrence of a series, due on `dueDate`. */
+async function repeating(
+  userId: string,
+  rule: Partial<RecurrenceRule>,
+  dueDate: string,
+  title = 'Stretch',
+): Promise<string> {
+  series += 1;
+  const seriesId = `55555555-0000-4000-8000-${String(series).padStart(12, '0')}`;
+  const r: RecurrenceRule = { ...DAILY, ...rule };
+  await pg.query(
+    `insert into public.task_series
+       (id, user_id, freq, interval, byday, bymonthday, bymonth, month_week,
+        anchor_mode, catchup_policy, ends_mode, ends_on)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    [
+      seriesId,
+      userId,
+      r.freq,
+      r.interval,
+      r.byday ?? [],
+      r.bymonthday ?? [],
+      r.bymonth ?? [],
+      r.monthWeek ?? 0,
+      r.anchorMode,
+      r.catchupPolicy,
+      r.endsMode,
+      r.endsOn ?? null,
+    ],
+  );
+  const id = await newTask(userId, { title, dueDate });
+  await pg.query(
+    `update public.tasks set series_id = $2, occurrence_date = $3, occurrence_seq = 0 where id = $1`,
+    [id, seriesId, dueDate],
+  );
+  return id;
+}
+
 describe('a missed repeat, 0029', () => {
-  let series = 0;
-
-  /** An open occurrence of a series, due on `dueDate`. */
-  async function repeating(
-    userId: string,
-    rule: Partial<RecurrenceRule>,
-    dueDate: string,
-    title = 'Stretch',
-  ): Promise<string> {
-    series += 1;
-    const seriesId = `55555555-0000-4000-8000-${String(series).padStart(12, '0')}`;
-    const r: RecurrenceRule = { ...DAILY, ...rule };
-    await pg.query(
-      `insert into public.task_series
-         (id, user_id, freq, interval, byday, bymonthday, bymonth, month_week,
-          anchor_mode, catchup_policy, ends_mode, ends_on)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-      [
-        seriesId,
-        userId,
-        r.freq,
-        r.interval,
-        r.byday ?? [],
-        r.bymonthday ?? [],
-        r.bymonth ?? [],
-        r.monthWeek ?? 0,
-        r.anchorMode,
-        r.catchupPolicy,
-        r.endsMode,
-        r.endsOn ?? null,
-      ],
-    );
-    const id = await newTask(userId, { title, dueDate });
-    await pg.query(
-      `update public.tasks set series_id = $2, occurrence_date = $3, occurrence_seq = 0 where id = $1`,
-      [id, seriesId, dueDate],
-    );
-    return id;
-  }
-
   const rolled = async (taskId: string, local: string) =>
     day(
       (
@@ -1676,5 +1676,145 @@ describe('a missed repeat, 0029', () => {
         rollForward(rule, due, local) ?? due,
       );
     }
+  });
+});
+
+describe('reminders for a repeat, 0031', () => {
+  const recompute = (task: string) =>
+    pg.query('select public.recompute_task_notifications($1)', [task]);
+
+  /** The local days a task has pending reminders for. */
+  const reminderDays = async (task: string) =>
+    (
+      await rows<{ local_date: Date }>(
+        `select local_date from public.reminder_deliveries
+          where task_id = $1 and kind = 'task_reminder' and status = 'pending'
+          order by scheduled_at`,
+        [task],
+      )
+    ).map((row) => day(row.local_date)!);
+
+  async function timed(task: string, time: string) {
+    await pg.query('update public.tasks set due_time = $2 where id = $1', [task, time]);
+  }
+
+  it('reminds on each of the next days a missed daily task will sit on', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+    const task = await repeating(user, {}, shiftDay(today, -2));
+    await timed(task, '23:59');
+    await recompute(task);
+
+    const days = await reminderDays(task);
+    expect(days).toEqual(expect.arrayContaining([shiftDay(today, 1), shiftDay(today, 2)]));
+    // Today too, unless 23:59 has already gone by where the user is.
+    expect(days.every((d) => d >= today && d <= shiftDay(today, 2))).toBe(true);
+    expect(days).not.toContain(shiftDay(today, -2));
+  });
+
+  it('pre-schedules tomorrow for a daily task due today', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+    const task = await repeating(user, {}, today);
+    await timed(task, '23:59');
+    await recompute(task);
+    expect(await reminderDays(task)).toEqual(
+      expect.arrayContaining([shiftDay(today, 1), shiftDay(today, 2)]),
+    );
+  });
+
+  it('clears every pending day when the task is done', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+    const task = await repeating(user, {}, shiftDay(today, -1));
+    await timed(task, '23:59');
+    await recompute(task);
+    expect((await reminderDays(task)).length).toBeGreaterThan(0);
+
+    await pg.query(`update public.tasks set status = 'done' where id = $1`, [task]);
+    await recompute(task);
+    expect(await reminderDays(task)).toEqual([]);
+  });
+
+  it('adds nothing for a keep_backlog repeat', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+    const task = await repeating(user, { catchupPolicy: 'keep_backlog' }, shiftDay(today, -2));
+    await timed(task, '23:59');
+    await recompute(task);
+    expect(await reminderDays(task)).toEqual([]);
+  });
+
+  it('adds nothing when the next weekly day is outside the window', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+    // Missed eight days ago, so the next one is six days out.
+    const missed = shiftDay(today, -8);
+    const dow = ((new Date(`${missed}T12:00:00Z`).getUTCDay() + 6) % 7) + 1;
+    const task = await repeating(user, { freq: 'weekly', byday: [dow as 1] }, missed);
+    await timed(task, '23:59');
+    await recompute(task);
+    expect(await reminderDays(task)).toEqual([]);
+  });
+
+  it('leaves a task that does not repeat on its own day', async () => {
+    const user = await newUser();
+    const task = await newTask(user, { dueDate: '2099-09-01', dueTime: '09:00' });
+    await recompute(task);
+    expect(await reminderDays(task)).toEqual(['2099-09-01']);
+  });
+
+  it('fires an explicit day-before reminder the evening before each day', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+    const task = await repeating(user, {}, shiftDay(today, -2));
+    await timed(task, '23:59');
+    await pg.query(
+      `insert into public.task_reminders (id, user_id, task_id, offset_minutes)
+       values ('22222222-0000-4000-8000-0000000003a1', $1, $2, -1440)`,
+      [user, task],
+    );
+    await recompute(task);
+
+    const found = await rows<{ local_date: Date; local_at: Date }>(
+      `select d.local_date, (d.scheduled_at at time zone 'America/New_York') as local_at
+         from public.reminder_deliveries d
+        where d.task_id = $1 and d.status = 'pending'`,
+      [task],
+    );
+    const tomorrow = found.find((row) => day(row.local_date) === shiftDay(today, 2));
+    expect(tomorrow).toBeDefined();
+    // 23:59 the day before the day it is for.
+    expect(day(tomorrow!.local_at)).toBe(shiftDay(today, 1));
+  });
+
+  it('moves the window on in the nightly sweep for a repeat left a week', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+    const task = await repeating(user, {}, shiftDay(today, -7));
+    await timed(task, '23:59');
+    await pg.query('delete from public.reminder_deliveries where task_id = $1', [task]);
+
+    await pg.query('select public.reconcile_notifications()');
+    expect(await reminderDays(task)).toEqual(expect.arrayContaining([shiftDay(today, 1)]));
+  });
+
+  it("says the day a rolled reminder is for, not the stored one", async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+    const task = await repeating(user, {}, shiftDay(today, -2));
+    await timed(task, '23:59');
+    await recompute(task);
+
+    const [row] = await rows<{ id: string; local_date: Date }>(
+      `select id, local_date from public.reminder_deliveries
+        where task_id = $1 and local_date = $2`,
+      [task, shiftDay(today, 1)],
+    );
+    const payload = await one<{ p: { task: { dueDate: string } } }>(
+      'select public.reminder_payload($1) as p',
+      [row!.id],
+    );
+    expect(payload.p.task.dueDate).toBe(shiftDay(today, 1));
   });
 });

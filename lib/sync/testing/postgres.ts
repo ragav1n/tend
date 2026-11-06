@@ -47,6 +47,7 @@ export const MIGRATIONS = [
   '0028_digest_order_before_limit',
   '0029_rolled_repeats',
   '0030_bound_the_roll',
+  '0031_repeat_reminders',
 ];
 
 export function migrationSql(name: string): string {
