@@ -1560,7 +1560,11 @@ describe('a missed repeat, 0029', () => {
   const summary = async (user: string) =>
     (
       await one<{
-        p: { today: { title: string; dueDate: string }[]; overdue: { title: string }[]; dueSoon: { title: string }[] };
+        p: {
+          today: { title: string; dueDate: string }[];
+          overdue: { title: string }[];
+          dueSoon: { title: string; dueDate: string }[];
+        };
       }>('select public.reminder_payload($1) as p', [await dueDelivery(user)])
     ).p;
 
@@ -1602,6 +1606,31 @@ describe('a missed repeat, 0029', () => {
     expect(await deliveries(user, 'overdue_nudge')).toHaveLength(1);
   });
 
+  it('keeps a weekly repeat out of every list until its next day is in one', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+    // Missed eight days ago on a weekday that is not today, so the next one is
+    // between one and six days out: inside dueSoon only when within three.
+    const missed = shiftDay(today, -8);
+    const dow = ((new Date(`${missed}T12:00:00Z`).getUTCDay() + 6) % 7) + 1;
+    await repeating(user, { freq: 'weekly', byday: [dow as 1] }, missed);
+
+    const payload = await summary(user);
+    const next = shiftDay(missed, 14);
+    expect(payload.overdue).toEqual([]);
+    expect(payload.today).toEqual([]);
+    expect(payload.dueSoon.map((item) => item.dueDate)).toEqual(next <= shiftDay(today, 3) ? [next] : []);
+  });
+
+  it('gives up on a rule whose next day is decades out, and does so quickly', async () => {
+    const user = await newUser();
+    const id = await repeating(user, { freq: 'yearly', interval: 365 }, '2099-08-01');
+    const started = Date.now();
+    // Uncapped this walked 366 * 8 * 365 days.
+    expect(await rolled(id, '2099-09-01')).toBe('2099-08-01');
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
   it('lands every rule on the day the client would', async () => {
     // The server cannot run `rollForward`, so it carries its own copy of the
     // rule. This is what stops the two drifting: each case runs through both.
@@ -1629,6 +1658,15 @@ describe('a missed repeat, 0029', () => {
       [{ catchupPolicy: 'keep_backlog' }, '2099-08-29'],
       [{ endsMode: 'on_date', endsOn: '2099-09-03', interval: 5 }, '2099-08-29'],
       [{}, '2099-09-01'],
+      [{ freq: 'weekly', byday: [1, 2, 3, 4, 5] }, '2099-08-29'],
+      [{ freq: 'weekly', byday: [1, 2, 3, 4, 5] }, '2099-08-28'],
+      [{ freq: 'daily', interval: 7 }, '2099-07-01'],
+      [{ freq: 'monthly', bymonthday: [31] }, '2099-07-31'],
+      [{ freq: 'yearly', interval: 2 }, '2098-09-01'],
+      [{ anchorMode: 'completion_date', catchupPolicy: 'keep_backlog' }, '2099-08-20'],
+      [{ freq: 'yearly', interval: 365 }, '2099-08-01'],
+      [{ freq: 'yearly', interval: 7 }, '2099-08-01'],
+      [{ freq: 'yearly', interval: 9 }, '2099-08-01'],
     ];
 
     for (const [over, due] of cases) {

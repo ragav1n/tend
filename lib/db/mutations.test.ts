@@ -860,6 +860,100 @@ describe('recurrence', () => {
     expect((await db.tasks.get(backlog))?.dueDate).toBe(daysFrom(-2));
   });
 
+  it('shifts a start date with the roll, and leaves an absent one out of the patch', async () => {
+    const lead = await createTask(
+      { title: 'File the report', dueDate: daysFrom(-2), startDate: daysFrom(-4) },
+      db,
+    );
+    const plain = await createTask({ title: 'Stretch', dueDate: daysFrom(-2) }, db);
+    await setTaskRecurrence(lead, DAILY, db);
+    await setTaskRecurrence(plain, DAILY, db);
+
+    await rollMissedRepeats(TODAY, db);
+
+    expect(await db.tasks.get(lead)).toMatchObject({ dueDate: TODAY, startDate: daysFrom(-2) });
+    const patches = (await db.outbox.toArray())
+      .filter((r) => r.table === 'tasks' && r.entityId === plain && r.op === 'update')
+      .map((r) => r.patch);
+    // A null start date pushed here could clear one another device just set.
+    expect(patches.at(-1)).not.toHaveProperty('startDate');
+  });
+
+  it('sends a missed weekly occurrence to its next day, not today', async () => {
+    const monday = (() => {
+      let d = daysFrom(-1);
+      while (new Date(`${d}T12:00:00Z`).getUTCDay() !== 1) d = addDays(d, -1);
+      return d;
+    })();
+    const id = await createTask({ title: 'Bins', dueDate: monday }, db);
+    await setTaskRecurrence(id, { ...DAILY, freq: 'weekly', byday: [1] }, db);
+
+    await rollMissedRepeats(TODAY, db);
+    expect((await db.tasks.get(id))?.dueDate).toBe(addDays(monday, 7));
+  });
+
+  it('rolls nothing twice', async () => {
+    const id = await createTask({ title: 'Stretch', dueDate: daysFrom(-3) }, db);
+    await setTaskRecurrence(id, DAILY, db);
+    expect(await rollMissedRepeats(TODAY, db)).toBe(1);
+    expect(await rollMissedRepeats(TODAY, db)).toBe(0);
+  });
+
+  it('leaves a series that was turned off where it is', async () => {
+    const id = await createTask({ title: 'Stretch', dueDate: daysFrom(-2) }, db);
+    await setTaskRecurrence(id, DAILY, db);
+    await clearTaskRecurrence(id, db);
+    expect(await rollMissedRepeats(TODAY, db)).toBe(0);
+    expect((await db.tasks.get(id))?.dueDate).toBe(daysFrom(-2));
+  });
+
+  it('makes one next occurrence however many times a task is completed', async () => {
+    // A double tap reaches completeTask twice before the checkbox re-renders.
+    const id = await createTask({ title: 'Stretch', dueDate: TODAY }, db);
+    await setTaskRecurrence(id, DAILY, db);
+
+    const first = await completeTask(id, true, db);
+    const second = await completeTask(id, true, db);
+
+    expect(first).not.toBeNull();
+    expect(second).toBeNull();
+    const open = (await db.tasks.toArray()).filter((t) => t.seriesId !== '' && t._done === 0);
+    expect(open).toHaveLength(1);
+    expect((await db.taskSeries.get(open[0]!.seriesId))?.completedCount).toBe(1);
+  });
+
+  it('logs nothing for reopening a task that is already open', async () => {
+    const id = await createTask({ title: 'Stretch', dueDate: TODAY }, db);
+    const logged = await db.activityLog.count();
+    await completeTask(id, false, db);
+    expect(await db.activityLog.count()).toBe(logged);
+  });
+
+  it('still reopens a cancelled task from its checkbox', async () => {
+    const id = await createTask({ title: 'Stretch', dueDate: TODAY }, db);
+    await cancelTasks([id], 'skipped', db);
+    await completeTask(id, false, db);
+    expect((await db.tasks.get(id))?.status).toBe('active');
+  });
+
+  it('starts a quick-added repeat on the view\'s day', async () => {
+    const id = await quickCreate('Gym every day', { dueDate: daysFrom(5) });
+    expect((await db.tasks.get(id!))?.dueDate).toBe(daysFrom(5));
+  });
+
+  it('starts a quick-added weekly repeat on its first listed day', async () => {
+    const id = await quickCreate('Bins every monday 7am');
+    const task = await db.tasks.get(id!);
+    expect(new Date(`${task!.dueDate}T12:00:00Z`).getUTCDay()).toBe(1);
+    expect(task!.dueDate! >= TODAY && task!.dueDate! <= daysFrom(6)).toBe(true);
+    expect(task!.dueTime).toBe('07:00');
+  });
+
+  it('keeps a quick-added repeat typed on Today off the plan', async () => {
+    const id = await quickCreate('Stretch every day', { plannedFor: TODAY });
+    expect(await db.tasks.get(id!)).toMatchObject({ dueDate: TODAY, plannedFor: null });
+  });
+
   it('turns "every day" typed in quick add into a repeat due today', async () => {
     const id = await quickCreate('Stretch every day');
     const task = await db.tasks.get(id!);

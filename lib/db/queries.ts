@@ -2,6 +2,8 @@ import { getDb, type TendDb } from './client';
 import { foldText } from './derive';
 import { comparePlannedRank, compareRank } from './rank';
 import { isDeferred } from '@/lib/views/defer';
+import { rollForward } from '@/lib/recurrence';
+import { toRule } from './series';
 import {
   NO_DUE_DAY,
   NO_PARENT,
@@ -407,6 +409,31 @@ export async function tasksByIds(ids: readonly string[], db: TendDb = getDb()): 
 
 /** The rule a task repeats by. Undefined for an empty id or a tombstoned row,
  *  so a caller never has to check both. */
+/**
+ * The open occurrences whose day has passed, each with the day `rollForward`
+ * moves it to. Read by the roll itself and by the hook that decides when to
+ * run it, so the two cannot disagree about what is missed.
+ */
+export async function missedRepeats(
+  day: PlainDate,
+  db: TendDb = getDb(),
+): Promise<{ task: Task; date: PlainDate }[]> {
+  const past = await db.tasks
+    .where('[_del+_done+_dueDay+sortKey]')
+    .between([0, 0, '', ''], [0, 0, day, ''], true, false)
+    .filter((t) => t.seriesId !== '' && t.dueDate !== null && t.dueDate < day)
+    .toArray();
+
+  const out: { task: Task; date: PlainDate }[] = [];
+  for (const task of past) {
+    const series = await db.taskSeries.get(task.seriesId);
+    if (!series || series._del === 1) continue;
+    const date = rollForward(toRule(series), task.occurrenceDate ?? task.dueDate!, day);
+    if (date !== null) out.push({ task, date });
+  }
+  return out;
+}
+
 /** Every live occurrence of a series, open and finished, for its streak. */
 export async function seriesOccurrences(seriesId: string, db: TendDb = getDb()): Promise<Task[]> {
   if (seriesId === '') return [];

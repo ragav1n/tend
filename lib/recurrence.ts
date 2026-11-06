@@ -324,6 +324,9 @@ export function nextOccurrence(input: NextOccurrenceInput): NextOccurrence {
  * a missed weekly Monday waits for next Monday. 'keep_backlog' exists to keep
  * the gap visible, so it is left alone, as is a series whose last day has gone.
  */
+/** Eight years of days. Nothing further out is a missed repeat anyone is waiting on. */
+export const ROLL_REACH_DAYS = 2928;
+
 export function rollForward(
   rule: RecurrenceRule,
   occurrenceDate: PlainDate,
@@ -344,7 +347,24 @@ export function rollForward(
   }
 
   if (rule.endsMode === 'on_date' && rule.endsOn && date > rule.endsOn) return null;
+  // The server scans this far and no further (0030), so the two give up on the
+  // same rules.
+  if (daysBetween(today, date) >= ROLL_REACH_DAYS) return null;
   return date;
+}
+
+/**
+ * The first day on or after `from` that a new series should start on. `from`
+ * itself counts, so "stretch every day" typed this morning is due this morning,
+ * and "every monday" typed on a Tuesday waits for the Monday.
+ */
+export function firstOnOrAfter(rule: RecurrenceRule, from: PlainDate): PlainDate {
+  if (rule.freq !== 'weekly' || !rule.byday || rule.byday.length === 0) return from;
+  for (let i = 0; i < 7; i++) {
+    const day = addDays(from, i);
+    if (rule.byday.includes(isoDow(day))) return day;
+  }
+  return from;
 }
 
 /** Human-readable summary for the task detail panel. */
@@ -362,7 +382,9 @@ export function describeRule(rule: RecurrenceRule): string {
     case 'daily':
       return n === 1 ? 'Every day' : `Every ${n} days`;
     case 'weekly': {
-      const days = (rule.byday ?? []).map((d) => DOW[d]).filter(Boolean);
+      const byday = [...(rule.byday ?? [])].sort((a, b) => a - b);
+      if (n === 1 && byday.join() === '1,2,3,4,5') return 'Every weekday';
+      const days = byday.map((d) => DOW[d]).filter(Boolean);
       const on = days.length > 0 ? ` on ${days.join(', ')}` : '';
       return `${every} ${n === 1 ? 'week' : 'weeks'}${on}`;
     }

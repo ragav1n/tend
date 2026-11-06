@@ -61,6 +61,7 @@ describe('the migration directory', () => {
       '0027_task_reminders_sync.sql',
       '0028_digest_order_before_limit.sql',
       '0029_rolled_repeats.sql',
+      '0030_bound_the_roll.sql',
     ]);
   });
 

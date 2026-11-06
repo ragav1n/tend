@@ -110,16 +110,12 @@ function repeatRule(freq: RecurrenceRule['freq'], interval = 1, byday?: IsoDow[]
   };
 }
 
-/** The first day on or after `from` that the rule lands on. Today counts, unlike
- *  `nextDow`: "stretch every day" typed this morning means this morning. */
-function firstRepeatDay(from: PlainDate, rule: RecurrenceRule): PlainDate {
-  if (!rule.byday) return from;
-  for (let i = 0; i < 7; i++) {
-    const day = addDays(from, i);
-    if (rule.byday.includes(isoDow(day))) return day;
-  }
-  return from;
-}
+const UNIT_FREQ: Record<string, RecurrenceRule['freq']> = {
+  day: 'daily',
+  week: 'weekly',
+  month: 'monthly',
+  year: 'yearly',
+};
 
 function to24h(hour: number, minute: number, meridiem: string | undefined): PlainTime {
   let h = hour;
@@ -194,32 +190,32 @@ const RULES: Rule[] = [
 
   // ── Repeats ────────────────────────────────────────────────────────────────
   // Ahead of the dates, so "every monday" is a repeat and not a due date with
-  // the word "every" left in the title.
+  // the word "every" left in the title. Only the "every" forms: a bare "daily"
+  // or "monthly" is as often part of a title ("Write the monthly report") as it
+  // is a schedule, and taking it would turn a one-off into a repeat.
   {
-    re: /(?:^|\s)(?:every\s+(weekday|day|week|month)|(daily|weekly|monthly))(?=\s|$)/gi,
+    re: /(?:^|\s)every\s+(?:(other)\s+)?(weekday|day|week|month|year)(?=\s|$)/gi,
     kind: 'repeat',
     apply: (m, { out }) => {
       if (out.repeat !== null) return false;
-      const word = (m[1] ?? m[2]!).toLowerCase();
-      out.repeat =
-        word === 'weekday'
-          ? repeatRule('weekly', 1, [1, 2, 3, 4, 5])
-          : word === 'day' || word === 'daily'
-            ? repeatRule('daily')
-            : word === 'week' || word === 'weekly'
-              ? repeatRule('weekly')
-              : repeatRule('monthly');
+      const n = m[1] ? 2 : 1;
+      const word = m[2]!.toLowerCase();
+      if (word === 'weekday') {
+        if (n !== 1) return false;
+        out.repeat = repeatRule('weekly', 1, [1, 2, 3, 4, 5]);
+      } else {
+        out.repeat = repeatRule(UNIT_FREQ[word]!, n);
+      }
       return true;
     },
   },
   {
-    re: /(?:^|\s)every\s+(\d{1,3})\s+(days|weeks|months)(?=\s|$)/gi,
+    re: /(?:^|\s)every\s+(\d{1,3})\s+(days?|weeks?|months?|years?)(?=\s|$)/gi,
     kind: 'repeat',
     apply: (m, { out }) => {
       const n = Number(m[1]);
-      if (out.repeat !== null || n < 1) return false;
-      const unit = m[2]!.toLowerCase();
-      out.repeat = repeatRule(unit === 'days' ? 'daily' : unit === 'weeks' ? 'weekly' : 'monthly', n);
+      if (out.repeat !== null || n < 1 || n > 365) return false;
+      out.repeat = repeatRule(UNIT_FREQ[m[2]!.toLowerCase().replace(/s$/, '')]!, n);
       return true;
     },
   },
@@ -439,10 +435,10 @@ export function parseQuickAdd(input: string, now = new Date(), opts: ParseOption
 
   // A time with no date means today, which is the only reading that makes sense
   // for "call mum at 6pm".
-  // A repeat with no date starts on its first day, so the task is on Today the
-  // day it falls on rather than sitting undated.
-  if (out.repeat !== null && out.dueDate === null) out.dueDate = firstRepeatDay(today, out.repeat);
-  if (out.dueTime !== null && out.dueDate === null) out.dueDate = today;
+  // A repeat with no typed date is left undated here: where it starts depends
+  // on the view it was typed into, which only the caller knows. See
+  // `firstOnOrAfter`.
+  if (out.dueTime !== null && out.dueDate === null && out.repeat === null) out.dueDate = today;
 
   return out;
 }

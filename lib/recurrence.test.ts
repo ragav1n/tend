@@ -7,6 +7,7 @@ import {
   nextOccurrence,
   nthWeekdayOfMonth,
   rollForward,
+  firstOnOrAfter,
   stepOnce,
   type RecurrenceRule,
 } from './recurrence';
@@ -358,9 +359,49 @@ describe('rollForward', () => {
     expect(rollForward(rule({ interval: 3, anchorMode: 'completion_date' }), '2026-08-10', TODAY)).toBe(TODAY);
   });
 
+  it('gives up past eight years, where the server stops looking', () => {
+    expect(rollForward(rule({ freq: 'yearly', interval: 7 }), '2026-08-01', TODAY)).toBe('2033-08-01');
+    expect(rollForward(rule({ freq: 'yearly', interval: 9 }), '2026-08-01', TODAY)).toBeNull();
+  });
+
   it('leaves current, backlog and ended series alone', () => {
     expect(rollForward(rule(), TODAY, TODAY)).toBeNull();
     expect(rollForward(rule({ catchupPolicy: 'keep_backlog' }), '2026-08-15', TODAY)).toBeNull();
     expect(rollForward(rule({ endsMode: 'on_date', endsOn: '2026-08-16' }), '2026-08-15', TODAY)).toBeNull();
+  });
+});
+
+describe('firstOnOrAfter', () => {
+  const TUESDAY = '2026-08-18';
+
+  it('starts a daily, monthly or yearly series on the day given', () => {
+    expect(firstOnOrAfter(rule(), TUESDAY)).toBe(TUESDAY);
+    expect(firstOnOrAfter(rule({ freq: 'monthly' }), TUESDAY)).toBe(TUESDAY);
+    expect(firstOnOrAfter(rule({ freq: 'yearly' }), TUESDAY)).toBe(TUESDAY);
+  });
+
+  it('counts the day given when it is one of the weekdays', () => {
+    expect(firstOnOrAfter(rule({ freq: 'weekly', byday: [2] }), TUESDAY)).toBe(TUESDAY);
+  });
+
+  it('waits for the next listed weekday', () => {
+    expect(firstOnOrAfter(rule({ freq: 'weekly', byday: [1] }), TUESDAY)).toBe('2026-08-24');
+    expect(firstOnOrAfter(rule({ freq: 'weekly', byday: [1, 2, 3, 4, 5] }), '2026-08-22')).toBe(
+      '2026-08-24',
+    );
+  });
+});
+
+describe('describeRule for weekdays', () => {
+  it('says every weekday for Monday to Friday', () => {
+    expect(describeRule(rule({ freq: 'weekly', byday: [1, 2, 3, 4, 5] }))).toBe('Every weekday');
+    expect(describeRule(rule({ freq: 'weekly', byday: [5, 4, 3, 2, 1] }))).toBe('Every weekday');
+  });
+
+  it('lists the days otherwise', () => {
+    expect(describeRule(rule({ freq: 'weekly', byday: [1, 3] }))).toBe('Every week on Monday, Wednesday');
+    expect(describeRule(rule({ freq: 'weekly', interval: 2, byday: [1, 2, 3, 4, 5] }))).toBe(
+      'Every 2 weeks on Monday, Tuesday, Wednesday, Thursday, Friday',
+    );
   });
 });

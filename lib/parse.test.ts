@@ -348,35 +348,75 @@ describe('a course code', () => {
 describe('repeats', () => {
   const r = (input: string) => parseQuickAdd(input, NOW, { repeats: true });
 
-  it('reads every day and daily as a daily repeat starting today', () => {
-    for (const text of ['Stretch every day', 'Stretch daily']) {
-      const out = r(text);
-      expect(out.title).toBe('Stretch');
-      expect(out.repeat).toMatchObject({ freq: 'daily', interval: 1 });
-      expect(out.dueDate).toBe(TODAY);
-    }
+  it('reads every day as a daily repeat and leaves the start to the caller', () => {
+    const out = r('Stretch every day');
+    expect(out.title).toBe('Stretch');
+    expect(out.repeat).toMatchObject({ freq: 'daily', interval: 1 });
+    // Where it starts depends on the view it was typed in. quick-create decides.
+    expect(out.dueDate).toBeNull();
+    expect(out.tokens).toEqual([{ kind: 'repeat', text: 'every day', start: 8, end: 17 }]);
   });
 
-  it('reads every N days', () => {
+  it('reads counts, singular or plural', () => {
     expect(r('Water plants every 3 days').repeat).toMatchObject({ freq: 'daily', interval: 3 });
+    expect(r('Water plants every 1 day').repeat).toMatchObject({ freq: 'daily', interval: 1 });
+    expect(r('Review every 2 weeks').repeat).toMatchObject({ freq: 'weekly', interval: 2 });
+    expect(r('Rent every 1 month').repeat).toMatchObject({ freq: 'monthly', interval: 1 });
   });
 
-  it('reads every weekday and starts on the first one', () => {
-    const out = r('Standup every weekday');
-    expect(out.repeat).toMatchObject({ freq: 'weekly', byday: [1, 2, 3, 4, 5] });
-    expect(out.dueDate).toBe(TODAY);
+  it('reads every other as an interval of two', () => {
+    expect(r('Mop every other day').repeat).toMatchObject({ freq: 'daily', interval: 2 });
+    expect(r('Bins every other week').repeat).toMatchObject({ freq: 'weekly', interval: 2 });
+    expect(r('Mop every other day').title).toBe('Mop');
+  });
+
+  it('reads week, month and year', () => {
+    expect(r('Plan every week').repeat).toMatchObject({ freq: 'weekly' });
+    expect(r('Rent every month').repeat).toMatchObject({ freq: 'monthly' });
+    expect(r('Renew every year').repeat).toMatchObject({ freq: 'yearly' });
+  });
+
+  it('reads every weekday as Monday to Friday', () => {
+    expect(r('Standup every weekday').repeat).toMatchObject({ freq: 'weekly', byday: [1, 2, 3, 4, 5] });
+  });
+
+  it('refuses every other weekday, which means nothing', () => {
+    const out = r('Standup every other weekday');
+    expect(out.repeat).toBeNull();
   });
 
   it('reads every monday as a weekly repeat, not a date', () => {
     const out = r('Bins every monday');
     expect(out.title).toBe('Bins');
     expect(out.repeat).toMatchObject({ freq: 'weekly', byday: [1] });
-    expect(out.dueDate).toBe('2026-08-24');
+    expect(out.dueDate).toBeNull();
     expect(out.tokens.map((t) => t.kind)).toEqual(['repeat']);
   });
 
-  it('keeps a typed date over the default start', () => {
+  it('leaves a bare daily, weekly or monthly in the title', () => {
+    // These are as often part of what the task is as a schedule for it.
+    for (const text of ['Write the monthly report', 'Daily standup notes', 'Weekly review']) {
+      const out = r(text);
+      expect(out.repeat, text).toBeNull();
+      expect(out.title, text).toBe(text);
+    }
+  });
+
+  it('keeps a typed date', () => {
     expect(r('Stretch every day tomorrow').dueDate).toBe(TOMORROW);
+  });
+
+  it('does not pin a timed repeat to today', () => {
+    // "every monday 7am" typed on a Tuesday is due on Monday, not this morning.
+    const out = r('Gym every monday 7am');
+    expect(out.dueTime).toBe('07:00');
+    expect(out.dueDate).toBeNull();
+  });
+
+  it('keeps one rule when two are typed', () => {
+    const out = r('Stretch every day every week');
+    expect(out.repeat).toMatchObject({ freq: 'daily' });
+    expect(out.title).toBe('Stretch every week');
   });
 
   it('leaves the words alone unless the caller asks for repeats', () => {

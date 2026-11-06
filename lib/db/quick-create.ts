@@ -1,6 +1,7 @@
 import { parseQuickAdd } from '@/lib/parse';
 import { createTask, ensureProject, ensureTag, setTaskRecurrence } from './mutations';
-import { courseOptions } from './queries';
+import { courseOptions, today } from './queries';
+import { firstOnOrAfter } from '@/lib/recurrence';
 import { pickCourse } from '@/lib/courses/pick';
 
 /**
@@ -41,7 +42,13 @@ export async function quickCreate(text: string, defaults: QuickDefaults = {}): P
     : defaults.courseId;
 
   // A typed date wins over the view's, for the same reason a typed project does.
-  const dueDate = parsed.dueDate ?? defaults.dueDate ?? null;
+  // A repeat with no typed date starts on its first day from the view's date,
+  // so "Gym every day" typed on the 20th in the calendar starts on the 20th.
+  const dueDate =
+    parsed.dueDate ??
+    (parsed.repeat
+      ? firstOnOrAfter(parsed.repeat, defaults.dueDate ?? defaults.plannedFor ?? today())
+      : (defaults.dueDate ?? null));
 
   const id = await createTask({
     title: parsed.title,

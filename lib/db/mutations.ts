@@ -2,7 +2,6 @@ import {
   addDays,
   daysBetween,
   nextOccurrence,
-  rollForward,
   type RecurrenceRule,
 } from '@/lib/recurrence';
 import { swatchFor } from '@/lib/projects/palette';
@@ -25,7 +24,7 @@ import {
 } from './derive';
 import { newBatchId, newId, newMutationId } from './ids';
 import { PREFS_ID, withPrefDefaults } from './prefs';
-import { today } from './queries';
+import { missedRepeats, today } from './queries';
 import { rankAfter, rankBefore, rankBetween } from './rank';
 import { fromRule, toRule } from './series';
 import {
@@ -556,6 +555,11 @@ export async function completeTasks(
       // rather than the 'done' it is about to get.
       const before = await db.tasks.get(id);
       if (!before) continue;
+      // Already where it was asked to go. Completing a done task again would
+      // make a second next occurrence with the same seq, which the server's
+      // unique index refuses, and a double tap gets there before the list
+      // re-renders the checkbox.
+      if (done ? before.status === 'done' : !isClosed(before.status)) continue;
 
       const status: TaskStatus = done ? 'done' : 'active';
       if (!(await writeTaskPatch(id, { status }, db))) continue;
@@ -1154,25 +1158,15 @@ export async function rollMissedRepeats(day = today(), db: TendDb = getDb()): Pr
   let rolled = 0;
 
   await db.transaction('rw', [db.tasks, db.taskTags, db.taskSeries, db.outbox], async () => {
-    const past = await db.tasks
-      .where('[_del+_done+_dueDay+sortKey]')
-      .between([0, 0, '', ''], [0, 0, day, ''], true, false)
-      .filter((t) => t.seriesId !== '' && t.dueDate !== null && t.dueDate < day)
-      .toArray();
-
-    for (const task of past) {
-      const series = await db.taskSeries.get(task.seriesId);
-      if (!series || series._del === 1) continue;
-
-      const from = task.occurrenceDate ?? task.dueDate!;
-      const date = rollForward(toRule(series), from, day);
-      if (date === null) continue;
-
+    for (const { task, date } of await missedRepeats(day, db)) {
+      const patch: TaskPatch = { dueDate: date, occurrenceDate: date };
       // The lead time moves with the occurrence, as it does in `materializeNext`.
-      const startDate = task.startDate
-        ? addDays(date, daysBetween(task.dueDate!, task.startDate))
-        : null;
-      await writeTaskPatch(task.id, { dueDate: date, occurrenceDate: date, startDate }, db);
+      // Sent only when there is one: a null here would land on the server as an
+      // edit and could clear a start date another device set meanwhile.
+      if (task.startDate) {
+        patch.startDate = addDays(date, daysBetween(task.dueDate!, task.startDate));
+      }
+      await writeTaskPatch(task.id, patch, db);
       rolled += 1;
     }
   });
