@@ -2,6 +2,7 @@ import {
   addDays,
   daysBetween,
   nextOccurrence,
+  rollForward,
   type RecurrenceRule,
 } from '@/lib/recurrence';
 import { swatchFor } from '@/lib/projects/palette';
@@ -1097,13 +1098,15 @@ export async function setTaskRecurrence(
     await db.taskSeries.add(row);
     await db.outbox.add(outboxRecord('taskSeries', id, 'insert', toInsertPatch(row), 0));
 
-    // The anchor the first generation steps from. A task with no due date still
-    // needs one, or "every 3 days" has nothing to count from.
+    // The anchor the first generation steps from. A task with no due date gets
+    // today as both: without a due date it never reaches Today, so "every day"
+    // set on an undated task repeated on a list nobody looked at.
     // Unlogged. Undo restoring `seriesId` while the series row it points at
     // stayed would be a half-undo, and a half-undo is worse than none.
+    const start = task.dueDate ?? today();
     await writeTaskPatch(
       taskId,
-      { seriesId: id, occurrenceDate: task.dueDate ?? today(), occurrenceSeq: 0 },
+      { seriesId: id, dueDate: start, occurrenceDate: start, occurrenceSeq: 0 },
       db,
     );
   });
@@ -1136,6 +1139,45 @@ export async function clearTaskRecurrence(
 
     await writeTaskPatch(taskId, { seriesId: '', occurrenceDate: null, occurrenceSeq: null }, db);
   });
+}
+
+/**
+ * Moves every open occurrence whose day has passed onto the day it belongs to
+ * now, so a missed daily task is on Today rather than in Overdue.
+ *
+ * Unlogged. Nobody made this edit, so there is nothing for undo to take back,
+ * and taking it back would only put the task where this would move it again.
+ * `occurrenceSeq` stays put, so two devices rolling the same task write the
+ * same values and the server's unique `(series_id, occurrence_seq)` holds.
+ */
+export async function rollMissedRepeats(day = today(), db: TendDb = getDb()): Promise<number> {
+  let rolled = 0;
+
+  await db.transaction('rw', [db.tasks, db.taskTags, db.taskSeries, db.outbox], async () => {
+    const past = await db.tasks
+      .where('[_del+_done+_dueDay+sortKey]')
+      .between([0, 0, '', ''], [0, 0, day, ''], true, false)
+      .filter((t) => t.seriesId !== '' && t.dueDate !== null && t.dueDate < day)
+      .toArray();
+
+    for (const task of past) {
+      const series = await db.taskSeries.get(task.seriesId);
+      if (!series || series._del === 1) continue;
+
+      const from = task.occurrenceDate ?? task.dueDate!;
+      const date = rollForward(toRule(series), from, day);
+      if (date === null) continue;
+
+      // The lead time moves with the occurrence, as it does in `materializeNext`.
+      const startDate = task.startDate
+        ? addDays(date, daysBetween(task.dueDate!, task.startDate))
+        : null;
+      await writeTaskPatch(task.id, { dueDate: date, occurrenceDate: date, startDate }, db);
+      rolled += 1;
+    }
+  });
+
+  return rolled;
 }
 
 // ─── Saved views ──────────────────────────────────────────────────────────────

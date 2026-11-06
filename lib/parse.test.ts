@@ -344,3 +344,44 @@ describe('a course code', () => {
     expect(out.title).toBe('Lab');
   });
 });
+
+describe('repeats', () => {
+  const r = (input: string) => parseQuickAdd(input, NOW, { repeats: true });
+
+  it('reads every day and daily as a daily repeat starting today', () => {
+    for (const text of ['Stretch every day', 'Stretch daily']) {
+      const out = r(text);
+      expect(out.title).toBe('Stretch');
+      expect(out.repeat).toMatchObject({ freq: 'daily', interval: 1 });
+      expect(out.dueDate).toBe(TODAY);
+    }
+  });
+
+  it('reads every N days', () => {
+    expect(r('Water plants every 3 days').repeat).toMatchObject({ freq: 'daily', interval: 3 });
+  });
+
+  it('reads every weekday and starts on the first one', () => {
+    const out = r('Standup every weekday');
+    expect(out.repeat).toMatchObject({ freq: 'weekly', byday: [1, 2, 3, 4, 5] });
+    expect(out.dueDate).toBe(TODAY);
+  });
+
+  it('reads every monday as a weekly repeat, not a date', () => {
+    const out = r('Bins every monday');
+    expect(out.title).toBe('Bins');
+    expect(out.repeat).toMatchObject({ freq: 'weekly', byday: [1] });
+    expect(out.dueDate).toBe('2026-08-24');
+    expect(out.tokens.map((t) => t.kind)).toEqual(['repeat']);
+  });
+
+  it('keeps a typed date over the default start', () => {
+    expect(r('Stretch every day tomorrow').dueDate).toBe(TOMORROW);
+  });
+
+  it('leaves the words alone unless the caller asks for repeats', () => {
+    const out = p('Quiz every monday');
+    expect(out.repeat).toBeNull();
+    expect(out.title).toBe('Quiz every');
+  });
+});

@@ -6,6 +6,7 @@ import {
   isoDow,
   nextOccurrence,
   nthWeekdayOfMonth,
+  rollForward,
   stepOnce,
   type RecurrenceRule,
 } from './recurrence';
@@ -333,5 +334,33 @@ describe('describeRule', () => {
       describeRule(rule({ freq: 'daily', interval: 3, anchorMode: 'completion_date' })),
     ).toBe('3 days after completion');
     expect(describeRule(rule({ freq: 'yearly' }))).toBe('Every year');
+  });
+});
+
+describe('rollForward', () => {
+  // 2026-08-18 is a Tuesday.
+  const TODAY = '2026-08-18';
+
+  it('puts a missed daily task on today', () => {
+    expect(rollForward(rule(), '2026-08-15', TODAY)).toBe(TODAY);
+  });
+
+  it('keeps an interval series on its own days', () => {
+    // Every 3 days from the 14th: 17th, 20th.
+    expect(rollForward(rule({ interval: 3 }), '2026-08-14', TODAY)).toBe('2026-08-20');
+  });
+
+  it('sends a missed weekly Monday to next Monday', () => {
+    expect(rollForward(rule({ freq: 'weekly', byday: [1] }), '2026-08-17', TODAY)).toBe('2026-08-24');
+  });
+
+  it('puts a completion-anchored task on today', () => {
+    expect(rollForward(rule({ interval: 3, anchorMode: 'completion_date' }), '2026-08-10', TODAY)).toBe(TODAY);
+  });
+
+  it('leaves current, backlog and ended series alone', () => {
+    expect(rollForward(rule(), TODAY, TODAY)).toBeNull();
+    expect(rollForward(rule({ catchupPolicy: 'keep_backlog' }), '2026-08-15', TODAY)).toBeNull();
+    expect(rollForward(rule({ endsMode: 'on_date', endsOn: '2026-08-16' }), '2026-08-15', TODAY)).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import { parseQuickAdd } from '@/lib/parse';
-import { createTask, ensureProject, ensureTag } from './mutations';
+import { createTask, ensureProject, ensureTag, setTaskRecurrence } from './mutations';
 import { courseOptions } from './queries';
 import { pickCourse } from '@/lib/courses/pick';
 
@@ -22,7 +22,7 @@ export interface QuickDefaults {
 }
 
 export async function quickCreate(text: string, defaults: QuickDefaults = {}): Promise<string | null> {
-  const parsed = parseQuickAdd(text);
+  const parsed = parseQuickAdd(text, new Date(), { repeats: true });
   if (parsed.title.length === 0) return null;
 
   // Tags and the project resolve to ids first, so the task and its join rows
@@ -43,7 +43,7 @@ export async function quickCreate(text: string, defaults: QuickDefaults = {}): P
   // A typed date wins over the view's, for the same reason a typed project does.
   const dueDate = parsed.dueDate ?? defaults.dueDate ?? null;
 
-  return createTask({
+  const id = await createTask({
     title: parsed.title,
     ...(defaults.courseId ? { courseId: defaults.courseId } : {}),
     dueDate,
@@ -54,6 +54,8 @@ export async function quickCreate(text: string, defaults: QuickDefaults = {}): P
     ...(courseId ? { courseId } : {}),
     tagIds,
   });
+  if (parsed.repeat) await setTaskRecurrence(id, parsed.repeat);
+  return id;
 }
 
 /**

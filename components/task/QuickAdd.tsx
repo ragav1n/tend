@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  ArrowsClockwise,
   CalendarBlank,
   Flag,
   FolderSimple,
@@ -11,6 +12,7 @@ import {
   Plus,
 } from '@phosphor-icons/react/dist/ssr';
 import { parseQuickAdd, type TokenKind } from '@/lib/parse';
+import { describeRule } from '@/lib/recurrence';
 import { quickCreate, type QuickDefaults } from '@/lib/db/quick-create';
 import { PRESS_DEPTH, QUICK_FADE, SNAPPY } from '@/lib/motion';
 import { useUiStore } from '@/hooks/use-ui';
@@ -42,6 +44,7 @@ const CHIP_ICON: Record<TokenKind, React.ComponentType<{ size?: number; weight?:
   tag: Hash,
   project: FolderSimple,
   course: GraduationCap,
+  repeat: ArrowsClockwise,
 };
 
 export function QuickAdd({ defaults, placeholder = 'Add a task' }: QuickAddProps) {
@@ -51,7 +54,7 @@ export function QuickAdd({ defaults, placeholder = 'Add a task' }: QuickAddProps
 
   // Reparsed per keystroke. The parser is regex-only over a single line, so this
   // costs microseconds and needs no debounce.
-  const parsed = useMemo(() => parseQuickAdd(value), [value]);
+  const parsed = useMemo(() => parseQuickAdd(value, new Date(), { repeats: true }), [value]);
   const canSubmit = parsed.title.length > 0 && !busy;
 
   // A shortcut asked for this field from a view that had none, so it arrived
@@ -165,6 +168,7 @@ export function QuickAdd({ defaults, placeholder = 'Add a task' }: QuickAddProps
                   {token.kind === 'priority' && `P${4 - parsed.priority}`}
                   {token.kind === 'tag' && token.text.slice(1)}
                   {token.kind === 'project' && token.text.slice(1)}
+                  {token.kind === 'repeat' && parsed.repeat && describeRule(parsed.repeat)}
                 </motion.span>
               );
             })}

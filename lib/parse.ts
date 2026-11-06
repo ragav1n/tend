@@ -1,4 +1,4 @@
-import { addDays, isoDow, type IsoDow } from './recurrence';
+import { addDays, isoDow, type IsoDow, type RecurrenceRule } from './recurrence';
 import type { PlainDate, PlainTime, Priority } from './db/types';
 
 /**
@@ -17,7 +17,7 @@ import type { PlainDate, PlainTime, Priority } from './db/types';
  * as recurrence.ts.
  */
 
-export type TokenKind = 'date' | 'time' | 'priority' | 'tag' | 'project' | 'course';
+export type TokenKind = 'date' | 'time' | 'priority' | 'tag' | 'project' | 'course' | 'repeat';
 
 export interface ParsedToken {
   kind: TokenKind;
@@ -37,6 +37,9 @@ export interface ParsedTask {
   /** A course code, matched loosely: "+cs6035" and "+CS 6035" are the same
    *  course, and the resolver is what decides which one. */
   courseCode: string | null;
+  /** "every day", "every weekday", "every monday". The rest of the rule is the
+   *  same default the detail panel starts from. */
+  repeat: RecurrenceRule | null;
   tokens: ParsedToken[];
 }
 
@@ -94,6 +97,28 @@ function monthDay(from: PlainDate, month: number, day: number): PlainDate {
   const candidate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   if (candidate >= from) return candidate;
   return `${year + 1}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function repeatRule(freq: RecurrenceRule['freq'], interval = 1, byday?: IsoDow[]): RecurrenceRule {
+  return {
+    freq,
+    interval,
+    ...(byday ? { byday } : {}),
+    anchorMode: 'due_date',
+    catchupPolicy: 'skip_to_future',
+    endsMode: 'never',
+  };
+}
+
+/** The first day on or after `from` that the rule lands on. Today counts, unlike
+ *  `nextDow`: "stretch every day" typed this morning means this morning. */
+function firstRepeatDay(from: PlainDate, rule: RecurrenceRule): PlainDate {
+  if (!rule.byday) return from;
+  for (let i = 0; i < 7; i++) {
+    const day = addDays(from, i);
+    if (rule.byday.includes(isoDow(day))) return day;
+  }
+  return from;
 }
 
 function to24h(hour: number, minute: number, meridiem: string | undefined): PlainTime {
@@ -163,6 +188,48 @@ const RULES: Rule[] = [
     apply: (m, { out }) => {
       // First one wins. A task belongs to one course.
       if (out.courseCode === null) out.courseCode = m[1]!.trim();
+      return true;
+    },
+  },
+
+  // ── Repeats ────────────────────────────────────────────────────────────────
+  // Ahead of the dates, so "every monday" is a repeat and not a due date with
+  // the word "every" left in the title.
+  {
+    re: /(?:^|\s)(?:every\s+(weekday|day|week|month)|(daily|weekly|monthly))(?=\s|$)/gi,
+    kind: 'repeat',
+    apply: (m, { out }) => {
+      if (out.repeat !== null) return false;
+      const word = (m[1] ?? m[2]!).toLowerCase();
+      out.repeat =
+        word === 'weekday'
+          ? repeatRule('weekly', 1, [1, 2, 3, 4, 5])
+          : word === 'day' || word === 'daily'
+            ? repeatRule('daily')
+            : word === 'week' || word === 'weekly'
+              ? repeatRule('weekly')
+              : repeatRule('monthly');
+      return true;
+    },
+  },
+  {
+    re: /(?:^|\s)every\s+(\d{1,3})\s+(days|weeks|months)(?=\s|$)/gi,
+    kind: 'repeat',
+    apply: (m, { out }) => {
+      const n = Number(m[1]);
+      if (out.repeat !== null || n < 1) return false;
+      const unit = m[2]!.toLowerCase();
+      out.repeat = repeatRule(unit === 'days' ? 'daily' : unit === 'weeks' ? 'weekly' : 'monthly', n);
+      return true;
+    },
+  },
+  {
+    re: /(?:^|\s)every\s+(monday|mon|tuesday|tues|tue|wednesday|wed|thursday|thurs|thur|thu|friday|fri|saturday|sat|sunday|sun)(?=\s|$)/gi,
+    kind: 'repeat',
+    apply: (m, { out }) => {
+      const dow = DOW_NAMES[m[1]!.toLowerCase()];
+      if (out.repeat !== null || dow === undefined) return false;
+      out.repeat = repeatRule('weekly', 1, [dow]);
       return true;
     },
   },
@@ -305,7 +372,16 @@ function overlaps(claimed: Array<[number, number]>, start: number, end: number):
   return claimed.some(([s, e]) => start < e && end > s);
 }
 
-export function parseQuickAdd(input: string, now = new Date()): ParsedTask {
+export interface ParseOptions {
+  /**
+   * Off unless the caller can save a repeat. Syllabus paste and email capture
+   * run lines through here too, and neither creates a series, so "Quiz every
+   * Monday" would lose two words from its title and repeat nothing.
+   */
+  repeats?: boolean;
+}
+
+export function parseQuickAdd(input: string, now = new Date(), opts: ParseOptions = {}): ParsedTask {
   const today = localToday(now);
   const out: ParsedTask = {
     title: '',
@@ -315,12 +391,14 @@ export function parseQuickAdd(input: string, now = new Date()): ParsedTask {
     tagNames: [],
     projectName: null,
     courseCode: null,
+    repeat: null,
     tokens: [],
   };
 
   const claimed: Array<[number, number]> = [];
 
   for (const rule of RULES) {
+    if (rule.kind === 'repeat' && !opts.repeats) continue;
     // Each rule gets a fresh regex so lastIndex from a previous parse cannot
     // leak between calls.
     const re = new RegExp(rule.re.source, rule.re.flags);
@@ -361,6 +439,9 @@ export function parseQuickAdd(input: string, now = new Date()): ParsedTask {
 
   // A time with no date means today, which is the only reading that makes sense
   // for "call mum at 6pm".
+  // A repeat with no date starts on its first day, so the task is on Today the
+  // day it falls on rather than sitting undated.
+  if (out.repeat !== null && out.dueDate === null) out.dueDate = firstRepeatDay(today, out.repeat);
   if (out.dueTime !== null && out.dueDate === null) out.dueDate = today;
 
   return out;

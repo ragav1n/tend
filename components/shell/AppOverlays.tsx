@@ -11,6 +11,7 @@ import { UpdatePrompt } from '@/components/shell/UpdatePrompt';
 import { SelectionBarHost } from '@/components/views/SelectionBar';
 import { TaskDetailHost } from '@/components/task/TaskDetailHost';
 import { useAdoptDeviceTimezone } from '@/hooks/use-prefs';
+import { useRollRepeats } from '@/hooks/use-roll-repeats';
 import { useSelectionStore } from '@/hooks/use-selection';
 
 /**
@@ -32,6 +33,8 @@ export function AppOverlays() {
   // Mounts once for the shell, which is the right place to notice that the
   // account is still on the server's default timezone.
   useAdoptDeviceTimezone();
+  // Once for the shell, so a daily task missed yesterday is on Today.
+  useRollRepeats();
   // The selection bar owns the bottom edge while it is up, and it is the thing
   // that raises most of these toasts. A toast sitting on the button that fired
   // it hides the next four.

@@ -314,6 +314,39 @@ export function nextOccurrence(input: NextOccurrenceInput): NextOccurrence {
   return { kind: 'next', date, skipped };
 }
 
+/**
+ * Where an open occurrence whose date has passed belongs today, or null to
+ * leave it where it is.
+ *
+ * A daily task missed yesterday is today's task, not an overdue one: the
+ * series promises one open copy, and that copy is the one for the day you are
+ * in. A due-date series lands on its first scheduled day on or after today, so
+ * a missed weekly Monday waits for next Monday. 'keep_backlog' exists to keep
+ * the gap visible, so it is left alone, as is a series whose last day has gone.
+ */
+export function rollForward(
+  rule: RecurrenceRule,
+  occurrenceDate: PlainDate,
+  today: PlainDate,
+): PlainDate | null {
+  if (occurrenceDate >= today) return null;
+  if (rule.catchupPolicy === 'keep_backlog') return null;
+
+  let date: PlainDate | null = occurrenceDate;
+  if (rule.anchorMode === 'completion_date') {
+    date = today;
+  } else {
+    // The same bound as `nextOccurrence`, for the same reason.
+    for (let i = 0; i < 5000 && date !== null && date < today; i++) {
+      date = stepOnce(rule, date);
+    }
+    if (date === null || date < today) return null;
+  }
+
+  if (rule.endsMode === 'on_date' && rule.endsOn && date > rule.endsOn) return null;
+  return date;
+}
+
 /** Human-readable summary for the task detail panel. */
 export function describeRule(rule: RecurrenceRule): string {
   const n = Math.max(1, Math.trunc(rule.interval));

@@ -27,6 +27,7 @@ import {
   restoreTag,
   reorderTask,
   restoreTask,
+  rollMissedRepeats,
   setTaskRecurrence,
   uncancelTasks,
   setTaskTags,
@@ -71,6 +72,7 @@ import {
   viewCandidates,
 } from './queries';
 import { undoLast } from './undo';
+import { quickCreate } from './quick-create';
 import { NO_DUE_DAY, NO_PROJECT } from './types';
 
 let db: TendDb;
@@ -820,10 +822,49 @@ describe('recurrence', () => {
     expect(task?.occurrenceSeq).toBe(0);
   });
 
-  it('falls back to today as the anchor when the task has no due date', async () => {
+  it('dates an undated task today when it starts repeating, so Today lists it', async () => {
     const id = await createTask({ title: 'Stretch' }, db);
     await setTaskRecurrence(id, DAILY, db);
-    expect((await db.tasks.get(id))?.occurrenceDate).toBe(TODAY);
+    expect(await db.tasks.get(id)).toMatchObject({ dueDate: TODAY, occurrenceDate: TODAY });
+    expect((await todayList(TODAY, db)).map((t) => t.id)).toContain(id);
+  });
+
+  it('rolls a missed daily task onto today, unlogged', async () => {
+    const id = await createTask({ title: 'Stretch', dueDate: daysFrom(-2), status: 'active' }, db);
+    await setTaskRecurrence(id, DAILY, db);
+    const logged = await db.activityLog.count();
+
+    expect(await rollMissedRepeats(TODAY, db)).toBe(1);
+
+    const task = await db.tasks.get(id);
+    expect(task).toMatchObject({ dueDate: TODAY, occurrenceDate: TODAY, occurrenceSeq: 0 });
+    expect((await overdueList(TODAY, db)).map((t) => t.id)).not.toContain(id);
+    expect(await db.activityLog.count()).toBe(logged);
+    const queued = (await db.outbox.toArray()).filter(
+      (r) => r.table === 'tasks' && r.entityId === id && r.op === 'update',
+    );
+    expect(queued.at(-1)?.patch).toMatchObject({ dueDate: TODAY });
+
+    // Ticking it today spawns tomorrow's copy, not today's again.
+    const nextId = await completeTask(id, true, db);
+    expect((await db.tasks.get(nextId!))?.dueDate).toBe(daysFrom(1));
+  });
+
+  it('leaves one-off overdue work and keep_backlog repeats where they are', async () => {
+    const oneOff = await createTask({ title: 'Return the book', dueDate: daysFrom(-2) }, db);
+    const backlog = await createTask({ title: 'Log a run', dueDate: daysFrom(-2) }, db);
+    await setTaskRecurrence(backlog, { ...DAILY, catchupPolicy: 'keep_backlog' }, db);
+
+    expect(await rollMissedRepeats(TODAY, db)).toBe(0);
+    expect((await db.tasks.get(oneOff))?.dueDate).toBe(daysFrom(-2));
+    expect((await db.tasks.get(backlog))?.dueDate).toBe(daysFrom(-2));
+  });
+
+  it('turns "every day" typed in quick add into a repeat due today', async () => {
+    const id = await quickCreate('Stretch every day');
+    const task = await db.tasks.get(id!);
+    expect(task).toMatchObject({ title: 'Stretch', dueDate: TODAY });
+    expect((await db.taskSeries.get(task!.seriesId))?.freq).toBe('daily');
   });
 
   it('edits the existing series rather than making a second one', async () => {
