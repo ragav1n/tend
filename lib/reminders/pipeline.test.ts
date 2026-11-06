@@ -7,6 +7,15 @@ import {
   createUsers,
   MIGRATIONS,
 } from '@/lib/sync/testing/postgres';
+import { rollForward, type RecurrenceRule } from '@/lib/recurrence';
+
+const DAILY: RecurrenceRule = {
+  freq: 'daily',
+  interval: 1,
+  anchorMode: 'due_date',
+  catchupPolicy: 'skip_to_future',
+  endsMode: 'never',
+};
 
 /**
  * The reminder pipeline, run against a real Postgres.
@@ -1495,4 +1504,139 @@ describe('cutting the digest list down', () => {
       await old.close();
     }
   }, 60_000);
+});
+
+describe('a missed repeat, 0029', () => {
+  let series = 0;
+
+  /** An open occurrence of a series, due on `dueDate`. */
+  async function repeating(
+    userId: string,
+    rule: Partial<RecurrenceRule>,
+    dueDate: string,
+    title = 'Stretch',
+  ): Promise<string> {
+    series += 1;
+    const seriesId = `55555555-0000-4000-8000-${String(series).padStart(12, '0')}`;
+    const r: RecurrenceRule = { ...DAILY, ...rule };
+    await pg.query(
+      `insert into public.task_series
+         (id, user_id, freq, interval, byday, bymonthday, bymonth, month_week,
+          anchor_mode, catchup_policy, ends_mode, ends_on)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [
+        seriesId,
+        userId,
+        r.freq,
+        r.interval,
+        r.byday ?? [],
+        r.bymonthday ?? [],
+        r.bymonth ?? [],
+        r.monthWeek ?? 0,
+        r.anchorMode,
+        r.catchupPolicy,
+        r.endsMode,
+        r.endsOn ?? null,
+      ],
+    );
+    const id = await newTask(userId, { title, dueDate });
+    await pg.query(
+      `update public.tasks set series_id = $2, occurrence_date = $3, occurrence_seq = 0 where id = $1`,
+      [id, seriesId, dueDate],
+    );
+    return id;
+  }
+
+  const rolled = async (taskId: string, local: string) =>
+    day(
+      (
+        await one<{ d: Date | null }>(
+          'select public.rolled_due(t, $2::date) as d from public.tasks t where t.id = $1',
+          [taskId, local],
+        )
+      ).d,
+    );
+
+  const summary = async (user: string) =>
+    (
+      await one<{
+        p: { today: { title: string; dueDate: string }[]; overdue: { title: string }[]; dueSoon: { title: string }[] };
+      }>('select public.reminder_payload($1) as p', [await dueDelivery(user)])
+    ).p;
+
+  it('lists a missed daily task under today, dated today', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+    await repeating(user, {}, shiftDay(today, -2));
+    await newTask(user, { title: 'Return the book', dueDate: shiftDay(today, -2) });
+
+    const payload = await summary(user);
+    expect(payload.overdue.map((item) => item.title)).toEqual(['Return the book']);
+    expect(payload.today.map((item) => [item.title, item.dueDate])).toEqual([['Stretch', today]]);
+  });
+
+  it('leaves a keep_backlog repeat and an ended series overdue', async () => {
+    const user = await newUser();
+    const today = await localToday(user);
+    await repeating(user, { catchupPolicy: 'keep_backlog' }, shiftDay(today, -2), 'Log a run');
+    await repeating(
+      user,
+      { endsMode: 'on_date', endsOn: shiftDay(today, -1) },
+      shiftDay(today, -2),
+      'Take the course',
+    );
+
+    const payload = await summary(user);
+    expect(payload.overdue.map((item) => item.title).sort()).toEqual(['Log a run', 'Take the course']);
+    expect(payload.today).toEqual([]);
+  });
+
+  it('sends no nudge when the only late task is a daily repeat', async () => {
+    const user = await newUser({ nudge_time: '18:00' });
+    await repeating(user, {}, '2026-08-20');
+    await pg.query('select public.enqueue_overdue_nudges($1::timestamptz)', ['2026-09-01T23:00:00Z']);
+    expect(await deliveries(user, 'overdue_nudge')).toHaveLength(0);
+
+    await newTask(user, { dueDate: '2026-08-20' });
+    await pg.query('select public.enqueue_overdue_nudges($1::timestamptz)', ['2026-09-01T23:30:00Z']);
+    expect(await deliveries(user, 'overdue_nudge')).toHaveLength(1);
+  });
+
+  it('lands every rule on the day the client would', async () => {
+    // The server cannot run `rollForward`, so it carries its own copy of the
+    // rule. This is what stops the two drifting: each case runs through both.
+    const user = await newUser();
+    const local = '2099-09-01'; // a Tuesday
+    const cases: Array<[Partial<RecurrenceRule>, string]> = [
+      [{}, '2099-08-29'],
+      [{ interval: 3 }, '2099-08-27'],
+      [{ interval: 3 }, '2099-08-29'],
+      [{ freq: 'weekly', byday: [1] }, '2099-08-24'],
+      [{ freq: 'weekly', byday: [2, 4] }, '2099-08-27'],
+      [{ freq: 'weekly', interval: 2, byday: [2] }, '2099-08-25'],
+      [{ freq: 'weekly', interval: 2, byday: [2] }, '2099-08-18'],
+      [{ freq: 'weekly' }, '2099-08-26'],
+      [{ freq: 'monthly' }, '2099-07-31'],
+      [{ freq: 'monthly', bymonthday: [-1] }, '2099-08-31'],
+      [{ freq: 'monthly', bymonthday: [1, 15] }, '2099-08-01'],
+      [{ freq: 'monthly', interval: 2 }, '2099-07-15'],
+      [{ freq: 'monthly', monthWeek: 3, byday: [2] }, '2099-08-18'],
+      [{ freq: 'monthly', monthWeek: -1, byday: [5] }, '2099-08-28'],
+      [{ freq: 'monthly', monthWeek: 5, byday: [1] }, '2099-08-31'],
+      [{ freq: 'yearly' }, '2099-02-28'],
+      [{ freq: 'yearly', bymonth: [3, 9], bymonthday: [10] }, '2099-03-10'],
+      [{ anchorMode: 'completion_date', interval: 3 }, '2099-08-20'],
+      [{ catchupPolicy: 'keep_backlog' }, '2099-08-29'],
+      [{ endsMode: 'on_date', endsOn: '2099-09-03', interval: 5 }, '2099-08-29'],
+      [{}, '2099-09-01'],
+    ];
+
+    for (const [over, due] of cases) {
+      const rule = { ...DAILY, ...over };
+      const id = await repeating(user, over, due);
+      expect(await rolled(id, local), JSON.stringify([over, due])).toBe(
+        rollForward(rule, due, local) ?? due,
+      );
+    }
+  });
 });

@@ -45,6 +45,7 @@ export const MIGRATIONS = [
   '0026_mail_capture',
   '0027_task_reminders_sync',
   '0028_digest_order_before_limit',
+  '0029_rolled_repeats',
 ];
 
 export function migrationSql(name: string): string {
